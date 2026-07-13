@@ -11,6 +11,9 @@ Ein autonomes Pixel-Art-Café für eine kleine Pause im Browser.
 Kaffeepause zeigt ein gemütliches Café am Regentag als bildschirmfüllendes Canvas-Diorama. Gäste kommen und gehen, bestellen, lesen, arbeiten, reden und trinken – vollständig selbstständig und ohne sichtbaren Schleifensprung.
 
 - handgezeichnete Canvas-Pixelart ohne externe Assets
+- hochauflösendes 768 × 432-Pixel-Canvas mit echten Ein-Pixel-Details
+- individuelle Figuren mit lesbaren Tätigkeiten und einem animierten Barista
+- mehrschichtiger Regen, Kondenswasser, Dampf und warme Lichtreflexe
 - deterministische Figuren-Zustandsautomaten und zentrale Platzreservierung
 - generativer Lo-fi-Jazz, Regen und Café-Geräusche über Web Audio
 - langsame Kamerafahrt auf schmalen Smartphone-Displays
@@ -32,4 +35,4 @@ npm run build
 npm run test:e2e
 ```
 
-Die Szene verwendet eine logische Auflösung von 384 × 216 Pixeln und wird ohne Weichzeichnung auf die Browserfläche skaliert.
+Die Simulation verwendet stabile Szenenkoordinaten von 384 × 216. Gerendert wird auf einem intrinsischen 768 × 432-Pixel-Canvas mit Faktor 2 und ohne Weichzeichnung. Auf Smartphones bleibt die Szenenhöhe erhalten; die intrinsische Canvasbreite und der sichtbare Kameraausschnitt werden gemeinsam angepasst.
