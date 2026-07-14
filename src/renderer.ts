@@ -4,7 +4,9 @@ import { WORLD_HEIGHT, WORLD_WIDTH } from './simulation/layout';
 import type { Barista, CafeAccident, CafeMoment, Guest } from './simulation/types';
 import type { CafeEnvironmentSnapshot, DayPhase } from './environment/types';
 
-export const RENDER_SCALE = 2;
+// Drei physische Pixel pro Szenenpixel lassen kleine Licht-, Holz- und Stoffdetails
+// klarer wirken, ohne den bewusst groben Pixel-Art-Charakter zu verlieren.
+export const RENDER_SCALE = 3;
 
 const COLORS = {
   ink: '#241923',
@@ -23,6 +25,7 @@ const COLORS = {
   counter: '#a8694b',
 } as const;
 
+// Ein einzelner physischer Pixel auf dem hochaufgelösten Canvas.
 const HALF_PIXEL = 1 / RENDER_SCALE;
 
 function snap(value: number): number {
@@ -147,6 +150,7 @@ export class CafeRenderer {
     );
     context.imageSmoothingEnabled = false;
     this.drawRoom(time);
+    this.drawFloorDecor(time);
     this.drawWindows(time);
     this.drawDoor(time);
     this.drawArchitecture(time);
@@ -181,6 +185,11 @@ export class CafeRenderer {
     rect(context, COLORS.wallDark, 0, 9, WORLD_WIDTH, 126);
     rect(context, wall, 0, 14, WORLD_WIDTH, 101);
     rect(context, '#9b6554', 0, 93, WORLD_WIDTH, 22);
+    rect(context, '#ad7059', 0, 105, WORLD_WIDTH, 2);
+    for (let x = 4; x < WORLD_WIDTH; x += 21) {
+      rect(context, x % 42 === 4 ? '#c17e61' : '#87554c', x, 109, 13, HALF_PIXEL);
+      rect(context, '#76474a', x + 3, 111, HALF_PIXEL, 2);
+    }
     rect(context, wallLight, 0, 115, WORLD_WIDTH, 18);
     rect(context, '#c58764', 0, 115, WORLD_WIDTH, 1);
     rect(context, COLORS.ink, 0, 130, WORLD_WIDTH, 4);
@@ -224,6 +233,27 @@ export class CafeRenderer {
       context.globalAlpha = solarLight * (1 - (this.environment?.weather.cloudCover ?? 0) / 130) * 0.22;
       polygon(context, '#ffe6a3', [[startX, 104], [startX + (fromRight ? -28 : 28), 104], [endX + 38, 211], [endX, 211]]);
       context.restore();
+    }
+  }
+
+  private drawFloorDecor(time: number): void {
+    const context = this.context;
+    const shimmer = this.reducedMotion ? 0 : Math.sin(time * 1.4) * HALF_PIXEL;
+
+    // Der Teppich füllt den bisher sehr offenen Mittelgrund und verankert die Sitzgruppe.
+    polygon(context, '#2c303b', [[54, 177], [67, 169], [211, 169], [231, 179], [225, 205], [207, 211], [73, 211], [51, 202]]);
+    polygon(context, '#5f5458', [[59, 180], [72, 173], [207, 173], [226, 181], [220, 201], [205, 207], [77, 207], [57, 200]]);
+    polygon(context, '#7b645d', [[66, 181], [80, 176], [200, 176], [216, 182], [210, 198], [198, 203], [84, 203], [64, 197]]);
+    polygon(context, '#3d3c49', [[75, 183], [100, 177], [181, 177], [207, 184], [202, 195], [185, 201], [98, 201], [72, 195]]);
+    for (let index = 0; index < 9; index += 1) {
+      const x = 78 + index * 14;
+      const y = index % 2 === 0 ? 180 : 198;
+      rect(context, index % 3 === 0 ? '#d09b63' : '#a76d55', x, y, 6, 1);
+      rect(context, '#e6bb72', x + 2, y + HALF_PIXEL + shimmer, 2, HALF_PIXEL);
+    }
+    for (let x = 70; x < 214; x += 8) {
+      rect(context, '#bc825d', x, 207, 3, HALF_PIXEL);
+      rect(context, '#9c6757', x + 1, 208, HALF_PIXEL, 2);
     }
   }
 
@@ -366,6 +396,15 @@ export class CafeRenderer {
       rect(context, '#e8e9d2', 52, 24, 198, 78);
       context.restore();
     }
+
+    // Dünne Fensterreflexe machen die große Glasfläche weniger flach, ohne das Wetter zu verdecken.
+    context.save();
+    context.globalAlpha = environment?.dayPhase === 'night' ? 0.08 : 0.16;
+    for (const offset of [0, 61, 124]) {
+      polygon(context, '#ffe5ad', [[59 + offset, 27], [69 + offset, 27], [119 + offset, 99], [109 + offset, 99]]);
+      polygon(context, '#fff6d7', [[61 + offset, 28], [64 + offset, 28], [114 + offset, 99], [111 + offset, 99]]);
+    }
+    context.restore();
     context.restore();
 
     rect(context, '#ba7a58', 47, 19, 208, 4);
@@ -478,8 +517,21 @@ export class CafeRenderer {
     rect(context, '#734744', 13, 137, 23, 42);
     rect(context, '#9d6450', 14, 138, 21, 1);
     rect(context, '#59393d', 13, 179, 23, 2);
+    rect(context, '#5f3c40', 16, 142, 16, 32);
+    rect(context, '#7d5048', 17, 143, 14, 1);
+    rect(context, '#9b6250', 18, 170, 12, 1);
+    rect(context, '#3e2e35', 30, 141, 2, 29);
+    rect(context, '#d5a266', 32, 143, 2, 9);
+    rect(context, '#f4d18a', 32 + HALF_PIXEL, 144, HALF_PIXEL, 6);
+    rect(context, '#d3b47a', 31, 152, 4, 2);
+    rect(context, '#7f4b43', 32, 153 + HALF_PIXEL, 3, HALF_PIXEL);
     rect(context, COLORS.cream, 33, 139, 3, 3);
     rect(context, '#fff0bd', 34, 139.5, HALF_PIXEL, HALF_PIXEL);
+
+    polygon(context, '#352b34', [[7, 187], [38, 187], [43, 193], [2, 193]]);
+    rect(context, '#9d6552', 9, 188, 27, 3);
+    rect(context, '#c58a61', 13, 189, 19, HALF_PIXEL);
+    for (let x = 10; x < 36; x += 5) rect(context, '#d5a66b', x, 192, 2, HALF_PIXEL);
 
     rect(context, '#d8b16f', 17, 64, 15, 13);
     rect(context, '#f0d391', 18, 65, 13, 1);
@@ -537,6 +589,12 @@ export class CafeRenderer {
 
     const lampsNeeded = clamp((12 - (this.environment?.solar.elevation ?? -12)) / 24);
     const glowBright = this.reducedMotion || Math.sin(time * 0.68) > -0.25;
+    context.save();
+    context.globalAlpha = 0.05 + lampsNeeded * 0.12;
+    for (const x of [78, 150, 224, 302, 354]) {
+      polygon(context, '#f4bf73', [[x - 16, 28], [x + 16, 28], [x + 35, 116], [x - 35, 116]]);
+    }
+    context.restore();
     for (const x of [78, 150, 224, 302, 354]) {
       rect(context, '#38282e', x, 0, 3, 18);
       rect(context, '#6d4541', x + HALF_PIXEL, 0, HALF_PIXEL, 17);
@@ -553,6 +611,14 @@ export class CafeRenderer {
     rect(context, '#2c252b', 271, 24, 95, 56);
     rect(context, '#423438', 273, 26, 91, 52);
     rect(context, '#5a4140', 275, 28, 87, 1);
+    rect(context, '#714e47', 274, 29, 2, 47);
+    rect(context, '#805649', 361, 29, 2, 47);
+    rect(context, '#d59c63', 276, 30, 4, 2);
+    rect(context, '#d59c63', 357, 30, 4, 2);
+    rect(context, '#a96750', 276, 73, 4, 2);
+    rect(context, '#a96750', 357, 73, 4, 2);
+    rect(context, '#ead195', 282, 31, 15, 1);
+    rect(context, '#a96b54', 299, 31, 23, HALF_PIXEL);
     const menuRows: readonly [number, number, number, string][] = [
       [280, 32, 30, '#e2bf82'], [280, 39, 63, '#c98b65'], [280, 46, 48, '#e2bf82'],
       [280, 53, 57, '#c98b65'], [280, 60, 34, '#e2bf82'], [280, 67, 68, '#c98b65'],
@@ -561,6 +627,10 @@ export class CafeRenderer {
       rect(context, color, x, y, width, 1);
       rect(context, '#8d6151', x + width + 3, y, 4, 1);
       rect(context, color, x + width + 9, y, HALF_PIXEL, 1);
+    }
+    for (const y of [35, 42, 49, 56, 63, 70]) {
+      rect(context, '#6f4c48', 343, y, 9, HALF_PIXEL);
+      rect(context, '#d49b65', 354, y, 3, HALF_PIXEL);
     }
     rect(context, '#aa6b52', 347, 31, 10, 11);
     rect(context, '#e0b477', 349, 33, 6, 5);
@@ -589,6 +659,12 @@ export class CafeRenderer {
     rect(context, '#8d5845', 60, 135, 105, 6);
     rect(context, '#b27154', 62, 136, 101, 1);
     rect(context, '#72443f', 65, 139, 95, 2);
+    for (const x of [74, 100, 126, 148]) {
+      rect(context, '#6f4a48', x, 140, 19, 8);
+      rect(context, '#a66a56', x + 1, 140.5, 17, HALF_PIXEL);
+      rect(context, x % 2 ? '#b36f5b' : '#8f5c55', x + 3, 143, 13, 3);
+      rect(context, '#d79b6b', x + 5, 143.5, 9, HALF_PIXEL);
+    }
     for (const x of [68, 153]) {
       rect(context, '#50353a', x, 141, 4, 29);
       rect(context, '#6e4843', x + HALF_PIXEL, 142, HALF_PIXEL, 26);
@@ -618,6 +694,11 @@ export class CafeRenderer {
       rect(context, '#9a5c47', x + 1, 163, 4, 1);
       rect(context, '#ead7b2', x + 5.5, 164, 2, 2);
       rect(context, '#6a403c', x - 1, 167, 9, 1);
+    }
+    for (const [x, color] of [[75, '#d6b06c'], [151, '#7aa097']] as const) {
+      rect(context, '#5f4544', x, 151, 12, 3);
+      rect(context, color, x + 1, 149, 10, 3);
+      rect(context, '#f0c77d', x + 3, 149.5, 6, HALF_PIXEL);
     }
   }
 
@@ -702,6 +783,21 @@ export class CafeRenderer {
       rect(context, '#74443f', x + 2, 134, 1, 65);
     }
     rect(context, '#c47c55', 288, 132, 87, 2);
+    for (let x = 294; x < 370; x += 19) {
+      rect(context, '#7c4a43', x, 140, 14, 52);
+      rect(context, '#a9674e', x + 1, 141, 12, 1);
+      rect(context, '#b87554', x + 2, 144, HALF_PIXEL, 45);
+      rect(context, '#633c3d', x + 11, 143, 1, 47);
+      rect(context, '#d49a64', x + 4, 166, 6, HALF_PIXEL);
+    }
+    rect(context, '#4c3338', 286, 193, 91, 4);
+    rect(context, '#b97755', 290, 193, 83, HALF_PIXEL);
+    rect(context, '#d1a86a', 298, 200, 67, 1.5);
+    rect(context, '#7a5546', 299, 201.5, 65, HALF_PIXEL);
+    for (const x of [303, 330, 357]) {
+      rect(context, '#c8925e', x, 199, 2, 5);
+      rect(context, '#f0c77b', x + HALF_PIXEL, 199, HALF_PIXEL, 4);
+    }
     rect(context, '#6a403c', 288, 200, 87, 3);
     rect(context, '#4b3036', 278, 204, 106, 7);
     rect(context, '#6b4140', 281, 204, 99, 1);
@@ -1092,6 +1188,11 @@ export class CafeRenderer {
       rect(context, seasonal, x - 2, y - 9 + flicker, 5, 3);
       rect(context, '#f3d893', x - HALF_PIXEL, y - 12 + flicker, 1, 4);
       rect(context, '#fff0bd', x - HALF_PIXEL, y - 12.5 + flicker, 1, 1);
+      rect(context, '#f0dfbd', x + 7, y - 5, 5, 4);
+      rect(context, '#9b6049', x + 8, y - 4.5, 3, HALF_PIXEL);
+      rect(context, '#f0dfbd', x + 11.5, y - 4, 2, 2);
+      rect(context, '#3d3038', x - 13, y - 4, 7, 4);
+      rect(context, x % 2 === 0 ? '#c17157' : '#5f7b77', x - 12, y - 3.5, 5, HALF_PIXEL);
     }
 
     rect(context, '#f0e0bd', 365, 108, 8, 5);
@@ -1099,6 +1200,23 @@ export class CafeRenderer {
     rect(context, '#5f766d', 366, 111, 4, HALF_PIXEL);
     rect(context, '#e2bc72', 353, 36, 2, 2);
     rect(context, '#e2bc72', 351.5, 37, 5, HALF_PIXEL);
+    rect(context, '#513a3d', 275, 106, 11, 9);
+    rect(context, '#d7a566', 276, 105, 9, 3);
+    rect(context, '#f3d28a', 278, 103, 5, 3);
+    rect(context, '#b65e4e', 279, 102, 3, 2);
+    rect(context, '#e8bf72', 282, 102, 2, 2);
+    rect(context, '#f7e6bf', 280, 101, 2, 1);
+    rect(context, '#4e695a', 366, 94, 4, 12);
+    rect(context, '#71916b', 362, 93, 7, 6);
+    rect(context, '#8fa778', 366, 91, 5, 7);
+    rect(context, '#5b785d', 370, 96, 5, 5);
+    rect(context, '#d1a066', 365, 105, 7, 3);
+    rect(context, '#7c5145', 366, 108, 5, HALF_PIXEL);
+    for (const [x, y] of [[48, 197], [239, 202], [249, 193]] as const) {
+      rect(context, '#805345', x, y, 6, 5);
+      rect(context, '#b77a53', x + 1, y - 1, 4, 2);
+      rect(context, '#d6b06b', x + 2, y + 1, 2, 2);
+    }
     for (let index = 0; index < 5; index += 1) {
       const x = 92 + index * 27;
       rect(context, index % 2 ? '#d7ae6b' : '#c58d5b', x, 205.5, 1.5, HALF_PIXEL);
