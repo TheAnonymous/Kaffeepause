@@ -1,16 +1,23 @@
+import type { Point } from '../simulation/types';
+
 export type CameraFocusSource = 'story' | 'accident' | 'reaction' | 'moment' | 'conversation';
 
 export interface CameraFocusCandidate {
   readonly source: CameraFocusSource;
   readonly key: string;
-  readonly worldX: number;
+  readonly target: Readonly<Point>;
+  readonly participantIds: readonly string[];
+  readonly targetHeight: number;
+  readonly fieldOfView: number;
 }
 
 export interface CameraFocusState {
   readonly active: boolean;
   readonly source?: CameraFocusSource;
   readonly key?: string;
-  readonly worldX?: number;
+  readonly target?: Readonly<Point>;
+  readonly participantIds: readonly string[];
+  readonly targetHeight?: number;
   readonly amount: number;
   readonly fieldOfView: number;
 }
@@ -35,12 +42,10 @@ export const CAMERA_FOCUS_ENTER_SECONDS = 0.9;
 export const CAMERA_FOCUS_EXIT_SECONDS = 1.2;
 export const CAMERA_CONVERSATION_COOLDOWN_SECONDS = 18;
 export const CAMERA_OVERVIEW_FOV = 30;
-export const CAMERA_FOCUS_FOV = 24;
+export const CAMERA_SINGLE_FOCUS_FOV = 22;
+export const CAMERA_GROUP_FOCUS_FOV = 24;
 
-interface ActiveFocus {
-  readonly source: CameraFocusSource;
-  readonly key: string;
-  readonly worldX: number;
+interface ActiveFocus extends CameraFocusCandidate {
   readonly startedAt: number;
   readonly exitAt: number;
   readonly endsAt: number;
@@ -55,9 +60,23 @@ export function cameraFocusEase(progress: number): number {
   return value * value * (3 - 2 * value);
 }
 
-export function participantMidpoint(values: readonly number[]): number | undefined {
+export function participantMidpoint(values: readonly Readonly<Point>[]): Point | undefined {
   if (values.length === 0) return undefined;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
+  return {
+    x: values.reduce((sum, value) => sum + value.x, 0) / values.length,
+    y: values.reduce((sum, value) => sum + value.y, 0) / values.length,
+  };
+}
+
+/** Keeps solo scenes intimate while opening wider for larger or more spread-out groups. */
+export function focusFieldOfView(values: readonly Readonly<Point>[]): number {
+  if (values.length <= 1) return CAMERA_SINGLE_FOCUS_FOV;
+  const center = participantMidpoint(values);
+  if (!center) return CAMERA_SINGLE_FOCUS_FOV;
+  const spread = Math.max(...values.map((value) => Math.hypot(value.x - center.x, value.y - center.y)));
+  const groupLift = Math.min(2, (values.length - 1) * 0.6);
+  const spreadLift = Math.min(2, spread / 28);
+  return Math.min(CAMERA_GROUP_FOCUS_FOV, CAMERA_SINGLE_FOCUS_FOV + Math.max(groupLift, spreadLift));
 }
 
 export class CameraFocusDirector {
@@ -72,7 +91,7 @@ export class CameraFocusDirector {
   update(now: number, candidates: readonly CameraFocusCandidate[], reducedMotion = false): CameraFocusState {
     if (reducedMotion) {
       this.reset();
-      return { active: false, amount: 0, fieldOfView: CAMERA_OVERVIEW_FOV };
+      return { active: false, participantIds: [], amount: 0, fieldOfView: CAMERA_OVERVIEW_FOV };
     }
 
     if (this.current && now >= this.current.endsAt) {
@@ -88,7 +107,7 @@ export class CameraFocusDirector {
     if (shouldStart) this.start(next, now);
 
     const current = this.current;
-    if (!current) return { active: false, amount: 0, fieldOfView: CAMERA_OVERVIEW_FOV };
+    if (!current) return { active: false, participantIds: [], amount: 0, fieldOfView: CAMERA_OVERVIEW_FOV };
     const amount = now < current.exitAt
       ? cameraFocusEase((now - current.startedAt) / CAMERA_FOCUS_ENTER_SECONDS)
       : 1 - cameraFocusEase((now - current.exitAt) / CAMERA_FOCUS_EXIT_SECONDS);
@@ -96,9 +115,11 @@ export class CameraFocusDirector {
       active: true,
       source: current.source,
       key: current.key,
-      worldX: current.worldX,
+      target: current.target,
+      participantIds: current.participantIds,
+      targetHeight: current.targetHeight,
       amount,
-      fieldOfView: CAMERA_OVERVIEW_FOV - (CAMERA_OVERVIEW_FOV - CAMERA_FOCUS_FOV) * amount,
+      fieldOfView: CAMERA_OVERVIEW_FOV - (CAMERA_OVERVIEW_FOV - current.fieldOfView) * amount,
     };
   }
 

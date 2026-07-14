@@ -10,13 +10,16 @@ export interface DialogueLine {
   readonly speakerId: string | 'barista';
   readonly emotes: readonly EmoteSymbol[];
   readonly kind: DialogueKind;
-  readonly reveal: number;
+  readonly visibleEmotes: readonly EmoteSymbol[];
+  readonly sequenceIndex: number;
+  readonly staticSequence: boolean;
   readonly opacity: number;
   readonly scale: number;
   readonly bob: number;
 }
 
 const CADENCE = 4.6;
+export const EMOTE_SEQUENCE_INTERVAL_SECONDS = 0.85;
 
 function clamp(value: number, minimum = 0, maximum = 1): number {
   return Math.min(maximum, Math.max(minimum, value));
@@ -28,20 +31,24 @@ function smoothstep(edge0: number, edge1: number, value: number): number {
 }
 
 export function dialogueAnimation(
-  emotes: number | readonly EmoteSymbol[],
+  emotes: readonly EmoteSymbol[],
   elapsed: number,
   reducedMotion = false,
 ): Omit<DialogueLine, 'speakerId' | 'emotes' | 'kind'> {
-  const count = typeof emotes === 'number' ? emotes : emotes.length;
-  if (reducedMotion) return { reveal: count, opacity: 1, scale: 1, bob: 0 };
+  const count = emotes.length;
+  if (reducedMotion) {
+    return { visibleEmotes: emotes, sequenceIndex: 0, staticSequence: true, opacity: 1, scale: 1, bob: 0 };
+  }
   const phase = ((elapsed % CADENCE) + CADENCE) % CADENCE;
   const entering = smoothstep(0.18, 0.46, phase);
   const leaving = 1 - smoothstep(3.65, 4.18, phase);
   const opacity = entering * leaving;
-  const reveal = Math.min(count, Math.max(0, Math.floor((phase - 0.3) * 5.5)));
+  const sequenceIndex = count === 0 ? 0 : Math.floor(phase / EMOTE_SEQUENCE_INTERVAL_SECONDS) % count;
   const overshoot = Math.sin(clamp((phase - 0.14) / 0.58) * Math.PI) * 0.09;
   return {
-    reveal,
+    visibleEmotes: count === 0 ? [] : [emotes[sequenceIndex] as EmoteSymbol],
+    sequenceIndex,
+    staticSequence: false,
     opacity,
     scale: 0.82 + entering * 0.18 + overshoot,
     bob: Math.sin(elapsed * 2.15) * 0.035,
@@ -126,6 +133,5 @@ export function calculateDialogue(
       lines.push(withAnimation(speaker.id, venue, 'conversation', elapsed + 1.17, reducedMotion, speaker.seatId ?? speaker.id, snapshot));
     }
   }
-  return lines.filter((line) => line.opacity > 0.01 && line.reveal > 0);
+  return lines.filter((line) => line.opacity > 0.01 && line.visibleEmotes.length > 0);
 }
-

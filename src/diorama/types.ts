@@ -99,6 +99,22 @@ export interface AnimatedProp {
   readonly axis: 'x' | 'y' | 'z';
 }
 
+export type FocusOccluderKind = 'table' | 'chair' | 'counter' | 'machine';
+
+export interface FocusOccluderMaterialState {
+  readonly material: MeshStandardMaterial;
+  readonly opacity: number;
+  readonly transparent: boolean;
+  readonly depthWrite: boolean;
+}
+
+export interface FocusOccluder {
+  readonly id: string;
+  readonly kind: FocusOccluderKind;
+  readonly object: Object3D;
+  readonly materials: readonly FocusOccluderMaterialState[];
+}
+
 export interface DioramaSet {
   readonly root: Group;
   readonly doorPivot: Group;
@@ -107,6 +123,7 @@ export interface DioramaSet {
   readonly exteriorMaterials: readonly MeshStandardMaterial[];
   readonly lightPools: readonly Mesh<CircleGeometry, MeshBasicMaterial>[];
   readonly animatedProps: readonly AnimatedProp[];
+  readonly focusOccluders: readonly FocusOccluder[];
   readonly theme: DioramaTheme;
   dispose(): void;
 }

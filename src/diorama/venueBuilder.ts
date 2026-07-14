@@ -17,12 +17,22 @@ import {
   type Object3D,
 } from 'three';
 import type { VenueKind } from '../venue';
-import { DIORAMA, DIORAMA_THEMES, type AnimatedProp, type DioramaSet, type DioramaTheme } from './types';
+import {
+  DIORAMA,
+  DIORAMA_THEMES,
+  type AnimatedProp,
+  type DioramaSet,
+  type DioramaTheme,
+  type FocusOccluder,
+  type FocusOccluderKind,
+} from './types';
 
 interface BuildContext {
   readonly geometries: Set<BufferGeometry>;
   readonly materials: Set<Material>;
   readonly theme: DioramaTheme;
+  readonly focusOccluders: FocusOccluder[];
+  focusOccluderSerial: number;
 }
 
 interface ShellParts {
@@ -109,6 +119,30 @@ function glowPanel(
   });
 }
 
+function markFocusOccluder(context: BuildContext, object: Object3D, kind: FocusOccluderKind): void {
+  const occluderMaterials = new Set<MeshStandardMaterial>();
+  object.traverse((entry) => {
+    if (entry instanceof Mesh) {
+      const entries = Array.isArray(entry.material) ? entry.material : [entry.material];
+      for (const entryMaterial of entries) {
+        if (entryMaterial instanceof MeshStandardMaterial) occluderMaterials.add(entryMaterial);
+      }
+    }
+  });
+  context.focusOccluderSerial += 1;
+  context.focusOccluders.push({
+    id: `${kind}-${context.focusOccluderSerial}`,
+    kind,
+    object,
+    materials: [...occluderMaterials].map((entry) => ({
+      material: entry,
+      opacity: entry.opacity,
+      transparent: entry.transparent,
+      depthWrite: entry.depthWrite,
+    })),
+  });
+}
+
 function addPendant(
   context: BuildContext,
   root: Group,
@@ -146,15 +180,20 @@ function addPendant(
 }
 
 function addTable(context: BuildContext, root: Group, x: number, z: number, width = 2.15): void {
-  box(context, root, [width, 0.15, 0.92], [x, 0.84, z], { color: context.theme.woodLight, roughness: 0.72 });
-  box(context, root, [width - 0.12, 0.08, 0.74], [x, 0.94, z], { color: context.theme.wood, roughness: 0.65 });
+  const table = new Group();
+  table.name = 'focus-occluder:table';
+  root.add(table);
+  box(context, table, [width, 0.15, 0.92], [x, 0.84, z], { color: context.theme.woodLight, roughness: 0.72 });
+  box(context, table, [width - 0.12, 0.08, 0.74], [x, 0.94, z], { color: context.theme.wood, roughness: 0.65 });
   for (const legX of [x - width * 0.34, x + width * 0.34]) {
-    box(context, root, [0.16, 0.78, 0.16], [legX, 0.4, z], { color: context.theme.wood });
+    box(context, table, [0.16, 0.78, 0.16], [legX, 0.4, z], { color: context.theme.wood });
   }
+  markFocusOccluder(context, table, 'table');
 }
 
 function addChair(context: BuildContext, root: Group, x: number, z: number, rotation = 0): void {
   const chair = new Group();
+  chair.name = 'focus-occluder:chair';
   chair.position.set(x, 0, z);
   chair.rotation.y = rotation;
   root.add(chair);
@@ -163,6 +202,7 @@ function addChair(context: BuildContext, root: Group, x: number, z: number, rota
   for (const dx of [-0.27, 0.27]) {
     for (const dz of [-0.23, 0.23]) box(context, chair, [0.09, 0.5, 0.09], [dx, 0.25, dz], { color: context.theme.ink });
   }
+  markFocusOccluder(context, chair, 'chair');
 }
 
 function addPlant(context: BuildContext, root: Group, x: number, y: number, z: number): void {
@@ -247,13 +287,21 @@ function buildCafe(context: BuildContext, root: Group, animated: AnimatedProp[])
   addTable(context, root, -3.55, 1.55, 2.25);
   addTable(context, root, -0.5, 1.55, 2.25);
   for (const x of [-4.15, -2.95, -1.1, 0.1]) addChair(context, root, x, 2.38, Math.PI);
-  box(context, root, [4.9, 1.18, 1.35], [5.35, 0.6, -1.5], { color: context.theme.wood });
-  box(context, root, [5.15, 0.16, 1.55], [5.25, 1.28, -1.5], { color: context.theme.woodLight });
-  for (const x of [3.55, 4.65, 5.75, 6.85]) box(context, root, [0.72, 0.76, 0.08], [x, 0.67, -0.79], { color: context.theme.wallDark });
+  const counter = new Group();
+  counter.name = 'focus-occluder:counter';
+  root.add(counter);
+  box(context, counter, [4.9, 1.18, 1.35], [5.35, 0.6, -1.5], { color: context.theme.wood });
+  box(context, counter, [5.15, 0.16, 1.55], [5.25, 1.28, -1.5], { color: context.theme.woodLight });
+  for (const x of [3.55, 4.65, 5.75, 6.85]) box(context, counter, [0.72, 0.76, 0.08], [x, 0.67, -0.79], { color: context.theme.wallDark });
+  markFocusOccluder(context, counter, 'counter');
   // Espresso machine and cake case.
-  box(context, root, [1.1, 1.05, 0.68], [5.9, 1.88, -1.58], { color: context.theme.metal, metalness: 0.72, roughness: 0.27 });
-  glowPanel(context, root, [0.3, 0.18, 0.04], [6.14, 2.04, -1.22], '#e6b86c');
-  cylinder(context, root, 0.12, 0.72, [5.55, 1.75, -1.12], context.theme.ink, 10).rotation.z = Math.PI / 2;
+  const machine = new Group();
+  machine.name = 'focus-occluder:machine';
+  root.add(machine);
+  box(context, machine, [1.1, 1.05, 0.68], [5.9, 1.88, -1.58], { color: context.theme.metal, metalness: 0.72, roughness: 0.27 });
+  glowPanel(context, machine, [0.3, 0.18, 0.04], [6.14, 2.04, -1.22], '#e6b86c');
+  cylinder(context, machine, 0.12, 0.72, [5.55, 1.75, -1.12], context.theme.ink, 10).rotation.z = Math.PI / 2;
+  markFocusOccluder(context, machine, 'machine');
   box(context, root, [1.25, 0.65, 0.68], [3.7, 1.67, -1.55], { color: '#d9b68a', roughness: 0.4 });
   for (const x of [3.32, 3.7, 4.08]) cylinder(context, root, 0.16, 0.16, [x, 2.07, -1.35], '#d88a5d', 12);
   box(context, root, [3.8, 0.12, 0.55], [-2.65, 1.18, -2.72], { color: context.theme.woodLight });
@@ -268,8 +316,12 @@ function buildRamen(context: BuildContext, root: Group, animated: AnimatedProp[]
   addTable(context, root, -3.55, 1.55, 2.25);
   addTable(context, root, -0.5, 1.55, 2.25);
   for (const x of [-4.15, -2.95, -1.1, 0.1]) addChair(context, root, x, 2.38, Math.PI);
-  box(context, root, [5.3, 1.15, 1.5], [5.15, 0.58, -1.45], { color: context.theme.wood });
-  box(context, root, [5.55, 0.18, 1.68], [5.05, 1.26, -1.45], { color: context.theme.woodLight });
+  const counter = new Group();
+  counter.name = 'focus-occluder:counter';
+  root.add(counter);
+  box(context, counter, [5.3, 1.15, 1.5], [5.15, 0.58, -1.45], { color: context.theme.wood });
+  box(context, counter, [5.55, 0.18, 1.68], [5.05, 1.26, -1.45], { color: context.theme.woodLight });
+  markFocusOccluder(context, counter, 'counter');
   // Open kitchen pass with noren strips.
   box(context, root, [5.35, 0.2, 0.25], [5.05, 4.35, -3.18], { color: context.theme.woodLight });
   for (const x of [3.2, 4.15, 5.1, 6.05, 7]) {
@@ -292,6 +344,7 @@ function buildRamen(context: BuildContext, root: Group, animated: AnimatedProp[]
 
 function arcadeCabinet(context: BuildContext, root: Group, x: number, z: number, color: ColorRepresentation): void {
   const cabinet = new Group();
+  cabinet.name = 'focus-occluder:machine';
   cabinet.position.set(x, 0, z);
   root.add(cabinet);
   box(context, cabinet, [1.15, 2.75, 0.86], [0, 1.38, 0], { color: context.theme.wood, metalness: 0.18 });
@@ -299,6 +352,7 @@ function arcadeCabinet(context: BuildContext, root: Group, x: number, z: number,
   glowPanel(context, cabinet, [0.82, 0.62, 0.05], [0, 2.47, 0.54], color);
   glowPanel(context, cabinet, [0.88, 0.11, 0.05], [0, 1.72, 0.55], color);
   cylinder(context, cabinet, 0.08, 0.2, [-0.25, 1.6, 0.63], color, 8);
+  markFocusOccluder(context, cabinet, 'machine');
 }
 
 function buildArcade(context: BuildContext, root: Group, animated: AnimatedProp[]): void {
@@ -306,8 +360,12 @@ function buildArcade(context: BuildContext, root: Group, animated: AnimatedProp[
   addTable(context, root, -0.5, 1.55, 2.25);
   for (const x of [-4.15, -2.95, -1.1, 0.1]) addChair(context, root, x, 2.38, Math.PI);
   for (const [index, x] of [-5.15, -3.65, -2.15].entries()) arcadeCabinet(context, root, x, -1.55, index % 2 ? context.theme.accent : context.theme.neon);
-  box(context, root, [5.25, 1.12, 1.45], [5.2, 0.56, -1.45], { color: context.theme.wood });
-  box(context, root, [5.5, 0.16, 1.58], [5.1, 1.22, -1.45], { color: context.theme.metal, metalness: 0.38 });
+  const counter = new Group();
+  counter.name = 'focus-occluder:counter';
+  root.add(counter);
+  box(context, counter, [5.25, 1.12, 1.45], [5.2, 0.56, -1.45], { color: context.theme.wood });
+  box(context, counter, [5.5, 0.16, 1.58], [5.1, 1.22, -1.45], { color: context.theme.metal, metalness: 0.38 });
+  markFocusOccluder(context, counter, 'counter');
   for (const x of [3.5, 5.05, 6.6]) glowPanel(context, root, [1.05, 0.55, 0.06], [x, 2.02, -1.12], x === 5.05 ? context.theme.accent : context.theme.neon);
   glowPanel(context, root, [6.2, 0.08, 0.08], [4.7, 5.45, -3.08], context.theme.neon);
   glowPanel(context, root, [4.7, 0.08, 0.08], [5.25, 4.65, -3.08], context.theme.accent);
@@ -321,7 +379,8 @@ export function buildVenue(venue: VenueKind): DioramaSet {
   const geometries = new Set<BufferGeometry>();
   const materials = new Set<Material>();
   const theme = DIORAMA_THEMES[venue];
-  const context: BuildContext = { geometries, materials, theme };
+  const focusOccluders: FocusOccluder[] = [];
+  const context: BuildContext = { geometries, materials, theme, focusOccluders, focusOccluderSerial: 0 };
   const animatedProps: AnimatedProp[] = [];
   const shell = buildShell(context, root);
 
@@ -343,6 +402,7 @@ export function buildVenue(venue: VenueKind): DioramaSet {
     exteriorMaterials: shell.exteriorMaterials,
     lightPools: pendants.map((pendant) => pendant.pool),
     animatedProps,
+    focusOccluders,
     theme,
     dispose(): void {
       for (const geometry of geometries) geometry.dispose();

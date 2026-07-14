@@ -11,8 +11,16 @@ import type { VenueKind } from '../venue';
 import type { DialogueLine } from './dialogue';
 import type { EmoteSymbol } from './emotes';
 
-const WIDTH = 256;
-const HEIGHT = 112;
+const WIDTH = 128;
+const HEIGHT = 96;
+export const SPEECH_BUBBLE_WORLD_WIDTH = 1.24;
+export const SPEECH_BUBBLE_WORLD_HEIGHT = 0.93;
+
+export interface SpeechBubblePlacement {
+  readonly visible: boolean;
+  readonly offsetX: number;
+  readonly offsetY: number;
+}
 
 const PALETTES: Readonly<Record<VenueKind, { paper: string; light: string; ink: string; border: string; accent: string }>> = {
   cafe: { paper: '#f2dfb6', light: '#fff2cd', ink: '#3a2830', border: '#71483e', accent: '#c47a55' },
@@ -90,61 +98,57 @@ function drawPixelBubble(
   tailLeft: boolean,
 ): void {
   const palette = PALETTES[venue];
-  const shown = line.emotes.slice(0, line.reveal);
+  const shown = line.visibleEmotes;
   context.clearRect(0, 0, WIDTH, HEIGHT);
   context.imageSmoothingEnabled = false;
 
   // Pixel-stepped shadow and frame; intentionally no smooth browser bubble.
   context.fillStyle = 'rgba(20, 14, 24, 0.38)';
-  context.fillRect(18, 14, 226, 76);
-  context.fillRect(26, 90, 38, 8);
+  context.fillRect(9, 11, 113, 63);
+  context.fillRect(tailLeft ? 14 : 96, 74, 19, 7);
   context.fillStyle = palette.border;
-  context.fillRect(10, 6, 226, 76);
-  context.fillRect(18, 2, 210, 84);
+  context.fillRect(5, 5, 113, 63);
+  context.fillRect(9, 2, 105, 69);
   context.fillStyle = palette.paper;
-  context.fillRect(14, 10, 218, 68);
-  context.fillRect(22, 6, 202, 76);
+  context.fillRect(8, 8, 107, 57);
+  context.fillRect(12, 5, 99, 63);
   context.fillStyle = palette.light;
-  context.fillRect(22, 10, 194, 5);
+  context.fillRect(12, 8, 97, 4);
   context.fillStyle = palette.accent;
-  context.fillRect(20, 71, line.kind === 'moment' ? 48 : line.kind === 'order' ? 32 : 22, 3);
+  context.fillRect(10, 61, line.kind === 'moment' ? 24 : line.kind === 'order' ? 16 : 11, 3);
 
   context.beginPath();
   if (tailLeft) {
-    context.moveTo(40, 78);
-    context.lineTo(67, 78);
-    context.lineTo(34, 104);
-    context.lineTo(42, 84);
+    context.moveTo(20, 65);
+    context.lineTo(34, 65);
+    context.lineTo(17, 88);
+    context.lineTo(22, 70);
   } else {
-    context.moveTo(188, 78);
-    context.lineTo(215, 78);
-    context.lineTo(222, 104);
-    context.lineTo(207, 84);
+    context.moveTo(94, 65);
+    context.lineTo(108, 65);
+    context.lineTo(113, 88);
+    context.lineTo(104, 70);
   }
   context.closePath();
   context.fillStyle = palette.border;
   context.fill();
   context.beginPath();
   if (tailLeft) {
-    context.moveTo(45, 78);
-    context.lineTo(61, 78);
-    context.lineTo(39, 96);
+    context.moveTo(23, 65);
+    context.lineTo(31, 65);
+    context.lineTo(20, 82);
   } else {
-    context.moveTo(194, 78);
-    context.lineTo(210, 78);
-    context.lineTo(217, 96);
+    context.moveTo(97, 65);
+    context.lineTo(105, 65);
+    context.lineTo(110, 82);
   }
   context.closePath();
   context.fillStyle = palette.paper;
   context.fill();
 
-  const spacing = shown.length === 1 ? 0 : shown.length === 2 ? 60 : 52;
-  const startX = shown.length === 1 ? 103 : shown.length === 2 ? 72 : 50;
-  shown.forEach((emote, index) => drawEmoteIcon(context, emote, startX + index * spacing, 25, palette.ink, palette.accent));
-  if (line.reveal < line.emotes.length) {
-    const pulse = Math.floor(line.reveal / 2) % 3;
-    for (let index = 0; index <= pulse; index += 1) context.fillRect(184 + index * 8, 61, 4, 4);
-  }
+  const spacing = shown.length <= 1 ? 0 : shown.length === 2 ? 39 : 38;
+  const startX = shown.length <= 1 ? 45 : shown.length === 2 ? 25 : 7;
+  shown.slice(0, 3).forEach((emote, index) => drawEmoteIcon(context, emote, startX + index * spacing, 18, palette.ink, palette.accent));
 }
 
 export class SpeechBubble {
@@ -168,7 +172,7 @@ export class SpeechBubble {
     this.texture.wrapS = ClampToEdgeWrapping;
     this.texture.wrapT = ClampToEdgeWrapping;
     this.texture.generateMipmaps = false;
-    const geometry = new PlaneGeometry(2.42, 1.06);
+    const geometry = new PlaneGeometry(SPEECH_BUBBLE_WORLD_WIDTH, SPEECH_BUBBLE_WORLD_HEIGHT);
     const material = new MeshBasicMaterial({
       map: this.texture,
       transparent: true,
@@ -184,13 +188,19 @@ export class SpeechBubble {
     this.mesh.visible = false;
   }
 
-  update(line: DialogueLine | undefined, venue: VenueKind, tailLeft: boolean, characterHeight: number): void {
-    if (!line) {
+  update(
+    line: DialogueLine | undefined,
+    venue: VenueKind,
+    tailLeft: boolean,
+    characterHeight: number,
+    placement?: Readonly<SpeechBubblePlacement>,
+  ): void {
+    if (!line || placement?.visible === false) {
       this.mesh.visible = false;
       this.mesh.material.opacity = 0;
       return;
     }
-    const signature = `${venue}:${tailLeft}:${line.kind}:${line.emotes.join(',')}:${line.reveal}`;
+    const signature = `${venue}:${tailLeft}:${line.kind}:${line.visibleEmotes.join(',')}:${line.staticSequence}`;
     if (signature !== this.lastSignature) {
       drawPixelBubble(this.context, line, venue, tailLeft);
       this.texture.needsUpdate = true;
@@ -199,7 +209,11 @@ export class SpeechBubble {
     this.mesh.visible = true;
     this.mesh.material.opacity = line.opacity;
     this.mesh.scale.setScalar(line.scale);
-    this.mesh.position.set(tailLeft ? 0.62 : -0.62, characterHeight + 0.62 + line.bob, 0.03);
+    this.mesh.position.set(
+      (tailLeft ? 0.35 : -0.35) + (placement?.offsetX ?? 0),
+      characterHeight + 0.48 + line.bob + (placement?.offsetY ?? 0),
+      0.03,
+    );
   }
 
   dispose(): void {

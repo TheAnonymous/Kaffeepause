@@ -13,7 +13,7 @@ Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen
 - echte 2304 × 1296-HD-Masterfläche (6×) mit 144 × 208 Pixel großen Original-Figurentexturen
 - perspektivische 2,5D-Kamera, physische Raumkörper, Möbel, Fenster, Tür, Bodenkontakt und echte Tiefenverdeckung
 - hochauflösende Gesichter, Haare, Stoffnähte, Hände, Schuhe, Accessoires und tätigkeitsgebundene Requisiten
-- animierte Pixel-Sprechblasen mit 15 gezeichneten Symbol-Emotes, semantischen Gesprächsfolgen und Reveal-Effekt
+- kompakte Pixel-Sprechblasen mit 15 gezeichneten Symbol-Emotes, semantischen 0,85-Sekunden-Folgen und statischer Reduced-Motion-Ansicht
 - separate HD-2D-Kompositionskette für Bloom, Farblicht, Miniatur-Fokus und Vignette
 - zwölf deterministische Figuren-Silhouetten mit fünf Körperformen, vier Gesichtsformen, acht Frisuren, sechs Outfit-Schnitten, unterschiedlichen Größen, Hauttönen und persönlichen Details
 - bis zu acht Gäste mit lesbaren Tätigkeiten, Wetteraccessoires und einer detaillierten animierten Bedienung
@@ -23,7 +23,7 @@ Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen
 - sanfte, deterministische Café-Momente mit eigenen Bild- und Klangdetails, die nicht mit Unfällen kollidieren
 - zwölf venuegebundene Stammgäste und sieben seltene, zusammenhängende Mini-Geschichten
 - vier lesbare Animationsposen für Gehen, Warten, Bestellen, neun Gasttätigkeiten und sieben Barista-Aufgaben
-- sanfter Ereignisfokus mit priorisierter Kameraregie; Reduced Motion hält die Übersicht vollständig statisch
+- sanfter räumlicher Ereignisfokus mit priorisierter Kameraregie, gezielt abblendenden Sichtblockern und statischer Reduced-Motion-Übersicht
 - rein dekorative Mausnähe-Reaktionen mit Blickkontakt, Geste, Emote und sehr leisem venueabhängigem Akzent
 - funktionierende Pixel-Wanduhr sowie lokaler Sonnenstand mit Dämmerung und Polarzuständen
 - klare, bewölkte, neblige, regnerische, verschneite und stürmische Außenwelten

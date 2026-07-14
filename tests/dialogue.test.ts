@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { calculateDialogue, dialogueAnimation } from '../src/diorama/dialogue';
+import {
+  EMOTE_SEQUENCE_INTERVAL_SECONDS,
+  calculateDialogue,
+  dialogueAnimation,
+} from '../src/diorama/dialogue';
+import { resolveBubblePlacements } from '../src/diorama/bubbleLayout';
 import { emotesForDialogue } from '../src/diorama/emotes';
 import type { SceneSnapshot } from '../src/scene/types';
 import type { Guest } from '../src/simulation/types';
@@ -34,12 +39,31 @@ describe('symbolische Emote-Sprache', () => {
     expect(emotesForDialogue('order', 'arcade', 'guest-1')).toEqual(['order', 'game', 'spark']);
   });
 
-  it('enthüllt Symbole nacheinander und respektiert Reduced Motion', () => {
+  it('zeigt alle 0,85 Sekunden genau ein Symbol und respektiert Reduced Motion', () => {
     const emotes = ['conversation', 'heart', 'spark'] as const;
-    expect(dialogueAnimation(emotes, 0.2).reveal).toBe(0);
-    expect(dialogueAnimation(emotes, 1.1).reveal).toBeGreaterThan(0);
-    expect(dialogueAnimation(emotes, 1.1).reveal).toBeLessThanOrEqual(emotes.length);
-    expect(dialogueAnimation(emotes, 1.1, true)).toMatchObject({ reveal: emotes.length, opacity: 1, scale: 1, bob: 0 });
+    expect(EMOTE_SEQUENCE_INTERVAL_SECONDS).toBe(0.85);
+    expect(dialogueAnimation(emotes, 0.4)).toMatchObject({ visibleEmotes: ['conversation'], sequenceIndex: 0 });
+    expect(dialogueAnimation(emotes, 0.9)).toMatchObject({ visibleEmotes: ['heart'], sequenceIndex: 1 });
+    expect(dialogueAnimation(emotes, 1.75)).toMatchObject({ visibleEmotes: ['spark'], sequenceIndex: 2 });
+    expect(dialogueAnimation(emotes, 1.1, true)).toMatchObject({
+      visibleEmotes: emotes, sequenceIndex: 0, staticSequence: true, opacity: 1, scale: 1, bob: 0,
+    });
+  });
+
+  it('versetzt kollidierende Blasen und blendet bei Restkollision die niedrigere Priorität aus', () => {
+    const separated = resolveBubblePlacements([
+      { speakerId: 'reaction', kind: 'reaction', x: 100, y: 100, width: 80, height: 50 },
+      { speakerId: 'moment', kind: 'moment', x: 155, y: 100, width: 80, height: 50 },
+    ]);
+    expect(separated[0]).toMatchObject({ visible: true, offsetX: -17.6 });
+    expect(separated[1]).toMatchObject({ visible: true, offsetX: 17.6 });
+
+    const unresolved = resolveBubblePlacements([
+      { speakerId: 'conversation', kind: 'conversation', x: 100, y: 100, width: 80, height: 50 },
+      { speakerId: 'reaction', kind: 'reaction', x: 100, y: 100, width: 80, height: 50 },
+    ]);
+    expect(unresolved.find((entry) => entry.speakerId === 'conversation')?.visible).toBe(false);
+    expect(unresolved.find((entry) => entry.speakerId === 'reaction')?.visible).toBe(true);
   });
 
   it('ordnet allen drei Schritten einer neuen Geschichte feste Emotes zu', () => {
