@@ -1002,54 +1002,54 @@ export class CafeRenderer {
 
   private drawRamenCounterBack(time: number): void {
     const context = this.context;
-    rect(context, '#362333', 282, 88, 98, 30);
-    rect(context, '#5a3540', 284, 91, 94, 24);
+    rect(context, '#362333', 282, 100, 98, 30);
+    rect(context, '#5a3540', 284, 103, 94, 24);
     for (const x of [288, 311, 334, 357]) {
-      rect(context, '#2a2832', x, 95, 17, 15);
-      rect(context, '#89958d', x + 2, 97, 13, 11);
-      rect(context, '#e8c57d', x + 5, 99, 7, 2);
-      rect(context, '#c15249', x + 6, 102, 5, 4);
+      rect(context, '#2a2832', x, 107, 17, 15);
+      rect(context, '#89958d', x + 2, 109, 13, 11);
+      rect(context, '#e8c57d', x + 5, 111, 7, 2);
+      rect(context, '#c15249', x + 6, 114, 5, 4);
     }
-    rect(context, '#25222d', 325, 88, 34, 28);
-    rect(context, '#5f3a44', 327, 90, 30, 25);
-    rect(context, '#a84b46', 329, 92, 26, 2);
+    rect(context, '#25222d', 325, 100, 34, 28);
+    rect(context, '#5f3a44', 327, 102, 30, 25);
+    rect(context, '#a84b46', 329, 104, 26, 2);
     for (let index = 0; index < 4; index += 1) {
-      rect(context, '#dca45f', 331 + index * 5, 97, 3, 12);
-      rect(context, '#f6d78f', 332 + index * 5, 98, HALF_PIXEL, HALF_PIXEL);
+      rect(context, '#dca45f', 331 + index * 5, 109, 3, 12);
+      rect(context, '#f6d78f', 332 + index * 5, 110, HALF_PIXEL, HALF_PIXEL);
     }
     const steamCount = this.reducedMotion ? 2 : 5;
     for (let index = 0; index < steamCount; index += 1) {
       const rise = (time * (4 + index * 0.25) + index * 4) % 18;
-      rect(context, index % 2 ? '#dfcfb8' : '#f3dfbf', 339 + (index % 3) * 3, 111 - rise, HALF_PIXEL, 3);
+      rect(context, index % 2 ? '#dfcfb8' : '#f3dfbf', 339 + (index % 3) * 3, 123 - rise, HALF_PIXEL, 3);
     }
-    rect(context, '#211b29', 278, 118, 103, 8);
-    rect(context, '#a84945', 278, 116, 104, 5);
-    rect(context, '#f0b666', 280, 116.5, 100, HALF_PIXEL);
+    rect(context, '#211b29', 278, 130, 103, 8);
+    rect(context, '#a84945', 278, 128, 104, 5);
+    rect(context, '#f0b666', 280, 128.5, 100, HALF_PIXEL);
   }
 
   private drawArcadeCounterBack(time: number): void {
     const context = this.context;
     const flicker = this.reducedMotion ? 0 : Math.sin(time * 3) * HALF_PIXEL;
-    rect(context, '#111827', 282, 88, 98, 30);
-    rect(context, '#253a59', 284, 91, 94, 24);
+    rect(context, '#111827', 282, 100, 98, 30);
+    rect(context, '#253a59', 284, 103, 94, 24);
     for (const [x, color] of [[288, '#60cbd0'], [310, '#c35ba5'], [332, '#60cbd0'], [354, '#c35ba5']] as const) {
-      rect(context, '#0c1320', x, 95, 17, 17);
-      rect(context, color, x + 2, 97 + flicker, 13, 8);
-      rect(context, '#f2dd8e', x + 4, 99 + flicker, 9, HALF_PIXEL);
-      rect(context, '#374f6a', x + 3, 107, 11, 3);
+      rect(context, '#0c1320', x, 107, 17, 17);
+      rect(context, color, x + 2, 109 + flicker, 13, 8);
+      rect(context, '#f2dd8e', x + 4, 111 + flicker, 9, HALF_PIXEL);
+      rect(context, '#374f6a', x + 3, 119, 11, 3);
     }
-    rect(context, '#0e1525', 325, 88, 34, 28);
-    rect(context, '#29435f', 327, 90, 30, 25);
-    rect(context, '#50cbd0', 329, 92, 26, 2);
-    rect(context, '#172539', 331, 96, 22, 14);
-    rect(context, '#87578e', 333, 98, 18, 10);
-    rect(context, '#d25ca6', 335, 100, 14, 6);
-    rect(context, '#f2d987', 338, 102, 8, HALF_PIXEL);
-    rect(context, '#132034', 336, 109, 4, 5);
-    rect(context, '#132034', 347, 109, 4, 5);
-    rect(context, '#101725', 278, 118, 103, 8);
-    rect(context, '#31526d', 278, 116, 104, 5);
-    rect(context, '#5ccbd0', 280, 116.5, 100, HALF_PIXEL);
+    rect(context, '#0e1525', 325, 100, 34, 28);
+    rect(context, '#29435f', 327, 102, 30, 25);
+    rect(context, '#50cbd0', 329, 104, 26, 2);
+    rect(context, '#172539', 331, 108, 22, 14);
+    rect(context, '#87578e', 333, 110, 18, 10);
+    rect(context, '#d25ca6', 335, 112, 14, 6);
+    rect(context, '#f2d987', 338, 114, 8, HALF_PIXEL);
+    rect(context, '#132034', 336, 121, 4, 5);
+    rect(context, '#132034', 347, 121, 4, 5);
+    rect(context, '#101725', 278, 130, 103, 8);
+    rect(context, '#31526d', 278, 128, 104, 5);
+    rect(context, '#5ccbd0', 280, 128.5, 100, HALF_PIXEL);
   }
 
   private drawVenueCounterFront(): void {
@@ -1060,38 +1060,38 @@ export class CafeRenderer {
 
   private drawRamenCounterFront(): void {
     const context = this.context;
-    rect(context, '#d26852', 276, 116, 107, 7);
-    rect(context, '#f0ba68', 278, 116, 103, 1);
-    rect(context, '#57313c', 278, 122, 104, 5);
-    rect(context, '#4c2c39', 282, 126, 99, 81);
+    rect(context, '#d26852', 276, 128, 107, 6);
+    rect(context, '#f0ba68', 278, 128, 103, 1);
+    rect(context, '#57313c', 278, 134, 104, 4);
+    rect(context, '#4c2c39', 282, 138, 99, 64);
     for (const x of [290, 315, 340, 365]) {
-      rect(context, '#7f3e43', x, 132, 18, 66);
-      rect(context, '#b84d48', x + 1, 133, 16, 3);
-      rect(context, '#e7ac61', x + 4, 151, 10, HALF_PIXEL);
-      rect(context, '#5c3240', x + 7, 138, 3, 48);
+      rect(context, '#7f3e43', x, 142, 18, 56);
+      rect(context, '#b84d48', x + 1, 143, 16, 3);
+      rect(context, '#e7ac61', x + 4, 158, 10, HALF_PIXEL);
+      rect(context, '#5c3240', x + 7, 148, 3, 40);
     }
-    rect(context, '#281d2b', 286, 194, 91, 4);
-    rect(context, '#c9574c', 290, 194, 83, HALF_PIXEL);
-    rect(context, '#6c3b42', 288, 200, 87, 3);
-    rect(context, '#271c29', 276, 210, 108, 3);
+    rect(context, '#281d2b', 286, 196, 91, 4);
+    rect(context, '#c9574c', 290, 196, 83, HALF_PIXEL);
+    rect(context, '#6c3b42', 288, 202, 87, 3);
+    rect(context, '#271c29', 276, 211, 108, 2);
   }
 
   private drawArcadeCounterFront(): void {
     const context = this.context;
-    rect(context, '#4f91a3', 276, 116, 107, 7);
-    rect(context, '#92e1d5', 278, 116, 103, 1);
-    rect(context, '#17263a', 278, 122, 104, 5);
-    rect(context, '#18253a', 282, 126, 99, 81);
+    rect(context, '#4f91a3', 276, 128, 107, 6);
+    rect(context, '#92e1d5', 278, 128, 103, 1);
+    rect(context, '#17263a', 278, 134, 104, 4);
+    rect(context, '#18253a', 282, 138, 99, 64);
     for (const [x, color] of [[290, '#c259a2'], [315, '#5ecbd0'], [340, '#c259a2'], [365, '#5ecbd0']] as const) {
-      rect(context, '#263d5a', x, 132, 18, 66);
-      rect(context, color, x + 1, 133, 16, 2);
-      rect(context, '#101927', x + 4, 141, 10, 39);
-      rect(context, color, x + 6, 164, 6, HALF_PIXEL);
+      rect(context, '#263d5a', x, 142, 18, 56);
+      rect(context, color, x + 1, 143, 16, 2);
+      rect(context, '#101927', x + 4, 150, 10, 34);
+      rect(context, color, x + 6, 168, 6, HALF_PIXEL);
     }
-    rect(context, '#101825', 286, 194, 91, 4);
-    rect(context, '#4d7591', 290, 194, 83, HALF_PIXEL);
-    rect(context, '#273e58', 288, 200, 87, 3);
-    rect(context, '#0d1421', 276, 210, 108, 3);
+    rect(context, '#101825', 286, 196, 91, 4);
+    rect(context, '#4d7591', 290, 196, 83, HALF_PIXEL);
+    rect(context, '#273e58', 288, 202, 87, 3);
+    rect(context, '#0d1421', 276, 211, 108, 2);
   }
 
   private drawFurnitureBack(): void {
@@ -1147,104 +1147,104 @@ export class CafeRenderer {
   private drawCounterBack(time: number): void {
     const context = this.context;
 
-    rect(context, '#4d3338', 282, 89, 32, 27);
-    rect(context, '#6f4942', 284, 92, 28, 23);
-    rect(context, '#d09a67', 286, 95, 24, 17);
-    rect(context, '#56383a', 288, 98, 20, 11);
-    rect(context, '#f1ce87', 290, 100, 16, 1);
+    rect(context, '#4d3338', 282, 101, 32, 27);
+    rect(context, '#6f4942', 284, 104, 28, 23);
+    rect(context, '#d09a67', 286, 107, 24, 17);
+    rect(context, '#56383a', 288, 110, 20, 11);
+    rect(context, '#f1ce87', 290, 112, 16, 1);
     const phase = this.environment?.dayPhase ?? 'night';
     const displayItems = phase === 'midday'
-      ? [[290, 103, '#c7794e'], [294, 105, '#dca45e'], [298, 102, '#b9654a'], [302, 104, '#e0b66f'], [305, 102, '#d98957'], [307, 105, '#c7794e']] as const
+      ? [[290, 115, '#c7794e'], [294, 117, '#dca45e'], [298, 114, '#b9654a'], [302, 116, '#e0b66f'], [305, 114, '#d98957'], [307, 117, '#c7794e']] as const
       : phase === 'morning' || phase === 'dawn'
-        ? [[291, 103, '#dca45e'], [296, 104, '#dca45e'], [301, 103, '#e0b66f'], [305, 105, '#c7794e']] as const
+        ? [[291, 115, '#dca45e'], [296, 116, '#dca45e'], [301, 115, '#e0b66f'], [305, 117, '#c7794e']] as const
         : phase === 'afternoon'
-          ? [[291, 103, '#a85e58'], [296, 104, '#d88d72'], [301, 102, '#8c5350'], [304, 105, '#e0b66f']] as const
-          : [[294, 104, '#b9654a'], [302, 104, '#dca45e']] as const;
+          ? [[291, 115, '#a85e58'], [296, 116, '#d88d72'], [301, 114, '#8c5350'], [304, 117, '#e0b66f']] as const
+      : [[294, 116, '#b9654a'], [302, 116, '#dca45e']] as const;
     for (const [x, y, color] of displayItems) {
       rect(context, '#3c2d32', x - 1, y + 2, 5, 1);
       rect(context, color, x, y, 3.5, 2.5);
       rect(context, '#f1cf8a', x + HALF_PIXEL, y, 2, HALF_PIXEL);
     }
-    rect(context, '#b77a55', 285, 112, 26, 3);
+    rect(context, '#b77a55', 285, 124, 26, 3);
     if (phase === 'night' || phase === 'evening') {
-      rect(context, '#76a398', 286, 111, 9, 2);
-      rect(context, '#d7caa8', 307, 108, 3, 7);
-      rect(context, '#6d5b55', 308, 106, 1, 3);
+      rect(context, '#76a398', 286, 123, 9, 2);
+      rect(context, '#d7caa8', 307, 120, 3, 7);
+      rect(context, '#6d5b55', 308, 118, 1, 3);
     }
 
     // Die Espressomaschine ist nun klar ein Arbeitsgerät auf der Theke statt ein mannshoher Block.
-    rect(context, '#332c34', 325, 88, 34, 28);
-    rect(context, '#4c4650', 327, 90, 30, 25);
-    rect(context, '#858088', 329, 92, 26, 21);
-    rect(context, '#aaa1a0', 331, 94, 22, 1.5);
-    rect(context, '#302b32', 332, 96, 20, 9);
-    rect(context, '#181920', 334, 98, 16, 5);
-    rect(context, '#d7a55f', 336, 99, 3, 1.5);
-    rect(context, '#e5bd72', 341, 99, HALF_PIXEL, 1.5);
-    rect(context, '#8f3739', 346, 99, 3, 1.5);
-    rect(context, '#b8544e', 350, 99, HALF_PIXEL, 1.5);
-    rect(context, '#1f1e25', 333, 106, 6, 7);
-    rect(context, '#1f1e25', 348, 106, 6, 7);
-    rect(context, '#625b60', 335, 107, 2, 6);
-    rect(context, '#625b60', 350, 107, 2, 6);
-    rect(context, '#c9b6a0', 337, 111, 13, 3);
-    rect(context, '#f4e5ca', 339, 109, 9, 3);
-    rect(context, '#ffffff', 341, 109.5, 5, HALF_PIXEL);
-    rect(context, '#3a3034', 341, 105, 4, 1.5);
-    rect(context, '#b8aba2', 344, 105.5, 5, HALF_PIXEL);
+    rect(context, '#332c34', 325, 100, 34, 28);
+    rect(context, '#4c4650', 327, 102, 30, 25);
+    rect(context, '#858088', 329, 104, 26, 21);
+    rect(context, '#aaa1a0', 331, 106, 22, 1.5);
+    rect(context, '#302b32', 332, 108, 20, 9);
+    rect(context, '#181920', 334, 110, 16, 5);
+    rect(context, '#d7a55f', 336, 111, 3, 1.5);
+    rect(context, '#e5bd72', 341, 111, HALF_PIXEL, 1.5);
+    rect(context, '#8f3739', 346, 111, 3, 1.5);
+    rect(context, '#b8544e', 350, 111, HALF_PIXEL, 1.5);
+    rect(context, '#1f1e25', 333, 118, 6, 7);
+    rect(context, '#1f1e25', 348, 118, 6, 7);
+    rect(context, '#625b60', 335, 119, 2, 6);
+    rect(context, '#625b60', 350, 119, 2, 6);
+    rect(context, '#c9b6a0', 337, 123, 13, 3);
+    rect(context, '#f4e5ca', 339, 121, 9, 3);
+    rect(context, '#ffffff', 341, 121.5, 5, HALF_PIXEL);
+    rect(context, '#3a3034', 341, 117, 4, 1.5);
+    rect(context, '#b8aba2', 344, 117.5, 5, HALF_PIXEL);
 
     for (const x of [290, 305, 367]) {
-      rect(context, '#efe0bd', x, 110, 8, 6);
-      rect(context, '#fff4d5', x + 1, 110.5, 6, HALF_PIXEL);
-      rect(context, '#b87755', x + 7, 112, 3, 3);
-      rect(context, '#8d604e', x, 116, 9, 2);
+      rect(context, '#efe0bd', x, 122, 8, 6);
+      rect(context, '#fff4d5', x + 1, 122.5, 6, HALF_PIXEL);
+      rect(context, '#b87755', x + 7, 124, 3, 3);
+      rect(context, '#8d604e', x, 128, 9, 2);
     }
 
     const steamCount = this.reducedMotion ? 2 : 5;
     for (let index = 0; index < steamCount; index += 1) {
       const rise = (time * (4 + index * 0.25) + index * 4) % 18;
       const x = 339 + (index % 3) * 2;
-      rect(context, index % 2 ? '#c9bca9' : '#ead8b8', x, 107 - rise, HALF_PIXEL, 2);
-      rect(context, '#9f9b93', x + HALF_PIXEL, 105.5 - rise, HALF_PIXEL, 1);
+      rect(context, index % 2 ? '#c9bca9' : '#ead8b8', x, 119 - rise, HALF_PIXEL, 2);
+      rect(context, '#9f9b93', x + HALF_PIXEL, 117.5 - rise, HALF_PIXEL, 1);
     }
 
-    rect(context, COLORS.ink, 278, 118, 103, 8);
-    rect(context, '#8a5345', 278, 116, 104, 5);
+    rect(context, COLORS.ink, 278, 130, 103, 8);
+    rect(context, '#8a5345', 278, 128, 104, 5);
   }
 
   private drawCounterFront(): void {
     const context = this.context;
-    rect(context, '#d3965f', 276, 116, 107, 7);
-    rect(context, '#f0b776', 278, 116, 103, 1);
-    rect(context, '#71453f', 278, 122, 104, 5);
-    rect(context, COLORS.counter, 282, 126, 99, 81);
-    rect(context, '#7f4e43', 287, 131, 89, 72);
-    rect(context, '#965947', 289, 133, 85, 68);
+    rect(context, '#d3965f', 276, 128, 107, 6);
+    rect(context, '#f0b776', 278, 128, 103, 1);
+    rect(context, '#71453f', 278, 134, 104, 4);
+    rect(context, COLORS.counter, 282, 138, 99, 64);
+    rect(context, '#7f4e43', 287, 142, 89, 57);
+    rect(context, '#965947', 289, 144, 85, 54);
     for (let x = 291; x < 375; x += 14) {
-      rect(context, '#a9654d', x, 133, 2, 68);
-      rect(context, '#c17b58', x + HALF_PIXEL, 134, HALF_PIXEL, 65);
-      rect(context, '#74443f', x + 2, 134, 1, 65);
+      rect(context, '#a9654d', x, 144, 2, 52);
+      rect(context, '#c17b58', x + HALF_PIXEL, 145, HALF_PIXEL, 50);
+      rect(context, '#74443f', x + 2, 145, 1, 50);
     }
-    rect(context, '#c47c55', 288, 132, 87, 2);
+    rect(context, '#c47c55', 288, 141, 87, 2);
     for (let x = 294; x < 370; x += 19) {
-      rect(context, '#7c4a43', x, 140, 14, 52);
-      rect(context, '#a9674e', x + 1, 141, 12, 1);
-      rect(context, '#b87554', x + 2, 144, HALF_PIXEL, 45);
-      rect(context, '#633c3d', x + 11, 143, 1, 47);
-      rect(context, '#d49a64', x + 4, 166, 6, HALF_PIXEL);
+      rect(context, '#7c4a43', x, 149, 14, 43);
+      rect(context, '#a9674e', x + 1, 150, 12, 1);
+      rect(context, '#b87554', x + 2, 152, HALF_PIXEL, 37);
+      rect(context, '#633c3d', x + 11, 151, 1, 39);
+      rect(context, '#d49a64', x + 4, 170, 6, HALF_PIXEL);
     }
-    rect(context, '#4c3338', 286, 193, 91, 4);
-    rect(context, '#b97755', 290, 193, 83, HALF_PIXEL);
-    rect(context, '#d1a86a', 298, 200, 67, 1.5);
-    rect(context, '#7a5546', 299, 201.5, 65, HALF_PIXEL);
+    rect(context, '#4c3338', 286, 196, 91, 4);
+    rect(context, '#b97755', 290, 196, 83, HALF_PIXEL);
+    rect(context, '#d1a86a', 298, 202, 67, 1.5);
+    rect(context, '#7a5546', 299, 203.5, 65, HALF_PIXEL);
     for (const x of [303, 330, 357]) {
-      rect(context, '#c8925e', x, 199, 2, 5);
-      rect(context, '#f0c77b', x + HALF_PIXEL, 199, HALF_PIXEL, 4);
+      rect(context, '#c8925e', x, 201, 2, 4);
+      rect(context, '#f0c77b', x + HALF_PIXEL, 201, HALF_PIXEL, 3);
     }
-    rect(context, '#6a403c', 288, 200, 87, 3);
-    rect(context, '#4b3036', 278, 204, 106, 7);
-    rect(context, '#6b4140', 281, 204, 99, 1);
-    rect(context, '#2f242b', 276, 210, 108, 3);
+    rect(context, '#6a403c', 288, 204, 87, 2);
+    rect(context, '#4b3036', 278, 207, 106, 4);
+    rect(context, '#6b4140', 281, 207, 99, 1);
+    rect(context, '#2f242b', 276, 211, 108, 2);
   }
 
   private drawGuest(guest: Guest): void {
@@ -1551,7 +1551,7 @@ export class CafeRenderer {
     rect(context, '#d8b16f', x - 5, headTop - 2, 10, 1.5);
     rect(context, '#f0ca7b', x - 3.5, headTop - 2.5, 7, HALF_PIXEL);
 
-    const workY = 114;
+    const workY = 126;
     if (barista.task === 'wiping') {
       const wipe = phase < 2 ? -3 : 3;
       rect(context, uniform, x + facing * 4, workY - 4, 7 + Math.abs(wipe), 3);

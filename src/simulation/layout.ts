@@ -22,8 +22,8 @@ export const CAFE_COLLIDERS: readonly CollisionRect[] = [
   { id: 'window-bench', x: 58, y: 134, width: 109, height: 8 },
   { id: 'window-table-left', x: 87, y: 166, width: 37, height: 10 },
   { id: 'window-table-right', x: 161, y: 166, width: 37, height: 10 },
-  { id: 'counter', x: 276, y: 116, width: 108, height: 97 },
-  { id: 'display-case', x: 282, y: 89, width: 32, height: 27 },
+  { id: 'counter', x: 276, y: 128, width: 108, height: 85 },
+  { id: 'display-case', x: 282, y: 101, width: 32, height: 27 },
   { id: 'plant-stand', x: 254, y: 87, width: 12, height: 45 },
 ];
 

@@ -9,6 +9,7 @@ describe('Café-Kollisionen', () => {
     ]));
     expect(pointHitsCafeCollider({ x: 320, y: 170 })).toBe(true);
     expect(pointHitsCafeCollider({ x: 270, y: 173 })).toBe(false);
+    expect(pointHitsCafeCollider({ x: 320, y: 120 })).toBe(false);
     expect(pointHitsCafeCollider({ x: 24, y: 90 })).toBe(true);
     expect(pointHitsCafeCollider({ x: 24, y: 188 })).toBe(false);
   });
