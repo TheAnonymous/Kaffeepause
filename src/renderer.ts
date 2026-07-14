@@ -1335,6 +1335,16 @@ export class CafeRenderer {
       rect(context, '#77a095', x - 5.5, bodyTop - 1, 11, 2.5);
       rect(context, '#d8c06f', x - facing * 5, bodyTop + 4, 2, 8);
       rect(context, '#b77869', x - facing * 8, bodyTop + 10, 4, 4);
+    } else if (guest.regularId === 'sora') {
+      rect(context, '#e65f9c', x - facing * 5.5, headTop + 1.5, 2, 2);
+      rect(context, '#f3d58b', x - facing * 5, headTop + 2, HALF_PIXEL, HALF_PIXEL);
+      rect(context, '#5dbfc5', x + facing * 4.5, headTop + 6, 1, 1.5);
+      rect(context, '#e65f9c', x - 5.5, bodyTop + 1, 11, 1.5);
+    } else if (guest.regularId === 'kai') {
+      rect(context, '#91c19b', x - 5.5, bodyTop - 1, 11, 2.5);
+      rect(context, '#d9b864', x - facing * 5.5, headTop + 3, 1, 5);
+      rect(context, '#d9b864', x - facing * 6, headTop + 2, 2, HALF_PIXEL);
+      rect(context, '#6b493f', x + facing * 4, bodyTop + 7, 2.5, 1.5);
     }
 
     this.characters.drawGuestFineDetails({
@@ -1697,6 +1707,87 @@ export class CafeRenderer {
       }
       const mover = guests[Math.floor(moment.elapsed * 1.6) % guests.length];
       if (mover) rect(context, mover.palette.skin, mover.position.x + mover.facing * 5, tableY - 7 + pulse, 3, 2);
+      return;
+    }
+
+    if (moment.kind === 'coffee-tasting') {
+      rect(context, '#6d4b42', centerX - 12, tableY - 4, 24, 3);
+      rect(context, '#d69b61', centerX - 9, tableY - 7, 18, 3);
+      for (let index = 0; index < 3; index += 1) {
+        const cupX = centerX - 7 + index * 6;
+        rect(context, '#f0dfbd', cupX, tableY - 11 + (index === 1 ? pulse : 0), 4, 4);
+        rect(context, '#9d6048', cupX + HALF_PIXEL, tableY - 10 + (index === 1 ? pulse : 0), 3, HALF_PIXEL);
+        rect(context, '#f7efcf', cupX + 3.5, tableY - 9 + (index === 1 ? pulse : 0), 1.5, 1.5);
+      }
+      rect(context, '#e9c476', centerX - 2, tableY - 15 + pulse, 4, 1);
+      rect(context, '#fff1bc', centerX - HALF_PIXEL, tableY - 17 + pulse, 1, 2);
+      const taster = guests[0];
+      if (taster) rect(context, taster.palette.skin, taster.position.x + taster.facing * 5, tableY - 8 + pulse, 3, 2);
+      return;
+    }
+
+    if (moment.kind === 'ramen-slurp') {
+      const slurp = this.reducedMotion ? 0 : (Math.floor(moment.elapsed * 2) % 3) * HALF_PIXEL;
+      rect(context, '#54303b', centerX - 10, tableY - 4, 20, 3);
+      rect(context, '#d0574d', centerX - 7, tableY - 10, 14, 6);
+      rect(context, '#f1bb67', centerX - 5, tableY - 11, 10, 2);
+      rect(context, '#efe0b9', centerX - 4, tableY - 9, 8, HALF_PIXEL);
+      rect(context, '#6b9c7b', centerX - 3, tableY - 10, 2, 1);
+      rect(context, '#e6d8bd', centerX - 3, tableY - 15 - slurp, HALF_PIXEL, 4);
+      rect(context, '#f8e5c5', centerX + 1, tableY - 16 + slurp, HALF_PIXEL, 3);
+      rect(context, '#dcb875', centerX + 5, tableY - 15, 7, HALF_PIXEL);
+      rect(context, '#dcb875', centerX + 8, tableY - 17, HALF_PIXEL, 5);
+      const eater = guests[0];
+      if (eater) rect(context, eater.palette.skin, eater.position.x + eater.facing * 5, tableY - 8 - slurp, 3, 2);
+      return;
+    }
+
+    if (moment.kind === 'arcade-duel') {
+      const sweep = this.reducedMotion ? 0 : Math.floor(moment.elapsed * 3) % 3;
+      rect(context, '#142139', centerX - 13, tableY - 6, 26, 7);
+      rect(context, '#63cbd0', centerX - 12, tableY - 5.5, 11, HALF_PIXEL);
+      rect(context, '#c55aa5', centerX + 1, tableY - 5.5, 11, HALF_PIXEL);
+      rect(context, '#263b58', centerX - 10, tableY - 4, 8, 3);
+      rect(context, '#263b58', centerX + 2, tableY - 4, 8, 3);
+      for (const offset of [-8, 4]) {
+        rect(context, '#d9dfb5', centerX + offset, tableY - 3, 3, 1);
+        rect(context, offset < 0 ? '#5dd0d0' : '#e262a7', centerX + offset + 1, tableY - 4, 1, 1);
+      }
+      rect(context, sweep % 2 ? '#f2dc8d' : '#76d5d0', centerX - 2 + sweep, tableY - 11, 4, 2);
+      rect(context, '#e5b86e', centerX - 1, tableY - 14 + pulse, 2, 2);
+      for (const guest of guests) {
+        const direction = guest.position.x < centerX ? 1 : -1;
+        rect(context, guest.palette.skin, guest.position.x + direction * 5, tableY - 8 + pulse, 3, 2);
+      }
+      return;
+    }
+
+    if (moment.kind === 'arcade-high-score') {
+      const champion = guests[0];
+      if (!champion) return;
+      rect(context, '#17253b', champion.position.x - 10, tableY - 5, 20, 5);
+      rect(context, '#5ecbd0', champion.position.x - 8, tableY - 10, 16, 5);
+      rect(context, '#1b2d48', champion.position.x - 7, tableY - 9, 14, 3);
+      rect(context, '#f1dc8a', champion.position.x - 5, tableY - 8, 3, HALF_PIXEL);
+      rect(context, '#f1dc8a', champion.position.x + 1, tableY - 8, 4, HALF_PIXEL);
+      rect(context, '#e161a6', champion.position.x - 1, tableY - 14 + pulse, 2, 3);
+      rect(context, '#f5df8f', champion.position.x - 3, tableY - 16 + pulse, 6, 2);
+      rect(context, champion.palette.skin, champion.position.x + champion.facing * 5, tableY - 8 + pulse, 3, 2);
+      if (guests[1]) rect(context, guests[1].palette.skin, guests[1].position.x - guests[1].facing * 5, tableY - 8, 3, 2);
+      return;
+    }
+
+    if (moment.kind === 'umbrella-handoff') {
+      rect(context, '#5a474a', centerX - 12, tableY - 4, 24, 3);
+      rect(context, '#627d7d', centerX - 8, tableY - 10, 16, 3);
+      rect(context, '#4d666d', centerX - 6, tableY - 12, 12, 2);
+      rect(context, '#d7b16c', centerX - 1, tableY - 11, 1, 8);
+      rect(context, '#dce5d4', centerX - 8, tableY - 7 + pulse, 1, 2);
+      rect(context, '#dce5d4', centerX + 7, tableY - 6 - pulse, 1, 2);
+      for (const guest of guests) {
+        const direction = guest.position.x < centerX ? 1 : -1;
+        rect(context, guest.palette.skin, guest.position.x + direction * 5, tableY - 8 + pulse, 3, 2);
+      }
       return;
     }
 

@@ -26,9 +26,9 @@ export type GuestActivity =
 
 export type GuestAccessory = 'umbrella' | 'coat' | 'scarf' | 'sunglasses';
 
-export type RegularId = 'mara' | 'noor' | 'toni' | 'linn';
+export type RegularId = 'mara' | 'noor' | 'toni' | 'linn' | 'sora' | 'kai';
 
-export type CafeStoryKind = 'sketchbook' | 'first-date' | 'knit-gift';
+export type CafeStoryKind = 'sketchbook' | 'first-date' | 'knit-gift' | 'arcade-rivals';
 
 export interface GuestPalette {
   skin: string;
@@ -86,7 +86,12 @@ export type CafeMomentKind =
   | 'window-gaze'
   | 'sketch-reveal'
   | 'first-date-toast'
-  | 'knit-gift';
+  | 'knit-gift'
+  | 'coffee-tasting'
+  | 'ramen-slurp'
+  | 'arcade-duel'
+  | 'arcade-high-score'
+  | 'umbrella-handoff';
 
 export interface CafeMoment {
   readonly id: number;

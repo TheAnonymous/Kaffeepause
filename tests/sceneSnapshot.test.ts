@@ -39,7 +39,7 @@ describe('Szenen-Snapshot', () => {
 
     expect(snapshot.accident).toBeUndefined();
     expect(snapshot.moment).toBeUndefined();
-    expect(snapshot.storyStages).toEqual({ sketchbook: 0, 'first-date': 0, 'knit-gift': 0 });
+    expect(snapshot.storyStages).toEqual({ sketchbook: 0, 'first-date': 0, 'knit-gift': 0, 'arcade-rivals': 0 });
     expect(snapshot.barista.position).not.toBe(simulation.barista.position);
   });
 });

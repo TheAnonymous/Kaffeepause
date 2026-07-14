@@ -10,9 +10,10 @@ function updateUntil(simulation: CafeSimulation, predicate: () => boolean, limit
 function storySimulation(kind: CafeStoryKind): CafeSimulation {
   const simulation = new CafeSimulation({
     seed: 81,
-    initialGuests: 4,
+    initialGuests: kind === 'arcade-rivals' ? 6 : 4,
     minGuests: 0,
-    maxGuests: 4,
+    maxGuests: kind === 'arcade-rivals' ? 6 : 4,
+    venue: kind === 'arcade-rivals' ? 'arcade' : 'cafe',
     accidents: false,
     moments: false,
     stories: { seed: 31, minDelaySeconds: 0.1, maxDelaySeconds: 0.1, kinds: [kind] },
@@ -34,6 +35,7 @@ describe('Stammgäste und kleine Geschichten', () => {
   it.each<[CafeStoryKind, readonly string[], number]>([
     ['sketchbook', ['mara'], 2],
     ['first-date', ['noor', 'toni'], 2],
+    ['arcade-rivals', ['sora', 'kai'], 2],
   ])('%s entfaltet sich in zwei ruhigen, zusammenhängenden Momenten', (story, regulars, finalStep) => {
     const simulation = storySimulation(story);
     updateUntil(simulation, () => simulation.activeMoment?.story === story && simulation.activeMoment.storyStep === 1);
@@ -47,6 +49,15 @@ describe('Stammgäste und kleine Geschichten', () => {
     updateUntil(simulation, () => simulation.getStoryStage(story) === finalStep);
     expect(simulation.stats.storyBeatsCompleted).toBe(2);
     expect(simulation.stats.storiesCompleted).toBe(1);
+  });
+
+  it('setzt die Arcade-Revanche sichtbar aus Duell und Highscore zusammen', () => {
+    const simulation = storySimulation('arcade-rivals');
+    updateUntil(simulation, () => simulation.activeMoment?.story === 'arcade-rivals' && simulation.activeMoment.storyStep === 1);
+    expect(simulation.activeMoment?.kind).toBe('arcade-duel');
+
+    updateUntil(simulation, () => simulation.activeMoment?.story === 'arcade-rivals' && simulation.activeMoment.storyStep === 2);
+    expect(simulation.activeMoment?.kind).toBe('arcade-high-score');
   });
 
   it('lässt Linns Strick-Geschenk einmalig erscheinen und schließt den Faden ab', () => {

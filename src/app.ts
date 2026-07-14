@@ -23,6 +23,11 @@ const MOMENT_MESSAGES: Readonly<Record<CafeMomentKind, string>> = {
   'sketch-reveal': 'Eine neue Skizze bekommt ihren letzten kleinen Strich.',
   'first-date-toast': 'Zwei Tassen stoßen ganz vorsichtig auf einen gelungenen Abend an.',
   'knit-gift': 'Ein kleines gestricktes Geschenk wechselt über den Tisch.',
+  'coffee-tasting': 'Eine kleine Kaffeeverkostung bringt neue Aromen an den Tisch.',
+  'ramen-slurp': 'Eine dampfende Ramen-Schüssel wird mit einem zufriedenen Schlürfen probiert.',
+  'arcade-duel': 'Zwei Gäste fordern sich zu einer freundlichen Arcade-Runde heraus.',
+  'arcade-high-score': 'Ein neuer Highscore lässt die kleinen Bildschirme kurz aufleuchten.',
+  'umbrella-handoff': 'Zwei Gäste falten einen tropfenden Schirm zusammen und teilen ein Lächeln.',
 };
 
 const STORY_MESSAGES: Readonly<Record<CafeStoryKind, readonly [string, string]>> = {
@@ -37,6 +42,10 @@ const STORY_MESSAGES: Readonly<Record<CafeStoryKind, readonly [string, string]>>
   'knit-gift': [
     'Linn legt jemandem gegenüber ein kleines selbstgestricktes Geschenk hin.',
     'Linn legt jemandem gegenüber ein kleines selbstgestricktes Geschenk hin.',
+  ],
+  'arcade-rivals': [
+    'Sora und Kai treffen sich an einem Tisch zur freundlichen Revanche.',
+    'Sora und Kai feiern gemeinsam einen neuen Highscore – die Revanche bleibt offen.',
   ],
 };
 
@@ -69,7 +78,10 @@ function simulationOptions(): CafeSimulationOptions {
     };
   }
   const requestedMoment = parameters.get('moment');
-  const momentKinds: readonly CafeMomentKind[] = ['shared-cake', 'card-game', 'window-gaze', 'sketch-reveal'];
+  const momentKinds: readonly CafeMomentKind[] = [
+    'shared-cake', 'card-game', 'window-gaze', 'sketch-reveal', 'coffee-tasting',
+    'ramen-slurp', 'arcade-duel', 'arcade-high-score', 'umbrella-handoff',
+  ];
   if (momentKinds.includes(requestedMoment as CafeMomentKind)) {
     options.initialGuests = Math.max(options.initialGuests ?? 0, requestedMoment === 'window-gaze' ? 2 : 4);
     options.moments = {
@@ -81,9 +93,9 @@ function simulationOptions(): CafeSimulationOptions {
     };
   }
   const requestedStory = parameters.get('story');
-  const storyKinds: readonly CafeStoryKind[] = ['sketchbook', 'first-date', 'knit-gift'];
+  const storyKinds: readonly CafeStoryKind[] = ['sketchbook', 'first-date', 'knit-gift', 'arcade-rivals'];
   if (storyKinds.includes(requestedStory as CafeStoryKind)) {
-    options.initialGuests = Math.max(options.initialGuests ?? 0, 4);
+    options.initialGuests = Math.max(options.initialGuests ?? 0, requestedStory === 'arcade-rivals' ? 6 : 4);
     options.moments = false;
     options.stories = {
       seed: 0x5707_2026,
@@ -185,6 +197,7 @@ export class KaffeepauseApp {
     this.venueDescription.textContent = definition.description;
     this.enterButton.textContent = definition.enterLabel;
     this.canvas.setAttribute('aria-label', definition.canvasLabel);
+    this.simulation.setVenue(venue);
     this.renderer.setVenue(venue);
     this.audio.setVenue(venue);
     document.body.dataset.venue = venue;

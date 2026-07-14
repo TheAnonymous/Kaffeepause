@@ -190,6 +190,21 @@ export class CafeAudio {
       this.playEffectTone(730, 920, start, 0.4, 0.012, 'sine');
       return;
     }
+    if (kind === 'ramen-slurp') {
+      this.playEffectNoise(start, 0.22, 680, 0.8, 0.018);
+      this.playEffectTone(330, 510, start + 0.05, 0.18, 0.018, 'sine');
+      return;
+    }
+    if (kind === 'arcade-duel' || kind === 'arcade-high-score') {
+      this.playEffectTone(680, 1_150, start, 0.11, 0.022, 'square');
+      this.playEffectTone(1_020, 1_580, start + 0.08, 0.16, 0.019, 'triangle');
+      return;
+    }
+    if (kind === 'umbrella-handoff') {
+      this.playEffectNoise(start, 0.14, 1_150, 0.7, 0.012);
+      this.playEffectTone(920, 1_140, start + 0.05, 0.14, 0.012, 'sine');
+      return;
+    }
     this.playEffectTone(1_120, 1_520, start, 0.16, 0.015, 'triangle');
   }
 

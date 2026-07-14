@@ -22,6 +22,8 @@ function makeMomentSimulation(kind: CafeMomentKind): CafeSimulation {
       durationScale: 0.05,
     },
   });
+  if (kind === 'ramen-slurp') simulation.setVenue('ramen');
+  if (kind === 'arcade-duel' || kind === 'arcade-high-score') simulation.setVenue('arcade');
   simulation.start();
   return simulation;
 }
@@ -44,6 +46,11 @@ describe('Café-Momente', () => {
     ['card-game', 2],
     ['window-gaze', 1],
     ['sketch-reveal', 1],
+    ['coffee-tasting', 1],
+    ['ramen-slurp', 1],
+    ['arcade-duel', 2],
+    ['arcade-high-score', 1],
+    ['umbrella-handoff', 2],
   ])('%s startet mit passenden Beteiligten und endet sauber', (kind, participants) => {
     const simulation = makeMomentSimulation(kind);
     updateUntil(simulation, () => simulation.activeMoment?.kind === kind);
@@ -74,5 +81,20 @@ describe('Café-Momente', () => {
     simulation.start();
     updateUntil(simulation, () => simulation.activeAccident !== undefined);
     expect(simulation.activeMoment).toBeUndefined();
+  });
+
+  it('inszeniert Orte unterschiedlich, ohne die normale Sitzlogik zu umgehen', () => {
+    const cafe = makeMomentSimulation('coffee-tasting');
+    const ramen = makeMomentSimulation('ramen-slurp');
+    const arcade = makeMomentSimulation('arcade-duel');
+
+    updateUntil(cafe, () => cafe.activeMoment?.kind === 'coffee-tasting');
+    updateUntil(ramen, () => ramen.activeMoment?.kind === 'ramen-slurp');
+    updateUntil(arcade, () => arcade.activeMoment?.kind === 'arcade-duel');
+
+    for (const simulation of [cafe, ramen, arcade]) {
+      const participants = simulation.activeMoment?.participantIds ?? [];
+      expect(participants.every((id) => simulation.guests.find((guest) => guest.id === id)?.state === 'activity')).toBe(true);
+    }
   });
 });

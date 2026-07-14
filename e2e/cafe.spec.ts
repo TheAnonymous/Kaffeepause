@@ -199,6 +199,20 @@ for (const scenario of [
   });
 }
 
+test('zeigt Sora und Kais Arcade-Revanche mit der ausgewählten Venue', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await page.goto('/?story=arcade-rivals&time=12:30&weather=clear');
+  await page.getByRole('radio', { name: /Arcade/i }).click();
+  await page.getByRole('button', { name: 'Arcade-Halle betreten' }).click();
+
+  const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-venue', 'arcade');
+  await expect(canvas).toHaveAttribute('data-story', 'arcade-rivals', { timeout: 5_000 });
+  await expect(canvas).toHaveAttribute('data-moment', 'arcade-duel');
+  await expect(canvas).toHaveAttribute('data-regulars', /sora,kai/);
+  await expect(page.locator('#status')).toHaveText(/Sora und Kai.*Revanche/i);
+});
+
 test('zeigt einen beschleunigten Unfall auch bei reduzierter Bewegung', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/?accident=coffee-spill&time=12:30&weather=rain');
@@ -230,6 +244,25 @@ for (const scenario of [
     await expect(canvas).toHaveAttribute('data-moment', scenario.kind, { timeout: 5_000 });
     await expect(page.locator('#status')).toHaveText(scenario.message);
     expect(errors).toEqual([]);
+  });
+}
+
+for (const scenario of [
+  { kind: 'coffee-tasting', venue: 'Café', entry: 'Café betreten', query: 'time=12:30&weather=clear', message: /Kaffeeverkostung/i },
+  { kind: 'ramen-slurp', venue: 'Ramen', entry: 'Ramen-Restaurant betreten', query: 'time=20:30&weather=rain', message: /Ramen-Schüssel/i },
+  { kind: 'arcade-duel', venue: 'Arcade', entry: 'Arcade-Halle betreten', query: 'time=20:30&weather=rain', message: /Arcade-Runde/i },
+  { kind: 'arcade-high-score', venue: 'Arcade', entry: 'Arcade-Halle betreten', query: 'time=20:30&weather=rain', message: /Highscore/i },
+  { kind: 'umbrella-handoff', venue: 'Café', entry: 'Café betreten', query: 'time=20:30&weather=rain', message: /Schirm zusammen/i },
+] as const) {
+  test(`zeigt den ortsabhängigen Moment ${scenario.kind}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 810 });
+    await page.goto(`/?moment=${scenario.kind}&${scenario.query}`);
+    if (scenario.venue !== 'Café') await page.getByRole('radio', { name: new RegExp(scenario.venue) }).click();
+    await page.getByRole('button', { name: scenario.entry }).click();
+
+    const canvas = page.locator('#cafe');
+    await expect(canvas).toHaveAttribute('data-moment', scenario.kind, { timeout: 5_000 });
+    await expect(page.locator('#status')).toHaveText(scenario.message);
   });
 }
 

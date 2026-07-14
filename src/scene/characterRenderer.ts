@@ -81,6 +81,22 @@ export class CharacterRenderer {
       this.rect(context, '#d260a5', x + facing * 5 - pixel, bodyTop + 3.2, pixel, 2);
       this.rect(context, '#68d0d0', x + facing * 5 - pixel, bodyTop + 5.5, pixel, pixel);
     }
+
+    if (guest.regularId === 'sora') {
+      this.rect(context, '#f2da8a', x - facing * 4.6, headTop + 2.2, pixel, pixel);
+      this.rect(context, '#64d3cf', x + facing * 5.3, headTop + 6.1, pixel, pixel);
+      if (seated && guest.activity === 'phone') {
+        this.rect(context, '#e45f9d', x + facing * 6, bodyTop + 2.2, pixel, pixel);
+        this.rect(context, '#f3e08e', x + facing * 6.8, bodyTop + 1.4, pixel, pixel);
+      }
+    } else if (guest.regularId === 'kai') {
+      this.rect(context, '#e3bd70', x - facing * 5.2, headTop + 2.6, pixel, 3);
+      this.rect(context, '#e3bd70', x - facing * 5.7, headTop + 2.1, 1.5, pixel);
+      if (seated && guest.activity === 'journaling') {
+        this.rect(context, '#91c19b', x + facing * 4.8, bodyTop + 6.2, pixel, 2);
+        this.rect(context, '#e9d58e', x + facing * 5.8, bodyTop + 5.2, pixel, pixel);
+      }
+    }
   }
 
   drawBaristaFineDetails(input: BaristaDetailInput): void {
