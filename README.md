@@ -24,6 +24,7 @@ Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen
 - klare, bewölkte, neblige, regnerische, verschneite und stürmische Außenwelten
 - Passant:innen, Busse, Regenschirme, Vögel und saisonale Außenwelt hinter dem Fenster
 - tageszeitabhängige Auslage, Stadtlichter, Sterne, gerichtetes Fensterlicht, nasse Reflexionen und warme Innenbeleuchtung
+- mehrschichtige Vordergrundrequisiten, ortsspezifische Lichtspuren auf dem Boden und ruhige Innenreflexionen im Fensterglas
 - deterministische Figuren-Zustandsautomaten und zentrale Platzreservierung
 - kollisionsbewusste Routen um Theke, Tische und andere laufende Gäste
 - schlanke Szenenlaufzeit mit unveränderlichen Snapshots zwischen Simulation und Canvas-Renderer

@@ -8,6 +8,7 @@ import { CharacterRenderer } from './scene/characterRenderer';
 import { DoorRenderer, type DoorVisualState } from './scene/doorRenderer';
 import { calculateSceneLighting, LightingRenderer, type SceneLighting } from './scene/lightingRenderer';
 import { calculateVenueActivityState, VenueActivityRenderer } from './scene/venueActivityRenderer';
+import { VenueOpticsRenderer } from './scene/venueOpticsRenderer';
 import { VenueRenderer } from './scene/venueRenderer';
 
 // Drei physische Pixel pro Szenenpixel lassen kleine Licht-, Holz- und Stoffdetails
@@ -98,6 +99,7 @@ export class CafeRenderer {
   private readonly door = new DoorRenderer(rect, polygon, HALF_PIXEL);
   private readonly lighting = new LightingRenderer(rect, polygon, HALF_PIXEL);
   private readonly activities = new VenueActivityRenderer(rect, HALF_PIXEL);
+  private readonly optics = new VenueOpticsRenderer(rect, polygon, HALF_PIXEL);
   private readonly venues = new VenueRenderer();
 
   constructor(
@@ -171,11 +173,19 @@ export class CafeRenderer {
     context.imageSmoothingEnabled = false;
     this.drawRoom(time);
     this.drawFloorDecor(time);
-    this.drawWindows(time);
+    this.drawWindows(time, lighting);
     const door = this.drawDoor(time, snapshot.guests);
     this.drawVenueArchitecture(time);
     this.drawVenueFurnitureBack();
     this.lighting.drawAmbient({
+      context,
+      venue: this.venue,
+      time,
+      active: this.active,
+      reducedMotion: this.reducedMotion,
+      lighting,
+    });
+    this.optics.drawFloorLight({
       context,
       venue: this.venue,
       time,
@@ -233,6 +243,7 @@ export class CafeRenderer {
     this.canvas.dataset.occupiedTables = String(activityState.seated);
     this.canvas.dataset.door = door.active ? 'opening' : 'closed';
     this.canvas.dataset.doorOpen = door.opening.toFixed(2);
+    this.canvas.dataset.optics = 'layered';
   }
 
   private drawRoom(time: number): void {
@@ -342,7 +353,7 @@ export class CafeRenderer {
     }
   }
 
-  private drawWindows(time: number): void {
+  private drawWindows(time: number, lighting: SceneLighting): void {
     const context = this.context;
     const environment = this.environment;
     const weather = environment?.weather;
@@ -422,6 +433,14 @@ export class CafeRenderer {
     }
 
     this.drawOutsideLife(time);
+    this.optics.drawWindowAtmosphere({
+      context,
+      venue: this.venue,
+      time,
+      active: this.active,
+      reducedMotion: this.reducedMotion,
+      lighting,
+    });
 
     const wetness = clamp(((weather?.rain ?? 0) + (weather?.showers ?? 0)) / 4 + (weather?.kind === 'storm' ? 0.6 : 0));
     rect(context, mixColor('#5f6871', '#8295a2', wetness), 52, 93, 198, 1.5);
@@ -1921,6 +1940,14 @@ export class CafeRenderer {
       rect(context, highlight, x + 5, 207.5, 4, HALF_PIXEL);
     }
     this.lighting.drawForegroundDepth({
+      context,
+      venue: this.venue,
+      time,
+      active: this.active,
+      reducedMotion: this.reducedMotion,
+      lighting,
+    });
+    this.optics.drawForegroundProps({
       context,
       venue: this.venue,
       time,
