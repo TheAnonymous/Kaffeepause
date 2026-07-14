@@ -1,7 +1,18 @@
 import { CafeAudio } from './audio';
 import { CafeCamera } from './camera';
 import { CafeRenderer } from './renderer';
-import { CafeSimulation } from './simulation/cafeSimulation';
+import { CafeSimulation, type CafeSimulationOptions } from './simulation/cafeSimulation';
+import type { AccidentKind } from './simulation/types';
+import { CafeEnvironmentController, parseEnvironmentOverrides } from './environment/cafeEnvironmentController';
+import type { CafeEnvironmentSnapshot } from './environment/types';
+
+const UI_IDLE_DELAY = 2_500;
+
+const ACCIDENT_MESSAGES: Readonly<Record<AccidentKind, string>> = {
+  'tray-drop': 'Oh! Dem Barista ist ein Tablett heruntergefallen. Schon wird aufgeräumt.',
+  'coffee-spill': 'Hoppla! Ein Gast hat Kaffee verschüttet und wischt den Tisch sauber.',
+  'umbrella-pop': 'Plopp! Ein Regenschirm ist im Café aufgegangen und wird wieder eingefangen.',
+};
 
 function requiredElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -9,31 +20,70 @@ function requiredElement<T extends HTMLElement>(selector: string): T {
   return element;
 }
 
+function simulationOptions(): CafeSimulationOptions {
+  if (!import.meta.env.DEV) return {};
+  const requested = new URLSearchParams(window.location.search).get('accident');
+  const kinds: readonly AccidentKind[] = ['tray-drop', 'coffee-spill', 'umbrella-pop'];
+  if (!kinds.includes(requested as AccidentKind)) return {};
+  const kind = requested as AccidentKind;
+  return {
+    initialGuests: kind === 'umbrella-pop' ? 3 : 4,
+    accidents: {
+      seed: 0xe2e_2026,
+      minDelaySeconds: kind === 'umbrella-pop' ? 1.5 : 0.35,
+      maxDelaySeconds: kind === 'umbrella-pop' ? 1.5 : 0.35,
+      kinds: [kind],
+      phaseDurationScale: 0.6,
+    },
+  };
+}
+
 export class KaffeepauseApp {
   private readonly canvas = requiredElement<HTMLCanvasElement>('#cafe');
   private readonly welcome = requiredElement<HTMLElement>('[data-testid="welcome"]');
   private readonly enterButton = requiredElement<HTMLButtonElement>('[data-testid="enter"]');
+  private readonly controls = requiredElement<HTMLElement>('[data-testid="controls"]');
   private readonly soundButton = requiredElement<HTMLButtonElement>('[data-testid="sound"]');
+  private readonly fullscreenButton = requiredElement<HTMLButtonElement>('[data-testid="fullscreen"]');
+  private readonly fullscreenLabel = requiredElement<HTMLElement>('[data-fullscreen-label]');
   private readonly status = requiredElement<HTMLElement>('#status');
   private readonly motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-  private readonly simulation = new CafeSimulation();
+  private readonly simulation = new CafeSimulation(simulationOptions());
   private readonly camera = new CafeCamera();
   private readonly audio = new CafeAudio();
   private readonly renderer = new CafeRenderer(this.canvas, this.simulation, this.camera);
+  private readonly environment = new CafeEnvironmentController({
+    overrides: parseEnvironmentOverrides(window.location.search, import.meta.env.DEV),
+    onNotice: (message) => { this.status.textContent = message; },
+  });
   private entered = false;
   private frame = 0;
   private lastFrame = performance.now();
   private elapsed = 0;
+  private idleTimer?: number;
+  private lastAnnouncedAccidentId = 0;
 
   start(): void {
     this.updateMotionPreference();
+    this.environment.start();
+    this.applyEnvironment(this.environment.update());
     this.renderer.render(0);
     this.enterButton.addEventListener('click', this.enterCafe);
     this.soundButton.addEventListener('click', this.toggleSound);
+    this.fullscreenButton.addEventListener('click', this.toggleFullscreen);
     window.addEventListener('resize', this.resize);
+    window.addEventListener('pointermove', this.noteActivity);
+    window.addEventListener('pointerdown', this.noteActivity);
+    window.addEventListener('keydown', this.keyPressed);
+    window.addEventListener('focus', this.noteActivity);
+    document.addEventListener('focusin', this.noteActivity);
+    document.addEventListener('fullscreenchange', this.fullscreenChanged);
+    document.addEventListener('fullscreenerror', this.fullscreenFailed);
     document.addEventListener('visibilitychange', this.visibilityChanged);
     this.motionQuery.addEventListener('change', this.updateMotionPreference);
     window.addEventListener('pagehide', this.destroy, { once: true });
+    document.body.dataset.uiIdle = 'false';
+    this.updateFullscreenState();
     this.frame = requestAnimationFrame(this.tick);
   }
 
@@ -43,8 +93,10 @@ export class KaffeepauseApp {
     this.simulation.start();
     this.renderer.setActive(true);
     this.welcome.classList.add('is-hidden');
-    this.soundButton.hidden = false;
+    this.controls.hidden = false;
     document.body.dataset.entered = 'true';
+    this.setUiIdle(false);
+    this.scheduleIdle();
     this.status.textContent = 'Du bist im Café. Regen und leise Musik erfüllen den Raum.';
     void this.audio.start().then((state) => {
       this.soundButton.dataset.audioState = state;
@@ -54,6 +106,74 @@ export class KaffeepauseApp {
       }
     });
   };
+
+  private readonly toggleFullscreen = async (): Promise<void> => {
+    this.noteActivity();
+    if (!this.supportsFullscreen()) return;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch {
+      this.status.textContent = 'Vollbild konnte nicht geöffnet werden.';
+      this.updateFullscreenState();
+      this.resize();
+    }
+  };
+
+  private readonly fullscreenChanged = (): void => {
+    this.updateFullscreenState();
+    this.resize();
+  };
+
+  private readonly fullscreenFailed = (): void => {
+    this.status.textContent = 'Vollbild ist in diesem Browser nicht verfügbar.';
+    this.updateFullscreenState();
+    this.resize();
+  };
+
+  private updateFullscreenState(): void {
+    const supported = this.supportsFullscreen();
+    const fullscreen = supported && document.fullscreenElement === document.documentElement;
+    this.fullscreenButton.hidden = !supported;
+    this.fullscreenButton.setAttribute('aria-pressed', String(fullscreen));
+    const label = fullscreen ? 'Vollbild verlassen' : 'Vollbild öffnen';
+    this.fullscreenButton.setAttribute('aria-label', label);
+    this.fullscreenLabel.textContent = label;
+    document.body.dataset.fullscreen = String(fullscreen);
+  }
+
+  private supportsFullscreen(): boolean {
+    return typeof document.documentElement.requestFullscreen === 'function'
+      && typeof document.exitFullscreen === 'function'
+      && document.fullscreenEnabled !== false;
+  }
+
+  private readonly noteActivity = (): void => {
+    if (!this.entered) return;
+    this.setUiIdle(false);
+    this.scheduleIdle();
+  };
+
+  private readonly keyPressed = (event: KeyboardEvent): void => {
+    this.noteActivity();
+    if (event.key !== 'Escape' || !document.fullscreenElement || !this.supportsFullscreen()) return;
+    void document.exitFullscreen().catch(() => this.fullscreenFailed());
+  };
+
+  private scheduleIdle(): void {
+    if (this.idleTimer !== undefined) window.clearTimeout(this.idleTimer);
+    this.idleTimer = window.setTimeout(() => {
+      if (this.controls.contains(document.activeElement)) {
+        this.scheduleIdle();
+        return;
+      }
+      this.setUiIdle(true);
+    }, UI_IDLE_DELAY);
+  }
+
+  private setUiIdle(idle: boolean): void {
+    document.body.dataset.uiIdle = String(idle);
+  }
 
   private readonly toggleSound = (): void => {
     const muted = this.audio.toggleMuted();
@@ -66,10 +186,17 @@ export class KaffeepauseApp {
   private readonly tick = (now: number): void => {
     const delta = Math.min(0.1, Math.max(0, (now - this.lastFrame) / 1000));
     this.lastFrame = now;
+    this.applyEnvironment(this.environment.update());
     if (this.entered) {
       this.elapsed += delta;
       this.simulation.update(delta);
       this.camera.update(delta);
+      const accident = this.simulation.activeAccident;
+      if (accident && accident.id !== this.lastAnnouncedAccidentId) {
+        this.lastAnnouncedAccidentId = accident.id;
+        this.status.textContent = ACCIDENT_MESSAGES[accident.kind];
+        this.audio.playAccident(accident.kind);
+      }
     }
     this.renderer.render(this.elapsed);
     this.frame = requestAnimationFrame(this.tick);
@@ -87,12 +214,30 @@ export class KaffeepauseApp {
 
   private readonly visibilityChanged = (): void => {
     this.audio.fadeForVisibility(document.hidden);
+    this.environment.visibilityChanged(document.hidden);
     this.lastFrame = performance.now();
   };
 
   private readonly destroy = (): void => {
     cancelAnimationFrame(this.frame);
+    if (this.idleTimer !== undefined) window.clearTimeout(this.idleTimer);
+    this.environment.stop();
     this.simulation.stop();
     void this.audio.destroy();
   };
+
+  private applyEnvironment(snapshot: CafeEnvironmentSnapshot): void {
+    this.simulation.setEnvironment(snapshot);
+    this.renderer.setEnvironment(snapshot);
+    this.audio.setAtmosphere(snapshot, this.simulation.guests.length);
+    const datasets = [document.body.dataset, this.canvas.dataset];
+    for (const dataset of datasets) {
+      dataset.dayPhase = snapshot.dayPhase;
+      dataset.weather = snapshot.weather.kind;
+      dataset.weatherSource = snapshot.weatherSource;
+      dataset.localTime = snapshot.localTimeText;
+      dataset.locationState = snapshot.locationState;
+      dataset.crowdTarget = String(snapshot.targetCrowd);
+    }
+  }
 }

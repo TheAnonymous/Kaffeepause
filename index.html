@@ -4,24 +4,33 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#17131e" />
-    <meta name="description" content="Kaffeepause – ein autonomes Pixel-Art-Café am Regentag" />
+    <meta name="description" content="Kaffeepause – ein autonomes Pixel-Art-Café bei lokaler Tageszeit und wechselndem Wetter" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" sizes="any" />
     <title>Kaffeepause</title>
   </head>
   <body>
     <main id="app">
-      <canvas id="cafe" width="768" height="432" role="img" aria-label="Ein gemütliches, belebtes Pixel-Art-Café an einem Regentag"></canvas>
+      <canvas id="cafe" width="768" height="432" role="img" aria-label="Ein gemütliches, belebtes Pixel-Art-Café bei wechselnder Tageszeit und Wetter"></canvas>
       <div class="vignette" aria-hidden="true"></div>
       <section class="welcome" data-testid="welcome" aria-labelledby="title">
         <div class="welcome__card">
           <span class="welcome__eyebrow">Ein kleiner Regentag</span>
           <h1 id="title">Kaffeepause</h1>
           <p>Mach es dir bequem. Draußen darf es eine Weile regnen.</p>
+          <p class="privacy-note">Wenn du zustimmst, verfeinert dein ungefährer Standort nur Sonne und Wetter. Er wird nicht gespeichert.</p>
           <button id="enter" type="button" data-testid="enter">Café betreten</button>
         </div>
       </section>
-      <button id="sound" class="sound" type="button" data-testid="sound" aria-label="Ton ausschalten" aria-pressed="false" hidden>
-        <span aria-hidden="true">♪</span>
-      </button>
+      <div class="controls" data-testid="controls" aria-label="Café-Steuerung" hidden>
+        <button id="sound" class="control" type="button" data-testid="sound" aria-label="Ton ausschalten" aria-pressed="false">
+          <span aria-hidden="true">♪</span>
+        </button>
+        <button id="fullscreen" class="control" type="button" data-testid="fullscreen" aria-label="Vollbild öffnen" aria-pressed="false">
+          <span class="fullscreen__icon" aria-hidden="true">⛶</span>
+          <span class="sr-only" data-fullscreen-label>Vollbild öffnen</span>
+        </button>
+      </div>
+      <p class="attribution">Wetterdaten: <a href="https://open-meteo.com/" target="_blank" rel="noopener noreferrer">Open‑Meteo.com</a></p>
       <div id="status" class="sr-only" role="status" aria-live="polite">Das Café wartet.</div>
     </main>
     <script type="module" src="/src/main.ts"></script>

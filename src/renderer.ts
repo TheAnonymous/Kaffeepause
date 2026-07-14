@@ -1,7 +1,8 @@
 import { CafeCamera } from './camera';
 import { CafeSimulation } from './simulation/cafeSimulation';
 import { WORLD_HEIGHT, WORLD_WIDTH } from './simulation/layout';
-import type { Barista, Guest } from './simulation/types';
+import type { Barista, CafeAccident, Guest } from './simulation/types';
+import type { CafeEnvironmentSnapshot, DayPhase } from './environment/types';
 
 export const RENDER_SCALE = 2;
 
@@ -53,10 +54,34 @@ function guestVariant(guest: Guest): number {
   return Number.isFinite(numericId) ? numericId % 6 : 0;
 }
 
+function clamp(value: number, min = 0, max = 1): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function mixColor(left: string, right: string, amount: number): string {
+  const progress = clamp(amount);
+  const parse = (color: string, offset: number): number => Number.parseInt(color.slice(offset, offset + 2), 16);
+  const channel = (offset: number): string => Math.round(parse(left, offset) + (parse(right, offset) - parse(left, offset)) * progress)
+    .toString(16)
+    .padStart(2, '0');
+  return `#${channel(1)}${channel(3)}${channel(5)}`;
+}
+
+function skyPalette(phase: DayPhase): readonly [string, string, string] {
+  if (phase === 'dawn') return ['#51435f', '#c87968', '#e8ad78'];
+  if (phase === 'morning') return ['#7599b2', '#a9c3c8', '#e8c995'];
+  if (phase === 'midday') return ['#5e91bb', '#91b6cb', '#d4d9c3'];
+  if (phase === 'afternoon') return ['#6d91aa', '#b1b8ad', '#d8b27e'];
+  if (phase === 'dusk') return ['#4d4260', '#a35e68', '#d58a69'];
+  if (phase === 'evening') return ['#39405d', '#64536c', '#a96864'];
+  return ['#171c31', '#252d45', '#35425a'];
+}
+
 export class CafeRenderer {
   private readonly context: CanvasRenderingContext2D;
   private reducedMotion = false;
   private active = false;
+  private environment?: CafeEnvironmentSnapshot;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -71,6 +96,16 @@ export class CafeRenderer {
 
   setActive(active: boolean): void {
     this.active = active;
+  }
+
+  setEnvironment(snapshot: CafeEnvironmentSnapshot): void {
+    this.environment = snapshot;
+    this.canvas.dataset.dayPhase = snapshot.dayPhase;
+    this.canvas.dataset.weather = snapshot.weather.kind;
+    this.canvas.dataset.weatherSource = snapshot.weatherSource;
+    this.canvas.dataset.localTime = snapshot.localTimeText;
+    this.canvas.dataset.locationState = snapshot.locationState;
+    this.canvas.dataset.crowdTarget = String(snapshot.targetCrowd);
   }
 
   resize(reducedMotion: boolean): void {
@@ -96,9 +131,20 @@ export class CafeRenderer {
     const time = this.active ? elapsed : 0;
     const context = this.context;
     const cameraX = snap(this.camera.x);
+    const accident = this.simulation.activeAccident;
+    const shaking = !this.reducedMotion && accident?.kind === 'tray-drop' && accident.phase === 'chaos';
+    const shakeX = shaking ? Math.round(Math.sin(accident.phaseElapsed * 58)) * HALF_PIXEL : 0;
+    const shakeY = shaking ? Math.round(Math.cos(accident.phaseElapsed * 47)) * HALF_PIXEL : 0;
 
     context.save();
-    context.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, -cameraX * RENDER_SCALE, 0);
+    context.setTransform(
+      RENDER_SCALE,
+      0,
+      0,
+      RENDER_SCALE,
+      (-cameraX + shakeX) * RENDER_SCALE,
+      shakeY * RENDER_SCALE,
+    );
     context.imageSmoothingEnabled = false;
     this.drawRoom(time);
     this.drawWindows(time);
@@ -113,19 +159,25 @@ export class CafeRenderer {
     for (const guest of guests) this.drawGuest(guest);
 
     this.drawFurnitureFront();
+    if (accident) this.drawAccident(accident);
     this.drawForeground(time);
     context.restore();
     this.canvas.dataset.cameraX = this.camera.x.toFixed(1);
     this.canvas.dataset.guestCount = String(this.simulation.guests.length);
+    this.canvas.dataset.accident = accident?.kind ?? 'none';
+    this.canvas.dataset.accidentPhase = accident?.phase ?? 'none';
   }
 
   private drawRoom(time: number): void {
     const context = this.context;
+    const solarLight = clamp(((this.environment?.solar.elevation ?? -12) + 8) / 58);
+    const wall = mixColor('#60434a', '#9c6857', solarLight);
+    const wallLight = mixColor('#865447', '#c58a68', solarLight);
     rect(context, COLORS.deepest, 0, 0, WORLD_WIDTH, WORLD_HEIGHT);
     rect(context, COLORS.wallDark, 0, 9, WORLD_WIDTH, 126);
-    rect(context, COLORS.wall, 0, 14, WORLD_WIDTH, 101);
+    rect(context, wall, 0, 14, WORLD_WIDTH, 101);
     rect(context, '#9b6554', 0, 93, WORLD_WIDTH, 22);
-    rect(context, COLORS.wallLight, 0, 115, WORLD_WIDTH, 18);
+    rect(context, wallLight, 0, 115, WORLD_WIDTH, 18);
     rect(context, '#c58764', 0, 115, WORLD_WIDTH, 1);
     rect(context, COLORS.ink, 0, 130, WORLD_WIDTH, 4);
     rect(context, '#6c4444', 0, 128, WORLD_WIDTH, 2);
@@ -159,32 +211,90 @@ export class CafeRenderer {
     rect(context, poolColor, 0, 111.5, WORLD_WIDTH, 2.5);
     rect(context, '#f0b764', 58, 116, 196, 1);
     rect(context, '#d98954', 67, 118, 178, HALF_PIXEL);
+
+    if (solarLight > 0.05 && (this.environment?.weather.cloudCover ?? 100) < 82) {
+      const fromRight = (this.environment?.solar.azimuth ?? 180) > 180;
+      const startX = fromRight ? 248 : 52;
+      const endX = fromRight ? 96 : 225;
+      context.save();
+      context.globalAlpha = solarLight * (1 - (this.environment?.weather.cloudCover ?? 0) / 130) * 0.22;
+      polygon(context, '#ffe6a3', [[startX, 104], [startX + (fromRight ? -28 : 28), 104], [endX + 38, 211], [endX, 211]]);
+      context.restore();
+    }
   }
 
   private drawWindows(time: number): void {
     const context = this.context;
+    const environment = this.environment;
+    const weather = environment?.weather;
+    const palette = skyPalette(environment?.dayPhase ?? 'night');
+    const cloudCover = weather?.cloudCover ?? 85;
+    const fogVisibility = 0.35;
     rect(context, '#201a24', 47, 19, 208, 90);
     rect(context, '#86584d', 48.5, 20.5, 205, 87);
-    rect(context, '#3c4057', 52, 24, 198, 78);
 
     context.save();
     context.beginPath();
     context.rect(52, 24, 198, 78);
     context.clip();
 
-    rect(context, '#2b3349', 52, 24, 198, 78);
-    rect(context, '#343d54', 52, 47, 198, 55);
-    rect(context, '#48556d', 52, 67, 198, 35);
-    rect(context, '#252d40', 52, 86, 198, 16);
+    rect(context, palette[0], 52, 24, 198, 26);
+    rect(context, palette[1], 52, 50, 198, 26);
+    rect(context, palette[2], 52, 76, 198, 26);
+
+    const nightStrength = environment?.dayPhase === 'night' ? 1 : environment?.dayPhase === 'dawn' || environment?.dayPhase === 'dusk' ? 0.45 : 0;
+    if (nightStrength > 0 && cloudCover < 90) {
+      context.save();
+      context.globalAlpha = nightStrength * (1 - cloudCover / 120);
+      for (let index = 0; index < 24; index += 1) {
+        const x = 55 + ((index * 47) % 191);
+        const y = 27 + ((index * 19) % 45);
+        rect(context, index % 4 === 0 ? '#fff2be' : '#c9d6d3', x, y, index % 5 === 0 ? 1 : HALF_PIXEL, HALF_PIXEL);
+      }
+      context.restore();
+    }
+
+    const celestialDay = (environment?.solar.elevation ?? -10) >= -0.833;
+    const celestialX = 53 + (((environment?.solar.azimuth ?? 180) / 360) * 194);
+    const celestialY = 78 - clamp(((environment?.solar.elevation ?? -6) + 6) / 66) * 48;
+    if (cloudCover < 92) {
+      context.save();
+      context.globalAlpha = clamp(1 - cloudCover / 115) * (celestialDay ? 0.9 : nightStrength);
+      if (celestialDay) {
+        rect(context, '#f6ca6f', celestialX - 3, celestialY - 3, 7, 7);
+        rect(context, '#fff0a5', celestialX - 2, celestialY - 2, 5, 5);
+      } else {
+        rect(context, '#dce0d0', celestialX - 3, celestialY - 3, 7, 7);
+        rect(context, palette[0], celestialX, celestialY - 3, 4, 5);
+      }
+      context.restore();
+    }
+
+    const cloudCount = Math.round(2 + cloudCover / 12);
+    const windDirection = weather?.windDirection ?? 250;
+    const windSign = windDirection >= 180 ? -1 : 1;
+    for (let index = 0; index < cloudCount; index += 1) {
+      const drift = this.reducedMotion ? 0 : time * (0.6 + (weather?.windSpeed ?? 8) / 35) * windSign;
+      const x = 43 + ((((index * 43 + drift) % 230) + 230) % 230);
+      const y = 30 + ((index * 17) % 39);
+      const cloud = environment?.dayPhase === 'night' ? '#495269' : '#b4bdbe';
+      context.save();
+      context.globalAlpha = 0.28 + cloudCover / 180;
+      rect(context, cloud, x, y, 20 + (index % 3) * 5, 4);
+      rect(context, mixColor(cloud, '#eef0df', 0.28), x + 4, y - 2, 8 + (index % 2) * 5, 3);
+      rect(context, mixColor(cloud, '#31384c', 0.25), x + 3, y + 4, 18, 1);
+      context.restore();
+    }
 
     for (let index = 0; index < 19; index += 1) {
       const x = 45 + index * 12 + ((index * 7) % 8);
       const height = 10 + ((index * 11) % 30);
       const width = 8 + (index % 4) * 2;
-      rect(context, index % 3 === 0 ? '#292d43' : index % 3 === 1 ? '#34394e' : '#30364b', x, 88 - height, width, height + 15);
+      const building = environment?.dayPhase === 'midday' || environment?.dayPhase === 'morning' ? '#586776' : '#292f43';
+      rect(context, mixColor(building, '#171c2c', (index % 3) * 0.1), x, 88 - height, width, height + 15);
       rect(context, '#20283a', x + width - 1, 89 - height, 1, height + 13);
       for (let floor = 0; floor < 3; floor += 1) {
-        if ((index + floor) % 3 === 0) {
+        if ((index + floor) % 3 === 0 && nightStrength > 0.2) {
           const lit = (index + floor) % 2 === 0 ? '#d3ad70' : '#9a8a70';
           rect(context, lit, x + 2 + (floor % 2) * 3, 84 - height + floor * 7, 1.5, 1);
           rect(context, '#f0c77c', x + 2.5 + (floor % 2) * 3, 84 - height + floor * 7, HALF_PIXEL, HALF_PIXEL);
@@ -192,31 +302,63 @@ export class CafeRenderer {
       }
     }
 
-    rect(context, '#66778b', 52, 93, 198, 1.5);
-    rect(context, '#30394b', 52, 96, 198, 6);
+    const wetness = clamp(((weather?.rain ?? 0) + (weather?.showers ?? 0)) / 4 + (weather?.kind === 'storm' ? 0.6 : 0));
+    rect(context, mixColor('#5f6871', '#8295a2', wetness), 52, 93, 198, 1.5);
+    rect(context, mixColor('#30394b', '#40596a', wetness), 52, 96, 198, 6);
     for (let index = 0; index < 20; index += 1) {
       const x = 54 + ((index * 31) % 192);
       const width = 1 + (index % 3) * HALF_PIXEL;
-      const color = index % 4 === 0 ? '#d6a35f' : index % 4 === 1 ? '#8aa0ad' : '#52677c';
+      const color = wetness > 0.1 && index % 4 === 0 ? '#d6a35f' : index % 4 === 1 ? '#8aa0ad' : '#52677c';
       rect(context, color, x, 95 + (index % 3), width, 5 - (index % 3));
       rect(context, '#303c50', x + width, 99.5, 3 + (index % 4), HALF_PIXEL);
     }
 
-    const farRain = this.reducedMotion ? 10 : 24;
-    for (let index = 0; index < farRain; index += 1) {
+    const rainStrength = clamp(((weather?.rain ?? 0) + (weather?.showers ?? 0)) / 5 + (weather?.kind === 'storm' ? 0.55 : 0));
+    const rainCount = Math.round((this.reducedMotion ? 12 : 42) * rainStrength);
+    for (let index = 0; index < rainCount; index += 1) {
       const x = 53 + ((index * 43) % 196);
-      const speed = 3 + (index % 4) * 1.5;
+      const speed = this.reducedMotion ? 0 : 8 + (index % 5) * 3;
       const y = 20 + ((index * 19 + time * speed) % 82);
-      rect(context, index % 3 ? '#5f7188' : '#7d8da0', x, y, HALF_PIXEL, 1.5 + (index % 3) * HALF_PIXEL);
+      rect(context, index % 3 ? '#8193a5' : '#bdc7cb', x, y, HALF_PIXEL, 2 + (index % 3));
     }
 
-    const nearRain = this.reducedMotion ? 8 : 26;
-    for (let index = 0; index < nearRain; index += 1) {
-      const baseX = 53 + ((index * 47) % 195);
-      const speed = 8 + (index % 5) * 3;
-      const y = 20 + ((index * 29 + time * speed) % 88);
-      rect(context, index % 4 ? '#8392a4' : '#b2bdc7', baseX, y, HALF_PIXEL, index % 3 === 0 ? 4.5 : 2.5);
-      if (index % 5 === 0) rect(context, '#52677e', baseX + HALF_PIXEL, y + 3, HALF_PIXEL, 2);
+    const snowStrength = clamp((weather?.snowfall ?? 0) / 1.5);
+    const snowCount = Math.round((this.reducedMotion ? 10 : 32) * snowStrength);
+    for (let index = 0; index < snowCount; index += 1) {
+      const drift = this.reducedMotion ? 0 : Math.sin(time * 0.8 + index) * (2 + (weather?.windSpeed ?? 0) / 18);
+      const x = 53 + ((index * 47 + drift + 195) % 195);
+      const y = 24 + ((index * 23 + (this.reducedMotion ? 0 : time * (2 + index % 3))) % 69);
+      rect(context, index % 3 ? '#e3e6dc' : '#fff4dc', x, y, index % 4 === 0 ? 1 : HALF_PIXEL, index % 4 === 0 ? 1 : HALF_PIXEL);
+    }
+
+    const fogPresence = weather
+      ? weather.kind === 'fog'
+        ? weather.transitionProgress
+        : weather.previousKind === 'fog'
+          ? 1 - weather.transitionProgress
+          : 0
+      : 0;
+    if (fogPresence > 0) {
+      context.save();
+      context.globalAlpha = (1 - fogVisibility) * fogPresence;
+      rect(context, '#c3c7bd', 52, 47, 198, 14);
+      rect(context, '#aeb8b4', 52, 67, 198, 19);
+      rect(context, '#d0d0c4', 52, 85, 198, 12);
+      context.restore();
+    }
+
+    const stormPresence = weather
+      ? weather.kind === 'storm'
+        ? weather.transitionProgress
+        : weather.previousKind === 'storm'
+          ? 1 - weather.transitionProgress
+          : 0
+      : 0;
+    if (stormPresence > 0 && !this.reducedMotion && this.active && time % 19 < 0.12) {
+      context.save();
+      context.globalAlpha = 0.28 * stormPresence;
+      rect(context, '#e8e9d2', 52, 24, 198, 78);
+      context.restore();
     }
     context.restore();
 
@@ -234,7 +376,15 @@ export class CafeRenderer {
     rect(context, '#e3ae77', 51, 25, 1.5, 70);
     rect(context, '#68433f', 247, 25, 2, 70);
 
-    const condensation = this.reducedMotion ? 7 : 17;
+    if ((weather?.snowfall ?? 0) > 0.05) {
+      rect(context, '#e7e6d7', 49, 101, 204, 4);
+      rect(context, '#f8f2df', 55, 99.5, 32, 2);
+      rect(context, '#cbd5d0', 180, 100, 45, 2);
+    }
+
+    const condensation = weather?.kind === 'rain' || weather?.kind === 'storm' || weather?.kind === 'fog'
+      ? (this.reducedMotion ? 7 : 17)
+      : 2;
     for (let index = 0; index < condensation; index += 1) {
       const x = 55 + ((index * 31) % 188);
       const y = 28 + ((index * 17) % 62);
@@ -246,12 +396,13 @@ export class CafeRenderer {
 
   private drawDoor(time: number): void {
     const context = this.context;
+    const palette = skyPalette(this.environment?.dayPhase ?? 'night');
     rect(context, COLORS.ink, 3, 36, 43, 155);
     rect(context, '#704b46', 7, 41, 35, 146);
     rect(context, '#a46b54', 8, 42, 33, 2);
-    rect(context, '#31384d', 11, 47, 27, 78);
-    rect(context, '#465269', 13, 49, 23, 74);
-    rect(context, '#526078', 14, 50, 3, 72);
+    rect(context, mixColor(palette[0], '#202538', 0.34), 11, 47, 27, 78);
+    rect(context, mixColor(palette[1], '#37445b', 0.45), 13, 49, 23, 74);
+    rect(context, mixColor(palette[2], '#526078', 0.55), 14, 50, 3, 72);
     rect(context, '#2b3145', 13, 96, 23, 27);
     rect(context, '#1f2638', 14, 99, 21, 23);
     for (let index = 0; index < 4; index += 1) {
@@ -273,11 +424,42 @@ export class CafeRenderer {
     rect(context, '#e6cb91', 22, 71.5, 5, HALF_PIXEL);
     rect(context, '#9c5f49', 20, 74, 9, HALF_PIXEL);
 
-    if (!this.active) return;
-    for (let index = 0; index < (this.reducedMotion ? 3 : 8); index += 1) {
+    this.drawWallClock();
+    const rain = clamp(((this.environment?.weather.rain ?? 0) + (this.environment?.weather.showers ?? 0)) / 4);
+    if (!this.active || rain <= 0) return;
+    for (let index = 0; index < Math.round((this.reducedMotion ? 4 : 12) * rain); index += 1) {
       const y = 48 + ((index * 23 + time * (10 + index)) % 74);
       rect(context, index % 2 ? '#8594a6' : '#aeb8c2', 14 + ((index * 7) % 21), y, HALF_PIXEL, 2.5 + (index % 2));
     }
+  }
+
+  private drawWallClock(): void {
+    const context = this.context;
+    const date = this.environment?.localTime ?? new Date(0);
+    const hours = date.getHours() % 12;
+    const minutes = date.getMinutes();
+    const hourAngle = ((hours + minutes / 60) / 12) * Math.PI * 2 - Math.PI / 2;
+    const minuteAngle = (minutes / 60) * Math.PI * 2 - Math.PI / 2;
+    const centerX = 25;
+    const centerY = 26;
+    rect(context, '#2a2028', centerX - 8, centerY - 8, 16, 16);
+    rect(context, '#b57a56', centerX - 7, centerY - 7, 14, 14);
+    rect(context, '#ead8ae', centerX - 5.5, centerY - 5.5, 11, 11);
+    for (const angle of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) {
+      rect(context, '#75483e', centerX + Math.cos(angle) * 4.5 - HALF_PIXEL, centerY + Math.sin(angle) * 4.5 - HALF_PIXEL, 1, 1);
+    }
+    const drawHand = (angle: number, length: number, color: string): void => {
+      const steps = Math.ceil(length * 2);
+      for (let step = 1; step <= steps; step += 1) {
+        const distance = (step / steps) * length;
+        rect(context, color, centerX + Math.cos(angle) * distance - HALF_PIXEL, centerY + Math.sin(angle) * distance - HALF_PIXEL, 1, 1);
+      }
+    };
+    drawHand(hourAngle, 3, '#4a3034');
+    drawHand(minuteAngle, 4.5, '#7b4b40');
+    rect(context, '#d39a60', centerX - HALF_PIXEL, centerY - HALF_PIXEL, 1, 1);
+    this.canvas.dataset.clock = 'analog';
+    this.canvas.dataset.clockTime = this.environment?.localTimeText ?? '00:00';
   }
 
   private drawArchitecture(time: number): void {
@@ -289,13 +471,14 @@ export class CafeRenderer {
       rect(context, '#5e3d42', x + 1, 11, 42, HALF_PIXEL);
     }
 
+    const lampsNeeded = clamp((12 - (this.environment?.solar.elevation ?? -12)) / 24);
     const glowBright = this.reducedMotion || Math.sin(time * 0.68) > -0.25;
     for (const x of [78, 150, 224, 302, 354]) {
       rect(context, '#38282e', x, 0, 3, 18);
       rect(context, '#6d4541', x + HALF_PIXEL, 0, HALF_PIXEL, 17);
       rect(context, '#e4ac63', x - 5, 17, 13, 3);
       rect(context, '#ffd98d', x - 3, 18, 9, 1);
-      rect(context, glowBright ? COLORS.glow : '#e9b66c', x - 7, 20, 17, 4);
+      rect(context, glowBright ? mixColor('#d88f57', COLORS.glow, lampsNeeded) : '#e0a260', x - 7, 20, 17, 4);
       rect(context, '#ffe1a0', x - 5, 20.5, 13, 1);
       rect(context, '#c77b4d', x - 5, 24, 13, 2);
       rect(context, '#8d5041', x - 3, 26, 9, HALF_PIXEL);
@@ -325,13 +508,15 @@ export class CafeRenderer {
     rect(context, '#b77a55', 254, 87, 11, 4);
     rect(context, '#d59767', 255, 88, 9, 1);
     rect(context, '#6b483f', 257.5, 92, 4, 36);
+    const wind = clamp((this.environment?.weather.windSpeed ?? 0) / 55);
+    const plantSway = this.reducedMotion ? wind * 1.5 : Math.sin(time * (0.7 + wind)) * wind * 2.5;
     rect(context, '#4d6958', 258.5, 80, 3, 8);
-    rect(context, '#72906a', 253, 81, 5, 5);
-    rect(context, '#91a878', 254, 80, 2, 4);
-    rect(context, '#6b855f', 262, 78, 5, 9);
-    rect(context, '#8da071', 264, 77, 2, 6);
-    rect(context, '#547359', 250, 84, 5, 3);
-    rect(context, '#5e795f', 266, 84, 4, 3);
+    rect(context, '#72906a', 253 + plantSway, 81, 5, 5);
+    rect(context, '#91a878', 254 + plantSway, 80, 2, 4);
+    rect(context, '#6b855f', 262 + plantSway * 0.7, 78, 5, 9);
+    rect(context, '#8da071', 264 + plantSway * 0.7, 77, 2, 6);
+    rect(context, '#547359', 250 + plantSway * 0.4, 84, 5, 3);
+    rect(context, '#5e795f', 266 + plantSway * 0.4, 84, 4, 3);
   }
 
   private drawFurnitureBack(): void {
@@ -380,12 +565,25 @@ export class CafeRenderer {
     rect(context, '#d09a67', 286, 95, 24, 17);
     rect(context, '#56383a', 288, 98, 20, 11);
     rect(context, '#f1ce87', 290, 100, 16, 1);
-    for (const [x, y, color] of [[291, 103, '#c7794e'], [296, 104, '#dca45e'], [301, 102, '#b9654a'], [304, 105, '#e0b66f']] as const) {
+    const phase = this.environment?.dayPhase ?? 'night';
+    const displayItems = phase === 'midday'
+      ? [[290, 103, '#c7794e'], [294, 105, '#dca45e'], [298, 102, '#b9654a'], [302, 104, '#e0b66f'], [305, 102, '#d98957'], [307, 105, '#c7794e']] as const
+      : phase === 'morning' || phase === 'dawn'
+        ? [[291, 103, '#dca45e'], [296, 104, '#dca45e'], [301, 103, '#e0b66f'], [305, 105, '#c7794e']] as const
+        : phase === 'afternoon'
+          ? [[291, 103, '#a85e58'], [296, 104, '#d88d72'], [301, 102, '#8c5350'], [304, 105, '#e0b66f']] as const
+          : [[294, 104, '#b9654a'], [302, 104, '#dca45e']] as const;
+    for (const [x, y, color] of displayItems) {
       rect(context, '#3c2d32', x - 1, y + 2, 5, 1);
       rect(context, color, x, y, 3.5, 2.5);
       rect(context, '#f1cf8a', x + HALF_PIXEL, y, 2, HALF_PIXEL);
     }
     rect(context, '#b77a55', 285, 112, 26, 3);
+    if (phase === 'night' || phase === 'evening') {
+      rect(context, '#76a398', 286, 111, 9, 2);
+      rect(context, '#d7caa8', 307, 108, 3, 7);
+      rect(context, '#6d5b55', 308, 106, 1, 3);
+    }
 
     rect(context, '#332c34', 322, 80, 40, 36);
     rect(context, '#4c4650', 324, 82, 36, 33);
@@ -529,6 +727,24 @@ export class CafeRenderer {
       rect(context, '#8d5947', x + facing * 6 - 1, bodyTop + 6, 3, HALF_PIXEL);
       rect(context, guest.palette.skin, x + facing * 5, bodyTop + 7, 2, 1.5);
     }
+    if (guest.accessory === 'scarf') {
+      rect(context, '#dfb65f', x - 5.5, bodyTop - 1.5, 11, 2.5);
+      rect(context, '#bd704d', x - facing * 5, bodyTop, 2.5, 8);
+    } else if (guest.accessory === 'coat') {
+      rect(context, '#d3b27b', x - 1, bodyTop + 1, 2, seated ? 9 : 13);
+      rect(context, '#4b3437', x - HALF_PIXEL, bodyTop + 3, 1, 1);
+      rect(context, '#4b3437', x - HALF_PIXEL, bodyTop + 7, 1, 1);
+    } else if (guest.accessory === 'sunglasses') {
+      rect(context, '#20222a', x - 4.5, headTop + 3, 4, 2);
+      rect(context, '#20222a', x + HALF_PIXEL, headTop + 3, 4, 2);
+      rect(context, '#9eb4b2', x - 3.5, headTop + 3.5, 2, HALF_PIXEL);
+      rect(context, '#9eb4b2', x + 1.5, headTop + 3.5, 2, HALF_PIXEL);
+    } else if (guest.accessory === 'umbrella' && !seated) {
+      const umbrellaX = x - facing * 8;
+      rect(context, '#d6b36f', umbrellaX, bodyTop + 1, 1, 18);
+      polygon(context, '#607b7c', [[umbrellaX - 3, bodyTop + 3], [umbrellaX, bodyTop - 1], [umbrellaX + 3, bodyTop + 3]]);
+      rect(context, '#3d3036', umbrellaX, bodyTop + 18, 3, 1.5);
+    }
     if (!seated) return;
 
     switch (guest.activity) {
@@ -583,6 +799,23 @@ export class CafeRenderer {
           rect(context, '#d4c8b3', cupX + 2, cupY - 2, HALF_PIXEL, 1.5);
           rect(context, '#eee0c8', cupX + 3, cupY - 3, HALF_PIXEL, 1.5);
         }
+        break;
+      }
+      case 'phone': {
+        const glow = phase % 2 === 0 ? '#88b6b0' : '#78a19f';
+        rect(context, guest.palette.skin, x + facing * 3, bodyTop + 6, 4, 2);
+        rect(context, '#252832', x + facing * 5 - 2, bodyTop + 1, 4, 8);
+        rect(context, glow, x + facing * 5 - 1.5, bodyTop + 2, 3, 5);
+        rect(context, '#d9e1cf', x + facing * 5 - 1, bodyTop + 2.5, 2, HALF_PIXEL);
+        break;
+      }
+      case 'sketching': {
+        polygon(context, '#ead7ae', [[x - 9, bodyTop + 6], [x + 7, bodyTop + 4], [x + 9, bodyTop + 11], [x - 7, bodyTop + 12]]);
+        rect(context, '#8e6857', x - 5, bodyTop + 8, 8, HALF_PIXEL);
+        rect(context, '#6c827c', x - 2, bodyTop + 9.5, 6, HALF_PIXEL);
+        const pencilX = x + (phase % 2 ? 1 : -1);
+        polygon(context, '#d9a653', [[pencilX, bodyTop + 4], [pencilX + 1, bodyTop + 3], [pencilX + 7, bodyTop + 9], [pencilX + 6, bodyTop + 10]]);
+        rect(context, guest.palette.skin, pencilX - 1, bodyTop + 4, 3, 2);
         break;
       }
     }
@@ -644,6 +877,19 @@ export class CafeRenderer {
         rect(context, '#9b6049', cupX + 1, workY - 5, 3, HALF_PIXEL);
         rect(context, '#f0dfbd', cupX + 4.5, workY - 4.5, 2, 2);
       }
+    } else if (barista.task === 'restocking') {
+      const lift = phase % 2 ? -2 : 0;
+      rect(context, '#4f746d', x - 7, workY - 6 + lift, 7, 3);
+      rect(context, '#c88f68', x - 9, workY - 6 + lift, 3, 2);
+      rect(context, '#d69c61', x - 14, workY - 10 + lift, 7, 8);
+      rect(context, '#f0c477', x - 13, workY - 9 + lift, 5, 1);
+      rect(context, '#a75f48', x - 12, workY - 6 + lift, 3, 2);
+    } else if (barista.task === 'polishing') {
+      const polish = phase % 2 ? 2 : -2;
+      rect(context, '#4f746d', x + 3, workY - 5, 8, 3);
+      rect(context, '#c88f68', x + 10, workY - 4, 3, 2);
+      rect(context, '#f0dfbd', x + 11 + polish, workY - 8, 6, 7);
+      rect(context, '#b9d1c8', x + 9 + polish, workY - 4, 7, 3);
     } else {
       const reach = phase % 2 ? 1 : 0;
       rect(context, '#4f746d', x + 4, workY - 5, 10 + reach, 3);
@@ -669,6 +915,123 @@ export class CafeRenderer {
     }
     rect(context, '#33242a', 55, 204, 176, 4);
     rect(context, '#6d4542', 58, 204, 170, HALF_PIXEL);
+  }
+
+  private drawAccident(accident: Readonly<CafeAccident>): void {
+    if (accident.kind === 'tray-drop') this.drawTrayDrop(accident);
+    else if (accident.kind === 'coffee-spill') this.drawCoffeeSpill(accident);
+    else this.drawUmbrellaPop(accident);
+
+    const participantId = accident.guestId ?? accident.witnessId;
+    const guest = this.simulation.guests.find((item) => item.id === participantId);
+    if (guest) this.drawReactionPose(guest, accident);
+  }
+
+  private drawTrayDrop(accident: Readonly<CafeAccident>): void {
+    const context = this.context;
+    const x = snap(accident.position.x);
+    const y = snap(accident.position.y);
+    const progress = Math.min(1, accident.phaseElapsed / Math.max(0.001, accident.phaseDuration));
+
+    if (accident.phase === 'startle' && !this.reducedMotion) {
+      const flightY = y - 23 + progress * 20;
+      polygon(context, '#372932', [[x - 12, flightY], [x + 11, flightY + 4], [x + 9, flightY + 7], [x - 13, flightY + 3]]);
+      rect(context, '#d09561', x - 10, flightY + HALF_PIXEL, 19, 1);
+      rect(context, '#f2e1bd', x - 6 + progress * 3, flightY - 5 + progress * 2, 5, 5);
+      rect(context, '#f2e1bd', x + 3 + progress * 5, flightY - 4 + progress * 4, 5, 5);
+      return;
+    }
+
+    polygon(context, '#30242c', [[x - 13, y + 4], [x + 12, y], [x + 14, y + 3], [x - 11, y + 7]]);
+    rect(context, '#ca8a5b', x - 10, y + 4, 20, 1);
+    const shardCount = accident.phase === 'cleanup' ? Math.max(2, 8 - Math.floor(progress * 6)) : 8;
+    for (let index = 0; index < shardCount; index += 1) {
+      const shardX = x - 17 + ((index * 11) % 34);
+      const shardY = y + 8 + ((index * 7) % 9);
+      polygon(context, index % 2 ? '#f7e8c9' : '#c9d3cf', [[shardX, shardY], [shardX + 2, shardY - 2], [shardX + 3, shardY + 1]]);
+    }
+    if (!this.reducedMotion && accident.phase === 'chaos') {
+      for (let index = 0; index < 5; index += 1) {
+        const arc = (index - 2) * 5;
+        rect(context, '#f3dfba', x + arc, y - 4 - ((index + Math.floor(progress * 6)) % 4) * 2, HALF_PIXEL, 2);
+      }
+    }
+    if (accident.phase === 'cleanup') {
+      const sweep = this.reducedMotion ? 0 : Math.sin(accident.phaseElapsed * 12) * 5;
+      polygon(context, '#8b5a43', [[x + 11 + sweep, y - 25], [x + 13 + sweep, y - 25], [x + 2 + sweep, y + 8], [x, y + 8]]);
+      rect(context, '#d2ad6d', x - 3 + sweep, y + 7, 10, 3);
+    }
+  }
+
+  private drawCoffeeSpill(accident: Readonly<CafeAccident>): void {
+    const context = this.context;
+    const x = snap(accident.position.x);
+    const tableY = accident.position.y < 165 ? 139 : 169;
+    const progress = Math.min(1, accident.phaseElapsed / Math.max(0.001, accident.phaseDuration));
+    const spillWidth = accident.phase === 'startle' ? 4 + progress * 6 : accident.phase === 'cleanup' ? 14 - progress * 8 : 14;
+
+    polygon(context, '#6f3d31', [[x - spillWidth, tableY], [x - 2, tableY - 2], [x + spillWidth, tableY - HALF_PIXEL], [x + 5, tableY + 2], [x - 7, tableY + 1.5]]);
+    rect(context, '#b56a45', x - spillWidth + 2, tableY - HALF_PIXEL, Math.max(2, spillWidth), HALF_PIXEL);
+    const cupTilt = accident.phase === 'startle' && !this.reducedMotion ? progress * 4 : 4;
+    polygon(context, '#efe0c0', [[x + 5, tableY - 6 + cupTilt], [x + 11, tableY - 4 + cupTilt], [x + 9, tableY + cupTilt], [x + 3, tableY - 2 + cupTilt]]);
+    rect(context, '#8e5845', x + 5, tableY - 4 + cupTilt, 5, HALF_PIXEL);
+    if (!this.reducedMotion && accident.phase === 'chaos') {
+      for (let index = 0; index < 6; index += 1) {
+        const dropX = x - 10 + index * 4;
+        const dropY = tableY - 5 - ((index * 3 + Math.floor(progress * 8)) % 7);
+        rect(context, '#9b563b', dropX, dropY, HALF_PIXEL, 1 + (index % 2));
+      }
+    }
+    if (accident.phase === 'cleanup') {
+      const wipe = this.reducedMotion ? 0 : Math.round(Math.sin(accident.phaseElapsed * 15) * 4);
+      rect(context, '#6d9c92', x - 8 + wipe, tableY - 3, 13, 4);
+      rect(context, '#b6d3c8', x - 6 + wipe, tableY - 3, 9, HALF_PIXEL);
+    }
+  }
+
+  private drawUmbrellaPop(accident: Readonly<CafeAccident>): void {
+    const context = this.context;
+    const guest = this.simulation.guests.find((item) => item.id === accident.guestId);
+    if (!guest) return;
+    const x = snap(guest.position.x + guest.facing * 3);
+    const y = snap(guest.position.y - 24);
+    const progress = Math.min(1, accident.phaseElapsed / Math.max(0.001, accident.phaseDuration));
+    const open = accident.phase === 'cleanup' ? Math.max(0.25, 1 - progress) : this.reducedMotion ? 1 : Math.min(1, progress * 2.4 + 0.2);
+    const width = 5 + open * 18;
+
+    polygon(context, '#302733', [[x - width, y], [x - width * 0.55, y - 7 * open], [x, y - 10 * open], [x + width * 0.55, y - 7 * open], [x + width, y], [x, y + 2]]);
+    polygon(context, '#738b8a', [[x - width + 1, y - HALF_PIXEL], [x - width * 0.5, y - 6 * open], [x, y + 1], [x, y - 9 * open]]);
+    polygon(context, '#b46e55', [[x, y - 9 * open], [x + width * 0.5, y - 6 * open], [x + width - 1, y - HALF_PIXEL], [x, y + 1]]);
+    rect(context, '#e3bd76', x - HALF_PIXEL, y - 8 * open, 1, 20);
+    rect(context, '#49313a', x, y + 11, 4, 1.5);
+    if (!this.reducedMotion && accident.phase === 'chaos') {
+      for (let index = 0; index < 5; index += 1) {
+        const angle = accident.phaseElapsed * 8 + index * 1.2;
+        rect(context, '#d8c38e', x + Math.cos(angle) * (width + 3), y + Math.sin(angle) * 7, HALF_PIXEL, HALF_PIXEL);
+      }
+    }
+  }
+
+  private drawReactionPose(guest: Guest, accident: Readonly<CafeAccident>): void {
+    const context = this.context;
+    const x = snap(guest.position.x);
+    const seated = guest.state === 'activity';
+    const footY = snap(guest.position.y);
+    const shoulderY = footY - (seated ? 12 : 18);
+
+    if (accident.phase === 'startle' || (accident.kind === 'tray-drop' && accident.phase === 'chaos')) {
+      polygon(context, guest.palette.coat, [[x - 5, shoulderY], [x - 10, shoulderY - 7], [x - 8, shoulderY - 9], [x, shoulderY - 2]]);
+      polygon(context, guest.palette.coat, [[x + 5, shoulderY], [x + 10, shoulderY - 7], [x + 8, shoulderY - 9], [x, shoulderY - 2]]);
+      rect(context, guest.palette.skin, x - 11, shoulderY - 10, 3, 3);
+      rect(context, guest.palette.skin, x + 8, shoulderY - 10, 3, 3);
+      rect(context, '#f7d985', x - HALF_PIXEL, shoulderY - 23, 1, 5);
+      rect(context, '#f7d985', x - HALF_PIXEL, shoulderY - 16, 1, 1);
+    }
+
+    if (accident.kind === 'coffee-spill' && accident.phase === 'cleanup') {
+      const tableY = guest.position.y < 165 ? 139 : 169;
+      rect(context, guest.palette.skin, x + guest.facing * 5, tableY - 5, 3, 2);
+    }
   }
 
   private drawForeground(time: number): void {

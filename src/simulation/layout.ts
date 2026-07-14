@@ -33,4 +33,6 @@ export const BARISTA_PLACES = {
   machine: { x: 316, y: 142 },
   serving: { x: 294, y: 146 },
   wiping: { x: 337, y: 146 },
+  restocking: { x: 292, y: 144 },
+  polishing: { x: 354, y: 146 },
 } as const satisfies Record<string, Point>;

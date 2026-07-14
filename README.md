@@ -4,21 +4,33 @@ Ein autonomes Pixel-Art-Café für eine kleine Pause im Browser.
 
 **[Café betreten →](https://theanonymous.github.io/Kaffeepause/)**
 
-![Das Pixel-Art-Café Kaffeepause an einem Regentag](docs/kaffeepause-preview.png)
+![Das Pixel-Art-Café Kaffeepause bei klarem Mittagslicht](docs/kaffeepause-preview.png)
 
 ## Über das Projekt
 
-Kaffeepause zeigt ein gemütliches Café am Regentag als bildschirmfüllendes Canvas-Diorama. Gäste kommen und gehen, bestellen, lesen, arbeiten, reden und trinken – vollständig selbstständig und ohne sichtbaren Schleifensprung.
+Kaffeepause zeigt ein gemütliches Café als bildschirmfüllendes Canvas-Diorama. Gerätezeit, Sonnenstand, Wetter und Tagesprofil verändern Außenwelt, Licht, Auslage, Geräuschkulisse und Belegung weich. Gäste kommen und gehen, bestellen, lesen, arbeiten, zeichnen, telefonieren, reden und trinken – vollständig selbstständig und ohne sichtbaren Schleifensprung.
 
 - handgezeichnete Canvas-Pixelart ohne externe Assets
 - hochauflösendes 768 × 432-Pixel-Canvas mit echten Ein-Pixel-Details
-- individuelle Figuren mit lesbaren Tätigkeiten und einem animierten Barista
-- mehrschichtiger Regen, Kondenswasser, Dampf und warme Lichtreflexe
+- bis zu acht Gäste mit lesbaren Tätigkeiten, Wetteraccessoires und einem animierten Barista
+- funktionierende Pixel-Wanduhr sowie lokaler Sonnenstand mit Dämmerung und Polarzuständen
+- klare, bewölkte, neblige, regnerische, verschneite und stürmische Außenwelten
+- tageszeitabhängige Auslage, Stadtlichter, Sterne, Lichtstreifen und warme Innenbeleuchtung
 - deterministische Figuren-Zustandsautomaten und zentrale Platzreservierung
-- generativer Lo-fi-Jazz, Regen und Café-Geräusche über Web Audio
+- seltene, vollständig reversible Café-Unfälle mit Tablett, Kaffeetasse oder Regenschirm
+- adaptive Lo-fi-Musik, Regen, Wind und belegungsabhängige Café-Geräusche über Web Audio
+- pixelartige Ton- und Vollbildsteuerung, die sich nach 2,5 Sekunden Ruhe zurückzieht
 - langsame Kamerafahrt auf schmalen Smartphone-Displays
-- Reduced-Motion-Modus mit ruhiger Kamera und weniger Partikeln
-- rein clientseitig, ohne Backend oder Laufzeit-Netzwerkzugriffe
+- Reduced-Motion-Modus mit ruhiger Kamera, statischem Wetter und weniger Partikeln
+- rein clientseitig und ohne eigenes Backend
+
+Nach dem Betreten lassen Mausbewegung, Berührung, Tastatur oder Fokus die Steuerung sofort wieder erscheinen. Im Vollbild bleibt ihr Zustand auch nach Escape korrekt synchronisiert. Alle vier bis sieben Minuten sorgt ein harmloser Slapstick-Moment kurz für Aufregung; danach setzen Barista und Gäste ihre gesicherten Tätigkeiten und Wege fort.
+
+## Standort und Wetter
+
+Beim Laden fragt Kaffeepause nach dem Browserstandort. Die Koordinaten bleiben ausschließlich im Arbeitsspeicher, werden für den Wetterabruf auf zwei Dezimalstellen gerundet und weder gespeichert noch rückwärts geokodiert. Bei Ablehnung, ungültigen Daten oder fehlendem Netz läuft das Café ohne Einschränkung mit einer deterministischen Ersatzumgebung weiter.
+
+Live-Wetter stammt aus der keylosen [Open‑Meteo Forecast API](https://open-meteo.com/en/docs) und wird höchstens alle 15 Minuten aktualisiert. Die sichtbare Attribution im Café verweist auf [Open‑Meteo](https://open-meteo.com/); das Projekt nutzt dessen nichtkommerzielles Modell. Zeit, Standort und Wetter werden nicht an ein eigenes Backend übertragen.
 
 ## Lokal starten
 
@@ -36,3 +48,5 @@ npm run test:e2e
 ```
 
 Die Simulation verwendet stabile Szenenkoordinaten von 384 × 216. Gerendert wird auf einem intrinsischen 768 × 432-Pixel-Canvas mit Faktor 2 und ohne Weichzeichnung. Auf Smartphones bleibt die Szenenhöhe erhalten; die intrinsische Canvasbreite und der sichtbare Kameraausschnitt werden gemeinsam angepasst.
+
+Im Entwicklungsserver lassen sich visuelle Szenen mit `?time=HH:MM`, `?weather=clear|cloudy|fog|rain|snow|storm`, `?lat=<Breite>` und `?lon=<Länge>` kombinieren. Genau eine Unfallart kann zusätzlich beschleunigt werden, zum Beispiel mit `?accident=tray-drop`, `?accident=coffee-spill` oder `?accident=umbrella-pop`. Produktionsbuilds ignorieren sämtliche Testparameter.

@@ -13,7 +13,9 @@ export type GuestState =
   | 'walking-to-exit'
   | 'exiting';
 
-export type GuestActivity = 'reading' | 'typing' | 'talking' | 'drinking';
+export type GuestActivity = 'reading' | 'typing' | 'talking' | 'drinking' | 'phone' | 'sketching';
+
+export type GuestAccessory = 'umbrella' | 'coat' | 'scarf' | 'sunglasses';
 
 export interface GuestPalette {
   skin: string;
@@ -37,10 +39,11 @@ export interface Guest {
   activityRounds: number;
   seatId?: string;
   destinationId?: string;
+  accessory?: GuestAccessory;
   palette: GuestPalette;
 }
 
-export type BaristaTask = 'machine' | 'serving' | 'wiping';
+export type BaristaTask = 'machine' | 'serving' | 'wiping' | 'restocking' | 'polishing';
 
 export interface Barista {
   position: Point;
@@ -56,4 +59,22 @@ export interface SimulationStats {
   arrivals: number;
   departures: number;
   elapsed: number;
+  accidentsCompleted: number;
+}
+
+export type AccidentKind = 'tray-drop' | 'coffee-spill' | 'umbrella-pop';
+
+export type AccidentPhase = 'startle' | 'chaos' | 'cleanup';
+
+export interface CafeAccident {
+  readonly id: number;
+  readonly kind: AccidentKind;
+  phase: AccidentPhase;
+  phaseElapsed: number;
+  phaseDuration: number;
+  readonly startedAt: number;
+  readonly position: Point;
+  readonly guestId?: string;
+  readonly witnessId?: string;
+  readonly detour?: Point;
 }
