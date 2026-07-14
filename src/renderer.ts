@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 23952)
+Total output lines: 2028
+
 import { CafeCamera } from './camera';
 import { WORLD_HEIGHT, WORLD_WIDTH } from './simulation/layout';
 import type { Barista, CafeAccident, CafeMoment, Guest } from './simulation/types';
@@ -6,6 +9,7 @@ import type { VenueKind } from './venue';
 import type { SceneSnapshot } from './scene/types';
 import { CharacterRenderer } from './scene/characterRenderer';
 import { DoorRenderer, type DoorVisualState } from './scene/doorRenderer';
+import { calculateHd2dState, Hd2dRenderer } from './scene/hd2dRenderer';
 import { calculateSceneLighting, LightingRenderer, type SceneLighting } from './scene/lightingRenderer';
 import { calculateVenueActivityState, VenueActivityRenderer } from './scene/venueActivityRenderer';
 import { VenueOpticsRenderer, windowReflectionLean } from './scene/venueOpticsRenderer';
@@ -97,6 +101,7 @@ export class CafeRenderer {
   private venue: VenueKind = 'cafe';
   private readonly characters = new CharacterRenderer(rect, polygon);
   private readonly door = new DoorRenderer(rect, polygon, HALF_PIXEL);
+  private readonly hd2d = new Hd2dRenderer(rect, polygon, HALF_PIXEL);
   private readonly lighting = new LightingRenderer(rect, polygon, HALF_PIXEL);
   private readonly activities = new VenueActivityRenderer(rect, HALF_PIXEL);
   private readonly optics = new VenueOpticsRenderer(rect, polygon, HALF_PIXEL);
@@ -156,6 +161,7 @@ export class CafeRenderer {
     const cameraX = snap(this.camera.x);
     const accident = snapshot.accident;
     const lighting = calculateSceneLighting(this.venue, this.environment);
+    const hd2d = calculateHd2dState(lighting);
     const activityState = calculateVenueActivityState(snapshot.guests);
     const shaking = !this.reducedMotion && accident?.kind === 'tray-drop' && accident.phase === 'chaos';
     const shakeX = shaking ? Math.round(Math.sin(accident.phaseElapsed * 58)) * HALF_PIXEL : 0;
@@ -176,6 +182,14 @@ export class CafeRenderer {
     this.drawWindows(time, lighting);
     const door = this.drawDoor(time, snapshot.guests);
     this.drawVenueArchitecture(time);
+    this.hd2d.drawBackAtmosphere({
+      context,
+      venue: this.venue,
+      time,
+      active: this.active,
+      reducedMotion: this.reducedMotion,
+      state: hd2d,
+    });
     this.drawVenueFurnitureBack();
     this.lighting.drawAmbient({
       context,
@@ -225,6 +239,14 @@ export class CafeRenderer {
     this.drawVenueDetails(time, snapshot.storyStages.sketchbook);
     if (accident) this.drawAccident(accident, snapshot.guests);
     this.drawForeground(time, lighting);
+    this.hd2d.drawLensPass({
+      context,
+      venue: this.venue,
+      time,
+      active: this.active,
+      reducedMotion: this.reducedMotion,
+      state: hd2d,
+    });
     context.restore();
     this.canvas.dataset.cameraX = this.camera.x.toFixed(1);
     this.canvas.dataset.guestCount = String(snapshot.guests.length);
@@ -243,7 +265,8 @@ export class CafeRenderer {
     this.canvas.dataset.occupiedTables = String(activityState.seated);
     this.canvas.dataset.door = door.active ? 'opening' : 'closed';
     this.canvas.dataset.doorOpen = door.opening.toFixed(2);
-    this.canvas.dataset.optics = 'layered';
+    this.canvas.dataset.optics = 'hd-2d';
+    this.canvas.dataset.bloom = hd2d.bloom.toFixed(2);
   }
 
   private drawRoom(time: number): void {
@@ -875,370 +898,7 @@ export class CafeRenderer {
     }
     context.save();
     context.globalAlpha = 0.12;
-    for (const x of [74, 146, 218, 290, 352]) polygon(context, '#53d8d1', [[x - 18, 29], [x + 18, 29], [x + 30, 117], [x - 30, 117]]);
-    context.restore();
-    for (const x of [74, 146, 218, 290, 352]) {
-      rect(context, '#182238', x, 0, 3, 18);
-      rect(context, '#4d3a77', x - 6, 18, 15, 3);
-      rect(context, '#5ac6cb', x - 5, 21 + flicker, 13, 4);
-      rect(context, '#f0c67a', x - 3, 22 + flicker, 8, HALF_PIXEL);
-      rect(context, '#c9579e', x - 4, 26, 11, 2);
-    }
-
-    rect(context, '#131a2b', 267, 20, 103, 64);
-    rect(context, '#273354', 271, 24, 95, 56);
-    rect(context, '#1a2239', 274, 27, 89, 50);
-    rect(context, '#54cbd0', 277, 30, 83, HALF_PIXEL);
-    rect(context, '#b955a2', 277, 71, 83, HALF_PIXEL);
-    for (let index = 0; index < 5; index += 1) {
-      const x = 282 + index * 15;
-      const color = index % 2 ? '#ca5da7' : '#62cbd0';
-      rect(context, '#0d1422', x, 38, 11, 23);
-      rect(context, color, x + 1, 39, 9, 10);
-      rect(context, '#f3de91', x + 3, 41, 5, HALF_PIXEL);
-      rect(context, '#3c5071', x + 2, 53, 7, 4);
-      rect(context, color, x + 4, 58, 3, 1);
-    }
-
-    rect(context, '#1b2740', 255, 87, 10, 45);
-    rect(context, '#54cbd0', 253, 87, 14, 2);
-    rect(context, '#c55aa4', 254, 91, 12, 1);
-    rect(context, '#263e58', 258, 92, 5, 36);
-    rect(context, '#70d6d2', 254, 78 + flicker, 3, 9);
-    rect(context, '#cc62a9', 263, 80 - flicker, 3, 7);
-  }
-
-  private drawVenueFurnitureBack(): void {
-    if (this.venue === 'cafe') this.drawFurnitureBack();
-    else if (this.venue === 'ramen') this.drawRamenFurnitureBack();
-    else this.drawArcadeFurnitureBack();
-  }
-
-  private drawRamenFurnitureBack(): void {
-    const context = this.context;
-    rect(context, '#342636', 58, 138, 109, 7);
-    rect(context, '#8c4143', 60, 135, 105, 6);
-    rect(context, '#d46854', 62, 136, 101, 1);
-    for (const x of [70, 99, 128, 151]) {
-      rect(context, '#4c2d3a', x, 140, 22, 10);
-      rect(context, '#a94a46', x + 1, 141, 20, 5);
-      rect(context, '#e5ad68', x + 3, 142, 16, HALF_PIXEL);
-    }
-    for (const x of [105, 179]) {
-      rect(context, '#322432', x - 18, 170, 37, 5);
-      rect(context, '#a74845', x - 16, 167, 33, 4);
-      rect(context, '#ecad63', x - 14, 167.5, 29, HALF_PIXEL);
-      rect(context, '#59313a', x - 2, 172, 4, 31);
-      rect(context, '#2d2531', x - 12, 202, 24, 3);
-      for (const direction of [-1, 1] as const) {
-        rect(context, '#56323c', x + direction * 16 - 3, 176, 7, 25);
-        rect(context, '#8f4644', x + direction * 16 - 2, 174, 5, 5);
-      }
-    }
-    for (const x of [94, 168]) {
-      rect(context, '#f2e0b8', x, 163, 7, 4);
-      rect(context, '#d9a050', x + 1, 162, 5, 2);
-      rect(context, '#48303a', x - 1, 167, 9, 1);
-    }
-  }
-
-  private drawArcadeFurnitureBack(): void {
-    const context = this.context;
-    for (const [x, color] of [[59, '#5ccbd0'], [96, '#c35aa5'], [133, '#62bcd2']] as const) {
-      rect(context, '#111827', x, 88, 29, 57);
-      rect(context, '#314666', x + 2, 90, 25, 51);
-      rect(context, color, x + 4, 93, 21, 22);
-      rect(context, '#1b2740', x + 6, 95, 17, 15);
-      rect(context, '#e4d681', x + 8, 98, 12, HALF_PIXEL);
-      rect(context, '#243752', x + 6, 118, 17, 9);
-      rect(context, color, x + 9, 121, 7, 1);
-      rect(context, '#d06a9e', x + 17, 121, 2, 2);
-      rect(context, '#0e1421', x + 7, 130, 15, 11);
-      rect(context, color, x + 10, 131, 2, 8);
-    }
-    for (const x of [105, 179]) {
-      rect(context, '#101827', x - 18, 170, 37, 5);
-      rect(context, '#293d5c', x - 16, 167, 33, 4);
-      rect(context, '#64c9cd', x - 14, 167.5, 29, HALF_PIXEL);
-      rect(context, '#1b2940', x - 2, 172, 4, 31);
-      rect(context, '#101824', x - 12, 202, 24, 3);
-    }
-    for (const [x, color] of [[78, '#c45aa1'], [130, '#63cbd0'], [158, '#c45aa1'], [207, '#63cbd0']] as const) {
-      rect(context, '#142038', x, 177, 4, 25);
-      rect(context, '#2b4562', x - 3, 174, 10, 5);
-      rect(context, color, x - 2, 174, 8, 1);
-    }
-  }
-
-  private drawVenueCounterBack(time: number): void {
-    if (this.venue === 'cafe') this.drawCounterBack(time);
-    else if (this.venue === 'ramen') this.drawRamenCounterBack(time);
-    else this.drawArcadeCounterBack(time);
-  }
-
-  private drawRamenCounterBack(time: number): void {
-    const context = this.context;
-    rect(context, '#362333', 282, 88, 98, 30);
-    rect(context, '#5a3540', 284, 91, 94, 24);
-    for (const x of [288, 311, 334, 357]) {
-      rect(context, '#2a2832', x, 95, 17, 15);
-      rect(context, '#89958d', x + 2, 97, 13, 11);
-      rect(context, '#e8c57d', x + 5, 99, 7, 2);
-      rect(context, '#c15249', x + 6, 102, 5, 4);
-    }
-    rect(context, '#25222d', 321, 79, 42, 37);
-    rect(context, '#5f3a44', 323, 81, 38, 34);
-    rect(context, '#a84b46', 325, 83, 34, 2);
-    for (let index = 0; index < 4; index += 1) {
-      rect(context, '#dca45f', 328 + index * 7, 89, 4, 16);
-      rect(context, '#f6d78f', 329 + index * 7, 90, 2, HALF_PIXEL);
-    }
-    const steamCount = this.reducedMotion ? 2 : 5;
-    for (let index = 0; index < steamCount; index += 1) {
-      const rise = (time * (4 + index * 0.25) + index * 4) % 18;
-      rect(context, index % 2 ? '#dfcfb8' : '#f3dfbf', 339 + (index % 3) * 3, 108 - rise, HALF_PIXEL, 3);
-    }
-    rect(context, '#211b29', 278, 118, 103, 8);
-    rect(context, '#a84945', 278, 116, 104, 5);
-    rect(context, '#f0b666', 280, 116.5, 100, HALF_PIXEL);
-  }
-
-  private drawArcadeCounterBack(time: number): void {
-    const context = this.context;
-    const flicker = this.reducedMotion ? 0 : Math.sin(time * 3) * HALF_PIXEL;
-    rect(context, '#111827', 282, 88, 98, 30);
-    rect(context, '#253a59', 284, 91, 94, 24);
-    for (const [x, color] of [[288, '#60cbd0'], [310, '#c35ba5'], [332, '#60cbd0'], [354, '#c35ba5']] as const) {
-      rect(context, '#0c1320', x, 95, 17, 17);
-      rect(context, color, x + 2, 97 + flicker, 13, 8);
-      rect(context, '#f2dd8e', x + 4, 99 + flicker, 9, HALF_PIXEL);
-      rect(context, '#374f6a', x + 3, 107, 11, 3);
-    }
-    rect(context, '#0e1525', 321, 79, 42, 37);
-    rect(context, '#29435f', 323, 81, 38, 34);
-    rect(context, '#50cbd0', 325, 83, 34, 2);
-    rect(context, '#172539', 327, 87, 30, 18);
-    rect(context, '#87578e', 329, 89, 26, 14);
-    rect(context, '#d25ca6', 331, 91, 22, 8);
-    rect(context, '#f2d987', 335, 93, 10, HALF_PIXEL);
-    rect(context, '#132034', 332, 106, 5, 7);
-    rect(context, '#132034', 348, 106, 5, 7);
-    rect(context, '#101725', 278, 118, 103, 8);
-    rect(context, '#31526d', 278, 116, 104, 5);
-    rect(context, '#5ccbd0', 280, 116.5, 100, HALF_PIXEL);
-  }
-
-  private drawVenueCounterFront(): void {
-    if (this.venue === 'cafe') this.drawCounterFront();
-    else if (this.venue === 'ramen') this.drawRamenCounterFront();
-    else this.drawArcadeCounterFront();
-  }
-
-  private drawRamenCounterFront(): void {
-    const context = this.context;
-    rect(context, '#d26852', 276, 116, 107, 7);
-    rect(context, '#f0ba68', 278, 116, 103, 1);
-    rect(context, '#57313c', 278, 122, 104, 5);
-    rect(context, '#4c2c39', 282, 126, 99, 81);
-    for (const x of [290, 315, 340, 365]) {
-      rect(context, '#7f3e43', x, 132, 18, 66);
-      rect(context, '#b84d48', x + 1, 133, 16, 3);
-      rect(context, '#e7ac61', x + 4, 151, 10, HALF_PIXEL);
-      rect(context, '#5c3240', x + 7, 138, 3, 48);
-    }
-    rect(context, '#281d2b', 286, 194, 91, 4);
-    rect(context, '#c9574c', 290, 194, 83, HALF_PIXEL);
-    rect(context, '#6c3b42', 288, 200, 87, 3);
-    rect(context, '#271c29', 276, 210, 108, 3);
-  }
-
-  private drawArcadeCounterFront(): void {
-    const context = this.context;
-    rect(context, '#4f91a3', 276, 116, 107, 7);
-    rect(context, '#92e1d5', 278, 116, 103, 1);
-    rect(context, '#17263a', 278, 122, 104, 5);
-    rect(context, '#18253a', 282, 126, 99, 81);
-    for (const [x, color] of [[290, '#c259a2'], [315, '#5ecbd0'], [340, '#c259a2'], [365, '#5ecbd0']] as const) {
-      rect(context, '#263d5a', x, 132, 18, 66);
-      rect(context, color, x + 1, 133, 16, 2);
-      rect(context, '#101927', x + 4, 141, 10, 39);
-      rect(context, color, x + 6, 164, 6, HALF_PIXEL);
-    }
-    rect(context, '#101825', 286, 194, 91, 4);
-    rect(context, '#4d7591', 290, 194, 83, HALF_PIXEL);
-    rect(context, '#273e58', 288, 200, 87, 3);
-    rect(context, '#0d1421', 276, 210, 108, 3);
-  }
-
-  private drawFurnitureBack(): void {
-    const context = this.context;
-    rect(context, '#3a282f', 58, 138, 109, 6);
-    rect(context, '#8d5845', 60, 135, 105, 6);
-    rect(context, '#b27154', 62, 136, 101, 1);
-    rect(context, '#72443f', 65, 139, 95, 2);
-    for (const x of [74, 100, 126, 148]) {
-      rect(context, '#6f4a48', x, 140, 19, 8);
-      rect(context, '#a66a56', x + 1, 140.5, 17, HALF_PIXEL);
-      rect(context, x % 2 ? '#b36f5b' : '#8f5c55', x + 3, 143, 13, 3);
-      rect(context, '#d79b6b', x + 5, 143.5, 9, HALF_PIXEL);
-    }
-    for (const x of [68, 153]) {
-      rect(context, '#50353a', x, 141, 4, 29);
-      rect(context, '#6e4843', x + HALF_PIXEL, 142, HALF_PIXEL, 26);
-    }
-    for (let x = 75; x < 150; x += 13) rect(context, '#a76b4f', x, 137, HALF_PIXEL, 3);
-
-    for (const x of [105, 179]) {
-      rect(context, '#37272e', x - 18, 170, 37, 5);
-      rect(context, COLORS.woodLight, x - 16, 167, 33, 4);
-      rect(context, '#d0905f', x - 14, 167.5, 29, HALF_PIXEL);
-      rect(context, '#74443d', x - 13, 171, 27, 1);
-      rect(context, '#51343a', x - 2, 172, 4, 32);
-      rect(context, '#724744', x - 1.5, 173, HALF_PIXEL, 29);
-      rect(context, '#3b2930', x - 12, 202, 24, 3);
-      rect(context, '#67413e', x - 9, 202, 18, HALF_PIXEL);
-    }
-
-    for (const x of [78, 130, 158, 207]) {
-      rect(context, '#54363b', x, 177, 4, 25);
-      rect(context, '#74483f', x - 3, 174, 10, 5);
-      rect(context, '#aa6b4e', x - 2, 174, 8, 1);
-      rect(context, '#382930', x + HALF_PIXEL, 181, 3, 21);
-    }
-
-    for (const x of [96, 169]) {
-      rect(context, '#ead7b2', x, 163, 6, 4);
-      rect(context, '#9a5c47', x + 1, 163, 4, 1);
-      rect(context, '#ead7b2', x + 5.5, 164, 2, 2);
-      rect(context, '#6a403c', x - 1, 167, 9, 1);
-    }
-    for (const [x, color] of [[75, '#d6b06c'], [151, '#7aa097']] as const) {
-      rect(context, '#5f4544', x, 151, 12, 3);
-      rect(context, color, x + 1, 149, 10, 3);
-      rect(context, '#f0c77d', x + 3, 149.5, 6, HALF_PIXEL);
-    }
-  }
-
-  private drawCounterBack(time: number): void {
-    const context = this.context;
-
-    rect(context, '#4d3338', 282, 89, 32, 27);
-    rect(context, '#6f4942', 284, 92, 28, 23);
-    rect(context, '#d09a67', 286, 95, 24, 17);
-    rect(context, '#56383a', 288, 98, 20, 11);
-    rect(context, '#f1ce87', 290, 100, 16, 1);
-    const phase = this.environment?.dayPhase ?? 'night';
-    const displayItems = phase === 'midday'
-      ? [[290, 103, '#c7794e'], [294, 105, '#dca45e'], [298, 102, '#b9654a'], [302, 104, '#e0b66f'], [305, 102, '#d98957'], [307, 105, '#c7794e']] as const
-      : phase === 'morning' || phase === 'dawn'
-        ? [[291, 103, '#dca45e'], [296, 104, '#dca45e'], [301, 103, '#e0b66f'], [305, 105, '#c7794e']] as const
-        : phase === 'afternoon'
-          ? [[291, 103, '#a85e58'], [296, 104, '#d88d72'], [301, 102, '#8c5350'], [304, 105, '#e0b66f']] as const
-          : [[294, 104, '#b9654a'], [302, 104, '#dca45e']] as const;
-    for (const [x, y, color] of displayItems) {
-      rect(context, '#3c2d32', x - 1, y + 2, 5, 1);
-      rect(context, color, x, y, 3.5, 2.5);
-      rect(context, '#f1cf8a', x + HALF_PIXEL, y, 2, HALF_PIXEL);
-    }
-    rect(context, '#b77a55', 285, 112, 26, 3);
-    if (phase === 'night' || phase === 'evening') {
-      rect(context, '#76a398', 286, 111, 9, 2);
-      rect(context, '#d7caa8', 307, 108, 3, 7);
-      rect(context, '#6d5b55', 308, 106, 1, 3);
-    }
-
-    rect(context, '#332c34', 322, 80, 40, 36);
-    rect(context, '#4c4650', 324, 82, 36, 33);
-    rect(context, '#858088', 326, 84, 32, 29);
-    rect(context, '#aaa1a0', 328, 86, 28, 2);
-    rect(context, '#302b32', 329, 88, 26, 12);
-    rect(context, '#181920', 331, 90, 22, 7);
-    rect(context, '#d7a55f', 333, 92, 3, 2);
-    rect(context, '#e5bd72', 338, 92, HALF_PIXEL, 2);
-    rect(context, '#8f3739', 344, 92, 3, 2);
-    rect(context, '#b8544e', 349, 92, HALF_PIXEL, 2);
-    rect(context, '#1f1e25', 330, 101, 7, 12);
-    rect(context, '#1f1e25', 348, 101, 7, 12);
-    rect(context, '#625b60', 332, 102, 3, 10);
-    rect(context, '#625b60', 350, 102, 3, 10);
-    rect(context, '#c9b6a0', 334, 110, 16, 5);
-    rect(context, '#f4e5ca', 336, 108, 12, 4);
-    rect(context, '#ffffff', 338, 108.5, 8, HALF_PIXEL);
-    rect(context, '#3a3034', 340, 100, 5, 2);
-    rect(context, '#b8aba2', 344, 100.5, 7, 1);
-
-    for (const x of [290, 305, 367]) {
-      rect(context, '#efe0bd', x, 110, 8, 6);
-      rect(context, '#fff4d5', x + 1, 110.5, 6, HALF_PIXEL);
-      rect(context, '#b87755', x + 7, 112, 3, 3);
-      rect(context, '#8d604e', x, 116, 9, 2);
-    }
-
-    const steamCount = this.reducedMotion ? 2 : 5;
-    for (let index = 0; index < steamCount; index += 1) {
-      const rise = (time * (4 + index * 0.25) + index * 4) % 18;
-      const x = 339 + (index % 3) * 2;
-      rect(context, index % 2 ? '#c9bca9' : '#ead8b8', x, 107 - rise, HALF_PIXEL, 2);
-      rect(context, '#9f9b93', x + HALF_PIXEL, 105.5 - rise, HALF_PIXEL, 1);
-    }
-
-    rect(context, COLORS.ink, 278, 118, 103, 8);
-    rect(context, '#8a5345', 278, 116, 104, 5);
-  }
-
-  private drawCounterFront(): void {
-    const context = this.context;
-    rect(context, '#d3965f', 276, 116, 107, 7);
-    rect(context, '#f0b776', 278, 116, 103, 1);
-    rect(context, '#71453f', 278, 122, 104, 5);
-    rect(context, COLORS.counter, 282, 126, 99, 81);
-    rect(context, '#7f4e43', 287, 131, 89, 72);
-    rect(context, '#965947', 289, 133, 85, 68);
-    for (let x = 291; x < 375; x += 14) {
-      rect(context, '#a9654d', x, 133, 2, 68);
-      rect(context, '#c17b58', x + HALF_PIXEL, 134, HALF_PIXEL, 65);
-      rect(context, '#74443f', x + 2, 134, 1, 65);
-    }
-    rect(context, '#c47c55', 288, 132, 87, 2);
-    for (let x = 294; x < 370; x += 19) {
-      rect(context, '#7c4a43', x, 140, 14, 52);
-      rect(context, '#a9674e', x + 1, 141, 12, 1);
-      rect(context, '#b87554', x + 2, 144, HALF_PIXEL, 45);
-      rect(context, '#633c3d', x + 11, 143, 1, 47);
-      rect(context, '#d49a64', x + 4, 166, 6, HALF_PIXEL);
-    }
-    rect(context, '#4c3338', 286, 193, 91, 4);
-    rect(context, '#b97755', 290, 193, 83, HALF_PIXEL);
-    rect(context, '#d1a86a', 298, 200, 67, 1.5);
-    rect(context, '#7a5546', 299, 201.5, 65, HALF_PIXEL);
-    for (const x of [303, 330, 357]) {
-      rect(context, '#c8925e', x, 199, 2, 5);
-      rect(context, '#f0c77b', x + HALF_PIXEL, 199, HALF_PIXEL, 4);
-    }
-    rect(context, '#6a403c', 288, 200, 87, 3);
-    rect(context, '#4b3036', 278, 204, 106, 7);
-    rect(context, '#6b4140', 281, 204, 99, 1);
-    rect(context, '#2f242b', 276, 210, 108, 3);
-  }
-
-  private drawGuest(guest: Guest): void {
-    const context = this.context;
-    const x = snap(guest.position.x);
-    const seated = guest.state === 'activity';
-    const walking = guest.state.includes('walking') || guest.state === 'entering' || guest.state === 'exiting';
-    const bob = this.reducedMotion || !walking ? 0 : Math.round(Math.sin(guest.animation) * 2) * HALF_PIXEL;
-    const footY = snap(guest.position.y + bob);
-    const bodyTop = footY - (seated ? 14.5 : 20.5);
-    const facing = guest.facing;
-    const variant = guestVariant(guest);
-    const phase = this.reducedMotion ? 0 : Math.floor(guest.animation * 2) % 4;
-
-    const shadowWidth = walking ? 18 : 14;
-    const shadowOffset = walking ? -facing * 2 : 0;
-    polygon(context, '#211a23', [
-      [x - shadowWidth / 2 + shadowOffset, footY + 2],
-      [x + shadowWidth / 2 + shadowOffset, footY + 2],
-      [x + shadowWidth / 2 - 3 + shadowOffset, footY + 4],
+    for (const x of [74, 146, 218, 290, 352]) polygon(context, '#53d8d1', [[…3952 tokens truncated…set, footY + 4],
       [x - shadowWidth / 2 + 3 + shadowOffset, footY + 4],
     ]);
     rect(context, '#2d2229', x - 7 + shadowOffset * HALF_PIXEL, footY + 1, 14, 2.5);
