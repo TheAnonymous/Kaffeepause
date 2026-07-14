@@ -1384,9 +1384,13 @@ export class CafeRenderer {
       pixel: CHARACTER_PIXEL,
     });
 
-    const handY = bodyTop + 7 + (phase % 2) * HALF_PIXEL;
-    rect(context, guest.palette.skin, x + facing * 5, handY, 2, 2);
-    rect(context, '#f0c6a0', x + facing * 5.5, handY, HALF_PIXEL, HALF_PIXEL);
+    if (seated) {
+      this.drawSeatedArms(guest, x, bodyTop, facing, phase);
+    } else {
+      const handY = bodyTop + 7 + (phase % 2) * HALF_PIXEL;
+      rect(context, guest.palette.skin, x + facing * 5, handY, 2, 2);
+      rect(context, '#f0c6a0', x + facing * 5.5, handY, HALF_PIXEL, HALF_PIXEL);
+    }
 
     if (guest.state === 'ordering') {
       const gesture = phase === 1 ? -2 : 0;
@@ -1433,12 +1437,9 @@ export class CafeRenderer {
         rect(context, '#b98b62', x - 6, bodyTop + 8.5, 3, CHARACTER_PIXEL);
         rect(context, '#b98b62', x + 2, bodyTop + 8.5, 3, CHARACTER_PIXEL);
         rect(context, '#f9e5b6', x - 4, bodyTop + 10, 2, CHARACTER_PIXEL);
-        rect(context, guest.palette.skin, x - 8, bodyTop + 9, 2, 1.5);
-        rect(context, guest.palette.skin, x + 6, bodyTop + 9, 2, 1.5);
         break;
       }
       case 'typing': {
-        const tap = phase % 2 ? HALF_PIXEL : 0;
         rect(context, '#25242d', x - 7, bodyTop + 2, 14, 8.5);
         rect(context, '#566975', x - 5.5, bodyTop + 3, 11, 5.5);
         rect(context, '#8da4a1', x - 4.5, bodyTop + 3.5, 9, HALF_PIXEL);
@@ -1447,8 +1448,6 @@ export class CafeRenderer {
         rect(context, '#7bc1b7', x + 2, bodyTop + 5.5, 2, CHARACTER_PIXEL);
         rect(context, '#b4a883', x - 9, bodyTop + 10, 18, 2);
         rect(context, '#e0c98c', x - 7, bodyTop + 10, 14, HALF_PIXEL);
-        rect(context, guest.palette.skin, x - 5 + tap, bodyTop + 9, 3, 1.5);
-        rect(context, guest.palette.skin, x + 2 - tap, bodyTop + 9, 3, 1.5);
         rect(context, '#5b4b49', x - 3, bodyTop + 10.5, HALF_PIXEL, HALF_PIXEL);
         rect(context, '#5b4b49', x + 2, bodyTop + 10.5, HALF_PIXEL, HALF_PIXEL);
         break;
@@ -1543,6 +1542,40 @@ export class CafeRenderer {
         break;
       }
     }
+  }
+
+  private drawSeatedArms(guest: Guest, x: number, bodyTop: number, facing: 1 | -1, phase: number): void {
+    const context = this.context;
+    const shoulderY = bodyTop + 3.5;
+    const elbowY = bodyTop + 4.8;
+    const wristY = bodyTop + 5.8;
+    const drawArm = (direction: 1 | -1, sleeve: string, offset: number): void => {
+      const shoulderX = x + direction * 4.6;
+      const elbowX = x + direction * 6.1;
+      const wristX = x + direction * 6.8;
+      polygon(context, COLORS.ink, [
+        [shoulderX - direction * 1.1, shoulderY - 1],
+        [shoulderX + direction * 1.2, shoulderY],
+        [wristX + direction * 1.2, wristY + 1 + offset],
+        [wristX - direction * 1.2, wristY + 1 + offset],
+        [elbowX - direction, elbowY + offset],
+      ]);
+      polygon(context, sleeve, [
+        [shoulderX - direction * HALF_PIXEL, shoulderY],
+        [shoulderX + direction, shoulderY + HALF_PIXEL],
+        [wristX + direction * HALF_PIXEL, wristY + offset],
+        [wristX - direction * HALF_PIXEL, wristY + offset],
+        [elbowX - direction * HALF_PIXEL, elbowY + offset],
+      ]);
+      rect(context, guest.palette.accent, wristX - (direction > 0 ? HALF_PIXEL : 1), wristY - HALF_PIXEL + offset, 1.5, HALF_PIXEL);
+      const handX = wristX + (direction > 0 ? 0 : -2);
+      rect(context, guest.palette.skin, handX, wristY + offset, 2, 1.5);
+      rect(context, '#f0c6a0', handX + (direction > 0 ? 1.5 : HALF_PIXEL), wristY + offset, HALF_PIXEL, HALF_PIXEL);
+    };
+
+    const farDirection: 1 | -1 = facing === 1 ? -1 : 1;
+    drawArm(farDirection, '#4b3437', 0);
+    drawArm(facing, guest.palette.coat, phase % 2 ? HALF_PIXEL : 0);
   }
 
   private drawBarista(barista: Barista, time: number): void {
