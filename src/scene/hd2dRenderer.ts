@@ -1,5 +1,6 @@
 import type { VenueKind } from '../venue';
 import type { SceneLighting } from './lightingRenderer';
+import { RENDER_QUALITY } from './renderQuality';
 
 type Rect = (context: CanvasRenderingContext2D, color: string, x: number, y: number, width: number, height: number) => void;
 type Polygon = (context: CanvasRenderingContext2D, color: string, points: readonly [number, number][]) => void;
@@ -9,6 +10,8 @@ export interface Hd2dState {
   readonly haze: number;
   readonly vignette: number;
   readonly bokeh: number;
+  readonly depth: number;
+  readonly rim: number;
 }
 
 interface DioramaFrame {
@@ -45,10 +48,17 @@ export function calculateHd2dState(lighting: SceneLighting): Hd2dState {
     haze: clamp(0.045 + lighting.fog * 0.18 + lighting.wetness * 0.055 + lighting.night * 0.04),
     vignette: clamp(0.10 + lighting.night * 0.12 + lighting.fog * 0.07),
     bokeh: clamp(0.10 + lighting.night * 0.24 + lighting.wetness * 0.08),
+    depth: clamp(0.17 + lighting.fog * 0.15 + lighting.night * 0.05),
+    rim: clamp(0.34 + lighting.night * 0.31 + lighting.wetness * 0.14),
   };
 }
 
 export class Hd2dRenderer {
+  private bloomCanvas?: HTMLCanvasElement;
+  private compositeFrame = 0;
+  private bloomSourceWidth = 0;
+  private bloomSourceHeight = 0;
+
   constructor(private readonly rect: Rect, private readonly polygon: Polygon, private readonly pixel: number) {}
 
   drawBackAtmosphere(frame: DioramaFrame): void {
@@ -112,5 +122,65 @@ export class Hd2dRenderer {
       this.rect(context, palette.bokeh, x, y, size, size);
     }
     context.restore();
+  }
+
+  // Der Master-Pass arbeitet nach dem eigentlichen Welt-Rendering in echten
+  // Canvaspixeln. Ein kleiner Lichtpuffer erzeugt Bloom, ohne die Spritekonturen
+  // zu verwischen; nur die äußersten Tiefenebenen erhalten eine sanfte Unschärfe.
+  composeMaster(canvas: HTMLCanvasElement, state: Hd2dState, venue: VenueKind): void {
+    if (typeof document === 'undefined') return;
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) return;
+    const bufferWidth = Math.max(1, Math.ceil(canvas.width / RENDER_QUALITY.bloomDownsample));
+    const bufferHeight = Math.max(1, Math.ceil(canvas.height / RENDER_QUALITY.bloomDownsample));
+    const buffer = this.ensureBloomCanvas(bufferWidth, bufferHeight);
+    const bufferContext = buffer.getContext('2d', { alpha: false });
+    if (!bufferContext) return;
+
+    const sizeChanged = this.bloomSourceWidth !== canvas.width || this.bloomSourceHeight !== canvas.height;
+    if (sizeChanged || this.compositeFrame % 6 === 0) {
+      bufferContext.setTransform(1, 0, 0, 1, 0, 0);
+      bufferContext.imageSmoothingEnabled = true;
+      bufferContext.clearRect(0, 0, bufferWidth, bufferHeight);
+      bufferContext.drawImage(canvas, 0, 0, bufferWidth, bufferHeight);
+      this.bloomSourceWidth = canvas.width;
+      this.bloomSourceHeight = canvas.height;
+    }
+    this.compositeFrame += 1;
+
+    context.save();
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.imageSmoothingEnabled = true;
+    context.globalCompositeOperation = 'screen';
+    context.globalAlpha = 0.04 + state.bloom * 0.1;
+    context.drawImage(buffer, 0, 0, canvas.width, canvas.height);
+    context.restore();
+
+    context.save();
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.imageSmoothingEnabled = true;
+    context.globalAlpha = state.depth * 0.18;
+    context.beginPath();
+    context.rect(0, 0, canvas.width, canvas.height * 0.19);
+    context.rect(0, canvas.height * 0.94, canvas.width, canvas.height * 0.06);
+    context.clip();
+    context.drawImage(buffer, 0, 0, canvas.width, canvas.height);
+    context.restore();
+
+    context.save();
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.globalCompositeOperation = 'soft-light';
+    context.globalAlpha = venue === 'arcade' ? 0.075 : 0.055;
+    context.fillStyle = venue === 'arcade' ? '#315e8f' : venue === 'ramen' ? '#a94d39' : '#9f6546';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.restore();
+    context.imageSmoothingEnabled = false;
+  }
+
+  private ensureBloomCanvas(width: number, height: number): HTMLCanvasElement {
+    if (!this.bloomCanvas) this.bloomCanvas = document.createElement('canvas');
+    if (this.bloomCanvas.width !== width) this.bloomCanvas.width = width;
+    if (this.bloomCanvas.height !== height) this.bloomCanvas.height = height;
+    return this.bloomCanvas;
   }
 }

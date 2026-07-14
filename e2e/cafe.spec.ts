@@ -12,10 +12,13 @@ test('betritt das Café, füllt den Viewport und schaltet den Ton', async ({ pag
   await expect(page.getByRole('heading', { name: 'Kaffeepause' })).toBeVisible();
   const canvas = page.getByRole('img', { name: /gemütliches.*Café/i });
   await expect(canvas).toHaveAttribute('data-camera-mode', 'overview');
-  await expect(canvas).toHaveAttribute('data-logical-width', '1152');
+  await expect(canvas).toHaveAttribute('data-logical-width', '2304');
   await expect(canvas).toHaveAttribute('data-scene-width', '384');
-  await expect(canvas).toHaveAttribute('data-render-scale', '3');
-  await expect(canvas).toHaveAttribute('data-character-detail', 'physical-pixel');
+  await expect(canvas).toHaveAttribute('data-render-scale', '6');
+  await expect(canvas).toHaveAttribute('data-character-detail', 'hd-sixth-pixel');
+  await expect(canvas).toHaveAttribute('data-render-quality', 'hd2d-master');
+  await expect(canvas).toHaveAttribute('data-master-resolution', '2304x1296');
+  await expect(canvas).toHaveAttribute('data-character-raster-height', '192');
   await expect(canvas).toHaveAttribute('data-navigation', 'collision-aware');
   await expect(canvas).toHaveAttribute('data-proportion-check', 'pass');
   await expect(canvas).toHaveAttribute('data-layout-score', '100');
@@ -26,7 +29,7 @@ test('betritt das Café, füllt den Viewport und schaltet den Ton', async ({ pag
     const target = element as HTMLCanvasElement;
     return { width: target.width, height: target.height };
   }))
-    .toEqual({ width: 1152, height: 648 });
+    .toEqual({ width: 2304, height: 1296 });
   const bounds = await canvas.boundingBox();
   expect(bounds).toMatchObject({ x: 0, y: 0, width: 1440, height: 810 });
   expect(await page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight })))
@@ -71,17 +74,17 @@ test('wechselt bei schmalem Resize in die ruhige Kamerafahrt', async ({ page }) 
   await page.setViewportSize({ width: 1100, height: 700 });
   await page.goto('/');
   const canvas = page.locator('#cafe');
-  await expect(canvas).toHaveAttribute('data-logical-width', '1152');
+  await expect(canvas).toHaveAttribute('data-logical-width', '2304');
   await expect(canvas).toHaveAttribute('data-scene-width', '384');
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(canvas).toHaveAttribute('data-camera-mode', 'tour');
-  await expect(canvas).toHaveAttribute('data-logical-width', '336');
+  await expect(canvas).toHaveAttribute('data-logical-width', '672');
   await expect(canvas).toHaveAttribute('data-scene-width', '112');
   expect(await canvas.evaluate((element) => {
     const target = element as HTMLCanvasElement;
     return { width: target.width, height: target.height };
   }))
-    .toEqual({ width: 336, height: 648 });
+    .toEqual({ width: 672, height: 1296 });
   const bounds = await canvas.boundingBox();
   expect(bounds).toMatchObject({ x: 0, y: 0, width: 390, height: 844 });
   expect(await page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight })))
@@ -96,7 +99,7 @@ test('respektiert reduzierte Bewegung ohne automatische Kamerafahrt', async ({ p
   await expect(page.locator('body')).toHaveAttribute('data-reduced-motion', 'true');
   await expect(canvas).toHaveAttribute('data-camera-mode', 'still');
   await expect(canvas).toHaveAttribute('data-particles', 'low');
-  await expect(canvas).toHaveAttribute('data-logical-width', '336');
+  await expect(canvas).toHaveAttribute('data-logical-width', '672');
   const position = await canvas.getAttribute('data-camera-x');
   await page.getByTestId('enter').click();
   await page.waitForTimeout(900);
@@ -125,8 +128,12 @@ test('lässt die Einstiegskarte stehen und blendet Controls erst nach dem Eintri
   await expect(controls).toBeVisible();
 
   await page.waitForTimeout(2_700);
-  await page.getByTestId('sound').focus();
+  // Eine Tastatureingabe weckt die ausgeblendeten Controls; fokussierte
+  // Controls bleiben anschließend dauerhaft sichtbar.
+  await page.keyboard.press('ArrowRight');
   await expect(page.locator('body')).toHaveAttribute('data-ui-idle', 'false');
+  await page.getByTestId('sound').focus();
+  await expect(page.getByTestId('sound')).toBeFocused();
   await expect(controls).toBeVisible();
   await page.waitForTimeout(2_700);
   await expect(controls).toBeVisible();

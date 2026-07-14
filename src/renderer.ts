@@ -13,9 +13,10 @@ import { VenueOpticsRenderer, windowReflectionLean } from './scene/venueOpticsRe
 import { VenueRenderer } from './scene/venueRenderer';
 import { SCENE_PROPORTIONS, SCENE_PROPORTION_REPORT } from './scene/proportions';
 import { APPEARANCE_LIBRARY_REPORT, geometryForGuest } from './simulation/appearance';
+import { RENDER_QUALITY, RENDER_QUALITY_REPORT } from './scene/renderQuality';
 
-// Drei physische Pixel pro Szenenpixel lassen kleine Licht-, Holz- und Stoffdetails
-// klarer wirken, ohne den bewusst groben Pixel-Art-Charakter zu verlieren.
+// Sechs physische Pixel pro Szenenpixel bilden die HD-Masterfläche. Die stabile
+// Weltgeometrie bleibt erhalten, Figuren erhalten aber die doppelte Detailmatrix.
 export const RENDER_SCALE = SCENE_PROPORTIONS.world.renderScale;
 
 const COLORS = {
@@ -113,12 +114,16 @@ export class CafeRenderer {
     if (!context) throw new Error('Canvas 2D wird von diesem Browser nicht unterstützt.');
     this.context = context;
     this.context.imageSmoothingEnabled = false;
-    const proportionsValid = SCENE_PROPORTION_REPORT.valid && CAFE_LAYOUT_REPORT.valid && APPEARANCE_LIBRARY_REPORT.valid;
+    const proportionsValid = SCENE_PROPORTION_REPORT.valid && CAFE_LAYOUT_REPORT.valid
+      && APPEARANCE_LIBRARY_REPORT.valid && RENDER_QUALITY_REPORT.valid;
     this.canvas.dataset.proportionCheck = proportionsValid ? 'pass' : 'warning';
     this.canvas.dataset.layoutScore = String(Math.min(SCENE_PROPORTION_REPORT.score, CAFE_LAYOUT_REPORT.score));
     this.canvas.dataset.scaleModel = `${SCENE_PROPORTIONS.character.standingHeight}px-adult`;
     this.canvas.dataset.characterVariation = `${APPEARANCE_LIBRARY_REPORT.uniqueSilhouettes}-silhouettes`;
     this.canvas.dataset.characterDiversity = String(APPEARANCE_LIBRARY_REPORT.score);
+    this.canvas.dataset.renderQuality = RENDER_QUALITY.tier;
+    this.canvas.dataset.masterResolution = `${RENDER_QUALITY.masterWidth}x${RENDER_QUALITY.masterHeight}`;
+    this.canvas.dataset.characterRasterHeight = String(RENDER_QUALITY.characterRasterHeight);
   }
 
   setActive(active: boolean): void {
@@ -222,12 +227,12 @@ export class CafeRenderer {
       barista: snapshot.barista,
       state: activityState,
     });
-    this.drawBarista(snapshot.barista, time);
+    this.drawBarista(snapshot.barista, time, lighting);
     this.venues.drawHostAccent(context, snapshot.barista, this.venue, rect, snap, HALF_PIXEL);
     this.drawVenueCounterFront();
 
     const guests = [...snapshot.guests].sort((left, right) => left.position.y - right.position.y);
-    for (const guest of guests) this.drawGuest(guest);
+    for (const guest of guests) this.drawGuest(guest, lighting, hd2d.rim);
 
     this.drawVenueFurnitureFront();
     this.activities.drawTableActivity({
@@ -253,6 +258,7 @@ export class CafeRenderer {
       state: hd2d,
     });
     context.restore();
+    this.hd2d.composeMaster(this.canvas, hd2d, this.venue);
     this.canvas.dataset.cameraX = this.camera.x.toFixed(1);
     this.canvas.dataset.guestCount = String(snapshot.guests.length);
     this.canvas.dataset.accident = accident?.kind ?? 'none';
@@ -263,7 +269,7 @@ export class CafeRenderer {
     this.canvas.dataset.regulars = snapshot.regularIds.join(',');
     this.canvas.dataset.navigation = 'collision-aware';
     this.canvas.dataset.venue = this.venue;
-    this.canvas.dataset.characterDetail = 'physical-pixel';
+    this.canvas.dataset.characterDetail = 'hd-sixth-pixel';
     this.canvas.dataset.lighting = lighting.night > 0.5 ? 'lamplit' : lighting.solar > 0.35 ? 'daylight' : 'soft';
     this.canvas.dataset.material = lighting.wetness > 0.12 ? 'wet' : lighting.fog > 0.15 ? 'misty' : 'dry';
     this.canvas.dataset.venueActivity = snapshot.barista.task;
@@ -1321,7 +1327,7 @@ export class CafeRenderer {
     rect(context, '#2f242b', counter.x, counter.baseY - 2, counter.width, 2);
   }
 
-  private drawGuest(guest: Guest): void {
+  private drawGuest(guest: Guest, lighting: SceneLighting, rimStrength: number): void {
     const context = this.context;
     const x = snap(guest.position.x);
     const seated = guest.state === 'activity';
@@ -1369,15 +1375,17 @@ export class CafeRenderer {
     const headTop = bodyTop - geometry.headHeight;
     const headHalf = geometry.headWidth / 2;
     rect(context, COLORS.ink, x - headHalf, headTop, geometry.headWidth, geometry.headHeight);
-    rect(context, guest.palette.skin, x - headHalf + 1, headTop + 1, geometry.headWidth - 2, geometry.headHeight - 2);
-    rect(context, '#f0c6a0', x + facing * 2, headTop + 2, 2, 1.5);
-    rect(context, '#9b654f', x + facing * 4, headTop + 5, HALF_PIXEL, 1);
-    rect(context, '#35252a', x + facing * 2, headTop + 3.5, 1, HALF_PIXEL);
-    rect(context, '#8c4e47', x + facing * 2.5, headTop + 6.5, 1, HALF_PIXEL);
+    if (guest.appearance.face === 'round') {
+      polygon(context, guest.palette.skin, [[x - headHalf + 1, headTop + 1], [x + headHalf - 1, headTop + 1], [x + headHalf - HALF_PIXEL, headTop + 3], [x + headHalf - 1.2, headTop + geometry.headHeight - 2], [x + 2, headTop + geometry.headHeight - 1], [x - 2.2, headTop + geometry.headHeight - 1], [x - headHalf + 1.2, headTop + geometry.headHeight - 2], [x - headHalf + HALF_PIXEL, headTop + 3]]);
+    } else if (guest.appearance.face === 'narrow') {
+      polygon(context, guest.palette.skin, [[x - headHalf + 1, headTop + 1], [x + headHalf - 1, headTop + 1], [x + headHalf - 0.6, headTop + 6], [x + 1.5, headTop + geometry.headHeight - 1], [x - 1.5, headTop + geometry.headHeight - 1], [x - headHalf + 0.7, headTop + 6]]);
+    } else {
+      rect(context, guest.palette.skin, x - headHalf + 1, headTop + 1, geometry.headWidth - 2, geometry.headHeight - 2);
+    }
+    rect(context, guest.palette.skin, x - 2, bodyTop - 1.2, 4, 2.2);
     rect(context, guest.palette.hair, x - headHalf, headTop - HALF_PIXEL, geometry.headWidth, 4);
-    rect(context, '#1d1920', x - headHalf + 1, headTop - HALF_PIXEL, Math.max(5, geometry.headWidth - 3), HALF_PIXEL);
+    rect(context, '#1d1920', x - headHalf + 1, headTop - HALF_PIXEL, Math.max(5, geometry.headWidth - 3), HALF_PIXEL * 2);
     rect(context, guest.palette.hair, x - (facing > 0 ? headHalf : headHalf - 1), headTop + 2, facing > 0 ? 3 : 2, Math.max(5, geometry.headHeight - 4));
-    rect(context, '#c88965', x + facing * (headHalf - 1), headTop + 4, 1.5, 2.5);
 
     this.characters.drawGuestFineDetails({
       context,
@@ -1394,6 +1402,9 @@ export class CafeRenderer {
       headHeight: geometry.headHeight,
       venue: this.venue,
       pixel: CHARACTER_PIXEL,
+      litFrom: lighting.fromRight ? 1 : -1,
+      rimColor: lighting.glow,
+      rimStrength,
     });
 
     if (guest.regularId === 'mara') {
@@ -1428,7 +1439,10 @@ export class CafeRenderer {
       const handY = bodyTop + 7 + (phase % 2) * HALF_PIXEL;
       const handX = x + facing * (geometry.bodyWidth / 2 - 1);
       rect(context, guest.palette.skin, handX, handY, 2, 2);
-      rect(context, '#f0c6a0', handX + facing * HALF_PIXEL, handY, HALF_PIXEL, HALF_PIXEL);
+      rect(context, '#f0c6a0', handX + facing * HALF_PIXEL, handY, HALF_PIXEL * 2, HALF_PIXEL);
+      for (let finger = 0; finger < 3; finger += 1) {
+        rect(context, '#9c6653', handX + facing * (HALF_PIXEL + finger * CHARACTER_PIXEL), handY + 1.35, CHARACTER_PIXEL, CHARACTER_PIXEL);
+      }
     }
 
     if (guest.state === 'ordering') {
@@ -1591,12 +1605,17 @@ export class CafeRenderer {
     const handX = facing > 0 ? sleeveX + 2.5 : sleeveX - 1.5;
     rect(context, COLORS.ink, sleeveX, shoulderY - HALF_PIXEL, 3, 3);
     rect(context, guest.palette.coat, sleeveX + HALF_PIXEL, shoulderY, 2.5, 2.5);
-    rect(context, guest.palette.accent, sleeveX + (facing > 0 ? 1.5 : HALF_PIXEL), shoulderY + HALF_PIXEL, HALF_PIXEL, 1.5);
+    rect(context, guest.palette.accent, sleeveX + (facing > 0 ? 1.5 : HALF_PIXEL), shoulderY + HALF_PIXEL, CHARACTER_PIXEL * 2, 1.5);
+    rect(context, '#d7b979', sleeveX + (facing > 0 ? 1.65 : HALF_PIXEL), shoulderY + 1.85, CHARACTER_PIXEL * 2, CHARACTER_PIXEL);
     rect(context, guest.palette.skin, handX, shoulderY + 1.5, 2, 1.5);
-    rect(context, '#f0c6a0', handX + (facing > 0 ? 1.5 : HALF_PIXEL), shoulderY + 1.5, HALF_PIXEL, HALF_PIXEL);
+    rect(context, '#f0c6a0', handX + (facing > 0 ? 1.5 : HALF_PIXEL), shoulderY + 1.5, HALF_PIXEL * 2, HALF_PIXEL);
+    for (let finger = 0; finger < 3; finger += 1) {
+      const offset = finger * CHARACTER_PIXEL;
+      rect(context, '#9c6653', handX + (facing > 0 ? 0.3 + offset : 1.3 - offset), shoulderY + 2.55, CHARACTER_PIXEL, CHARACTER_PIXEL);
+    }
   }
 
-  private drawBarista(barista: Barista, time: number): void {
+  private drawBarista(barista: Barista, time: number, lighting: SceneLighting): void {
     const context = this.context;
     const x = snap(barista.position.x);
     const y = snap(barista.position.y);
@@ -1711,6 +1730,8 @@ export class CafeRenderer {
       apronLight,
       venue: this.venue,
       pixel: CHARACTER_PIXEL,
+      litFrom: lighting.fromRight ? 1 : -1,
+      rimColor: lighting.glow,
     });
   }
 

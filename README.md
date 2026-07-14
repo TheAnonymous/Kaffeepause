@@ -12,7 +12,9 @@ Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen
 
 - handgezeichnete Canvas-Pixelart ohne externe Assets
 - Auswahl zwischen Café, Ramen-Restaurant und Arcade-Halle vor dem Eintritt; keine nachträgliche Menühürde
-- hochauflösendes 1152 × 648-Pixel-Canvas mit feineren Ein-Pixel-Details
+- echte 2304 × 1296-HD-Masterfläche (6×) mit bis zu 192 Rasterpixel hohen Figuren
+- hochauflösende Gesichter, Haarsträhnen, Stoffnähte, Hände, Schuhdetails und gerichtetes Konturlicht
+- separater HD-2D-Kompositionspass für Bloom, Farblicht und sanfte Tiefenunschärfe
 - zwölf deterministische Figuren-Silhouetten mit fünf Körperformen, vier Gesichtsformen, acht Frisuren, sechs Outfit-Schnitten, unterschiedlichen Größen, Hauttönen und persönlichen Details
 - bis zu acht Gäste mit lesbaren Tätigkeiten, Wetteraccessoires und einer detaillierten animierten Bedienung
 - eine echte Eingangstür, die sich für ankommende und gehende Gäste am Simulations-Eingang öffnet und ruhig wieder schließt
@@ -60,7 +62,7 @@ npm run build
 npm run test:e2e
 ```
 
-Die Simulation verwendet stabile Szenenkoordinaten von 384 × 216. Gerendert wird auf einem intrinsischen 1152 × 648-Pixel-Canvas mit Faktor 3 und ohne Weichzeichnung. Auf Smartphones bleibt die Szenenhöhe erhalten; die intrinsische Canvasbreite und der sichtbare Kameraausschnitt werden gemeinsam angepasst.
+Die Simulation verwendet stabile Szenenkoordinaten von 384 × 216. Gerendert wird auf einer intrinsischen 2304 × 1296-HD-Masterfläche mit Faktor 6. Figuren nutzen das feinere Sechstelpixel-Raster für Gesichter, Kleidung und Lichtkanten; ein separater Kompositionspass ergänzt Bloom und Tiefenstaffelung, ohne die Spritekonturen aufzuweichen. Auf Smartphones bleibt die Szenenhöhe erhalten; die intrinsische Canvasbreite und der sichtbare Kameraausschnitt werden gemeinsam angepasst.
 
 Tragende Maße liegen zentral in `src/scene/proportions.ts`. Die Prüfung vergleicht keine isolierten Zahlen, sondern Beziehungen wie Tischkante zu Sitzfigur, Thekenkante zu Personal, Tür zu Körperbreite, hintere zu vorderer Möbelebene sowie sichtbare Möbel zu Kollisionen und Laufzielen. Der Canvas veröffentlicht das Ergebnis zusätzlich über `data-proportion-check` und `data-layout-score`.
 

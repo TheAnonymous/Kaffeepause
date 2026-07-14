@@ -60,7 +60,10 @@ export const SCENE_PROPORTIONS: SceneProportions = {
   world: {
     width: 384,
     height: 216,
-    renderScale: 3,
+    // 6× ist die tatsächliche Masterauflösung. Die 384×216-Welt bleibt für
+    // Simulation und Proportionen stabil, während eine Figur nun bis zu
+    // 192 echte Rasterpixel Höhe für Gesicht, Stoff und Lichtkanten erhält.
+    renderScale: 6,
     floorHorizonY: 134,
     foregroundBaseY: 211,
   },
@@ -150,7 +153,7 @@ export function validateSceneProportions(proportions: SceneProportions = SCENE_P
   const walkwayInBodies = walkway / character.bodyWidth;
 
   require(world.width === 384 && world.height === 216, 'world-canvas', 'Die kanonische Szenenfläche muss 384×216 Pixel groß bleiben.');
-  require(Number.isInteger(world.renderScale) && between(world.renderScale, 2, 4), 'render-scale', 'Der Renderfaktor muss ein ganzzahliger Pixelmaßstab zwischen 2 und 4 sein.');
+  require(Number.isInteger(world.renderScale) && between(world.renderScale, 4, 8), 'render-scale', 'Der Renderfaktor muss ein ganzzahliger HD-Pixelmaßstab zwischen 4 und 8 sein.');
   require(between(world.floorHorizonY / world.height, 0.58, 0.66), 'floor-horizon', 'Die Bodenkante liegt außerhalb der glaubwürdigen Raumtiefe.');
   require(between(characterToWorld, 0.12, 0.18), 'character-world-scale', 'Die Figurenhöhe passt nicht zur Raumhöhe.');
   require(between(seatedToStanding, 0.68, 0.84), 'seated-character-scale', 'Sitzende und stehende Figuren haben keine gemeinsame Körperproportion.');
