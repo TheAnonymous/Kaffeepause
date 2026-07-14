@@ -6,6 +6,7 @@ import type { VenueKind } from './venue';
 import type { SceneSnapshot } from './scene/types';
 import { CharacterRenderer } from './scene/characterRenderer';
 import { calculateSceneLighting, LightingRenderer, type SceneLighting } from './scene/lightingRenderer';
+import { calculateVenueActivityState, VenueActivityRenderer } from './scene/venueActivityRenderer';
 import { VenueRenderer } from './scene/venueRenderer';
 
 // Drei physische Pixel pro Szenenpixel lassen kleine Licht-, Holz- und Stoffdetails
@@ -94,6 +95,7 @@ export class CafeRenderer {
   private venue: VenueKind = 'cafe';
   private readonly characters = new CharacterRenderer(rect, polygon);
   private readonly lighting = new LightingRenderer(rect, polygon, HALF_PIXEL);
+  private readonly activities = new VenueActivityRenderer(rect, HALF_PIXEL);
   private readonly venues = new VenueRenderer();
 
   constructor(
@@ -150,6 +152,7 @@ export class CafeRenderer {
     const cameraX = snap(this.camera.x);
     const accident = snapshot.accident;
     const lighting = calculateSceneLighting(this.venue, this.environment);
+    const activityState = calculateVenueActivityState(snapshot.guests);
     const shaking = !this.reducedMotion && accident?.kind === 'tray-drop' && accident.phase === 'chaos';
     const shakeX = shaking ? Math.round(Math.sin(accident.phaseElapsed * 58)) * HALF_PIXEL : 0;
     const shakeY = shaking ? Math.round(Math.cos(accident.phaseElapsed * 47)) * HALF_PIXEL : 0;
@@ -179,6 +182,15 @@ export class CafeRenderer {
       lighting,
     });
     this.drawVenueCounterBack(time);
+    this.activities.drawCounterActivity({
+      context,
+      venue: this.venue,
+      time,
+      active: this.active,
+      reducedMotion: this.reducedMotion,
+      barista: snapshot.barista,
+      state: activityState,
+    });
     this.drawBarista(snapshot.barista, time);
     this.venues.drawHostAccent(context, snapshot.barista, this.venue, rect, snap, HALF_PIXEL);
     this.drawVenueCounterFront();
@@ -187,6 +199,15 @@ export class CafeRenderer {
     for (const guest of guests) this.drawGuest(guest);
 
     this.drawVenueFurnitureFront();
+    this.activities.drawTableActivity({
+      context,
+      venue: this.venue,
+      time,
+      active: this.active,
+      reducedMotion: this.reducedMotion,
+      barista: snapshot.barista,
+      state: activityState,
+    });
     const moment = snapshot.moment;
     if (moment) this.drawMoment(moment, snapshot.guests);
     this.drawVenueDetails(time, snapshot.storyStages.sketchbook);
@@ -206,6 +227,8 @@ export class CafeRenderer {
     this.canvas.dataset.characterDetail = 'physical-pixel';
     this.canvas.dataset.lighting = lighting.night > 0.5 ? 'lamplit' : lighting.solar > 0.35 ? 'daylight' : 'soft';
     this.canvas.dataset.material = lighting.wetness > 0.12 ? 'wet' : lighting.fog > 0.15 ? 'misty' : 'dry';
+    this.canvas.dataset.venueActivity = snapshot.barista.task;
+    this.canvas.dataset.occupiedTables = String(activityState.seated);
   }
 
   private drawRoom(time: number): void {
