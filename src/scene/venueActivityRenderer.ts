@@ -142,8 +142,8 @@ export class VenueActivityRenderer {
   private drawCafeTables(frame: ActivityFrame): void {
     const { context, state } = frame;
     this.drawCafePlace(context, 96, 163, state.tables.window, state.drinking);
-    this.drawCafePlace(context, 105, 167, state.tables.left, state.drinking);
-    this.drawCafePlace(context, 179, 167, state.tables.right, state.drinking);
+    this.drawCafePlace(context, 105, 178, state.tables.left, state.drinking);
+    this.drawCafePlace(context, 179, 178, state.tables.right, state.drinking);
   }
 
   private drawCafePlace(context: CanvasRenderingContext2D, x: number, y: number, occupied: number, drinking: number): void {
@@ -161,8 +161,8 @@ export class VenueActivityRenderer {
   private drawRamenTables(frame: ActivityFrame): void {
     const { context, state } = frame;
     this.drawRamenPlace(context, 96, 163, state.tables.window);
-    this.drawRamenPlace(context, 105, 167, state.tables.left);
-    this.drawRamenPlace(context, 179, 167, state.tables.right);
+    this.drawRamenPlace(context, 105, 178, state.tables.left);
+    this.drawRamenPlace(context, 179, 178, state.tables.right);
   }
 
   private drawRamenPlace(context: CanvasRenderingContext2D, x: number, y: number, occupied: number): void {
@@ -177,8 +177,8 @@ export class VenueActivityRenderer {
   private drawArcadeTables(frame: ActivityFrame): void {
     const { context, state } = frame;
     this.drawArcadePlace(context, 96, 163, state.tables.window);
-    this.drawArcadePlace(context, 105, 167, state.tables.left);
-    this.drawArcadePlace(context, 179, 167, state.tables.right);
+    this.drawArcadePlace(context, 105, 178, state.tables.left);
+    this.drawArcadePlace(context, 179, 178, state.tables.right);
   }
 
   private drawArcadePlace(context: CanvasRenderingContext2D, x: number, y: number, occupied: number): void {
