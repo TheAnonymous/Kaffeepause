@@ -1,9 +1,11 @@
 import { CafeCamera } from './camera';
-import { CafeSimulation } from './simulation/cafeSimulation';
 import { WORLD_HEIGHT, WORLD_WIDTH } from './simulation/layout';
 import type { Barista, CafeAccident, CafeMoment, Guest } from './simulation/types';
 import type { CafeEnvironmentSnapshot, DayPhase } from './environment/types';
 import type { VenueKind } from './venue';
+import type { SceneSnapshot } from './scene/types';
+import { CharacterRenderer } from './scene/characterRenderer';
+import { VenueRenderer } from './scene/venueRenderer';
 
 // Drei physische Pixel pro Szenenpixel lassen kleine Licht-, Holz- und Stoffdetails
 // klarer wirken, ohne den bewusst groben Pixel-Art-Charakter zu verlieren.
@@ -89,10 +91,11 @@ export class CafeRenderer {
   private active = false;
   private environment?: CafeEnvironmentSnapshot;
   private venue: VenueKind = 'cafe';
+  private readonly characters = new CharacterRenderer(rect, polygon);
+  private readonly venues = new VenueRenderer();
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
-    private readonly simulation: CafeSimulation,
     private readonly camera: CafeCamera,
   ) {
     const context = canvas.getContext('2d', { alpha: false });
@@ -139,11 +142,11 @@ export class CafeRenderer {
     this.canvas.dataset.cameraMode = this.camera.mode;
   }
 
-  render(elapsed: number): void {
+  render(elapsed: number, snapshot: SceneSnapshot): void {
     const time = this.active ? elapsed : 0;
     const context = this.context;
     const cameraX = snap(this.camera.x);
-    const accident = this.simulation.activeAccident;
+    const accident = snapshot.accident;
     const shaking = !this.reducedMotion && accident?.kind === 'tray-drop' && accident.phase === 'chaos';
     const shakeX = shaking ? Math.round(Math.sin(accident.phaseElapsed * 58)) * HALF_PIXEL : 0;
     const shakeY = shaking ? Math.round(Math.cos(accident.phaseElapsed * 47)) * HALF_PIXEL : 0;
@@ -165,31 +168,28 @@ export class CafeRenderer {
     this.drawVenueArchitecture(time);
     this.drawVenueFurnitureBack();
     this.drawVenueCounterBack(time);
-    this.drawBarista(this.simulation.barista, time);
-    this.drawVenueHostAccent(this.simulation.barista);
+    this.drawBarista(snapshot.barista, time);
+    this.venues.drawHostAccent(context, snapshot.barista, this.venue, rect, snap, HALF_PIXEL);
     this.drawVenueCounterFront();
 
-    const guests = [...this.simulation.guests].sort((left, right) => left.position.y - right.position.y);
+    const guests = [...snapshot.guests].sort((left, right) => left.position.y - right.position.y);
     for (const guest of guests) this.drawGuest(guest);
 
     this.drawVenueFurnitureFront();
-    const moment = this.simulation.activeMoment;
-    if (moment) this.drawMoment(moment);
-    this.drawVenueDetails(time);
-    if (accident) this.drawAccident(accident);
+    const moment = snapshot.moment;
+    if (moment) this.drawMoment(moment, snapshot.guests);
+    this.drawVenueDetails(time, snapshot.storyStages.sketchbook);
+    if (accident) this.drawAccident(accident, snapshot.guests);
     this.drawForeground(time);
     context.restore();
     this.canvas.dataset.cameraX = this.camera.x.toFixed(1);
-    this.canvas.dataset.guestCount = String(this.simulation.guests.length);
+    this.canvas.dataset.guestCount = String(snapshot.guests.length);
     this.canvas.dataset.accident = accident?.kind ?? 'none';
     this.canvas.dataset.accidentPhase = accident?.phase ?? 'none';
     this.canvas.dataset.moment = moment?.kind ?? 'none';
     this.canvas.dataset.story = moment?.story ?? 'none';
     this.canvas.dataset.storyStep = String(moment?.storyStep ?? 0);
-    this.canvas.dataset.regulars = this.simulation.activeRegulars
-      .map((guest) => guest.regularId ?? '')
-      .filter(Boolean)
-      .join(',');
+    this.canvas.dataset.regulars = snapshot.regularIds.join(',');
     this.canvas.dataset.navigation = 'collision-aware';
     this.canvas.dataset.venue = this.venue;
     this.canvas.dataset.characterDetail = 'physical-pixel';
@@ -198,11 +198,14 @@ export class CafeRenderer {
   private drawRoom(time: number): void {
     const context = this.context;
     const solarLight = clamp(((this.environment?.solar.elevation ?? -12) + 8) / 58);
-    const theme = this.venue === 'ramen'
-      ? { wallFrom: '#542d36', wallTo: '#8b514a', wallDark: '#3d2835', trim: '#9f5549', floor: '#392c38', floorLight: '#51404a' }
-      : this.venue === 'arcade'
-        ? { wallFrom: '#202841', wallTo: '#394c68', wallDark: '#171c30', trim: '#46577a', floor: '#1e2638', floorLight: '#303b51' }
-        : { wallFrom: '#60434a', wallTo: '#9c6857', wallDark: COLORS.wallDark, trim: '#9b6554', floor: COLORS.floor, floorLight: COLORS.floorLight };
+    const theme = this.venues.roomTheme(this.venue, {
+      wallFrom: '#60434a',
+      wallTo: '#9c6857',
+      wallDark: COLORS.wallDark,
+      trim: '#9b6554',
+      floor: COLORS.floor,
+      floorLight: COLORS.floorLight,
+    });
     const wall = mixColor(theme.wallFrom, theme.wallTo, solarLight);
     const wallLight = mixColor(theme.wallFrom, theme.wallTo, Math.min(1, solarLight + 0.22));
     rect(context, COLORS.deepest, 0, 0, WORLD_WIDTH, WORLD_HEIGHT);
@@ -986,24 +989,6 @@ export class CafeRenderer {
     rect(context, '#0d1421', 276, 210, 108, 3);
   }
 
-  private drawVenueHostAccent(barista: Barista): void {
-    if (this.venue === 'cafe') return;
-    const context = this.context;
-    const x = snap(barista.position.x);
-    const headTop = snap(barista.position.y - 38);
-    if (this.venue === 'ramen') {
-      rect(context, '#f0dfc1', x - 6, headTop - 5, 12, 5);
-      rect(context, '#fff0d0', x - 4, headTop - 7, 8, 3);
-      rect(context, '#ba5149', x - 7, headTop - 1, 14, 2);
-      rect(context, '#eab565', x - 1, headTop - 1, 2, HALF_PIXEL);
-      return;
-    }
-    rect(context, '#17243a', x - 7, headTop - 2, 14, 3);
-    rect(context, '#5ccbd0', x - 6, headTop - 3, 12, 1);
-    rect(context, '#c35aa5', x - 3, headTop - 4, 6, HALF_PIXEL);
-    rect(context, '#e7d985', x + 4, headTop + 3, 2, HALF_PIXEL);
-  }
-
   private drawFurnitureBack(): void {
     const context = this.context;
     rect(context, '#3a282f', 58, 138, 109, 6);
@@ -1245,7 +1230,19 @@ export class CafeRenderer {
       rect(context, '#b77869', x - facing * 8, bodyTop + 10, 4, 4);
     }
 
-    this.drawGuestFineDetails(guest, x, headTop, bodyTop, footY, facing, seated, variant);
+    this.characters.drawGuestFineDetails({
+      context,
+      guest,
+      x,
+      headTop,
+      bodyTop,
+      footY,
+      facing,
+      seated,
+      variant,
+      venue: this.venue,
+      pixel: CHARACTER_PIXEL,
+    });
 
     const handY = bodyTop + 7 + (phase % 2) * HALF_PIXEL;
     rect(context, guest.palette.skin, x + facing * 5, handY, 2, 2);
@@ -1408,66 +1405,6 @@ export class CafeRenderer {
     }
   }
 
-  private drawGuestFineDetails(
-    guest: Guest,
-    x: number,
-    headTop: number,
-    bodyTop: number,
-    footY: number,
-    facing: 1 | -1,
-    seated: boolean,
-    variant: number,
-  ): void {
-    const context = this.context;
-    const visibleEye = x + facing * 2;
-    const farEye = x - facing * 1.2;
-    const eyeColor = variant === 0 ? '#8eb2b1' : variant === 3 ? '#b8875e' : '#4b3a39';
-    const cheek = variant % 2 === 0 ? '#d98772' : '#c97667';
-
-    // Zwei Augen, Brauen, Nase und Mund werden mit einzelnen echten Canvas-Pixeln lesbar.
-    rect(context, guest.palette.hair, farEye - CHARACTER_PIXEL, headTop + 2.35, 1.5, CHARACTER_PIXEL);
-    rect(context, guest.palette.hair, visibleEye - CHARACTER_PIXEL, headTop + 2.15, 1.8, CHARACTER_PIXEL);
-    rect(context, '#fff0d0', farEye - CHARACTER_PIXEL, headTop + 3.2, 1.35, CHARACTER_PIXEL);
-    rect(context, '#fff0d0', visibleEye - CHARACTER_PIXEL, headTop + 3.1, 1.5, CHARACTER_PIXEL);
-    rect(context, eyeColor, farEye, headTop + 3.2, CHARACTER_PIXEL, CHARACTER_PIXEL);
-    rect(context, eyeColor, visibleEye, headTop + 3.1, CHARACTER_PIXEL, CHARACTER_PIXEL);
-    rect(context, '#7b4c42', x + facing * 3, headTop + 4.8, CHARACTER_PIXEL, 1.25);
-    rect(context, cheek, x + facing * 2.8, headTop + 6.1, 1.15, CHARACTER_PIXEL);
-    rect(context, '#8e4e4a', x + facing * 1.5, headTop + 7.1, 1.8, CHARACTER_PIXEL);
-    rect(context, '#f1c49f', x - facing * 3.7, headTop + 4.8, CHARACTER_PIXEL, 1.6);
-
-    // Haarsträhnen und kleine Lichtkanten verhindern, dass die Köpfe wie einfarbige Blöcke wirken.
-    rect(context, '#1a171d', x - 3.5, headTop + 0.25, 2.5, CHARACTER_PIXEL);
-    rect(context, '#1a171d', x + 1.5, headTop + 0.25, 2, CHARACTER_PIXEL);
-    rect(context, guest.palette.hair, x + facing * 3.5, headTop + 1.2, CHARACTER_PIXEL, 3.3);
-    if (variant === 2 || variant === 4) rect(context, '#b67b59', x - facing * 4.5, headTop + 6, CHARACTER_PIXEL, 2.2);
-
-    // Kragen, Naht, Knöpfe, Ärmel und Schuhe erhalten ein dichteres 3×-Sprite-Raster.
-    polygon(context, '#2a232b', [[x - 5.1, bodyTop + 1], [x, bodyTop + 4], [x + 5.1, bodyTop + 1], [x + 3.2, bodyTop + 4.7], [x - 3.2, bodyTop + 4.7]]);
-    rect(context, guest.palette.accent, x - 1.1, bodyTop + 2.2, 2.2, seated ? 6 : 9);
-    rect(context, '#e9bc77', x - CHARACTER_PIXEL, bodyTop + 5, CHARACTER_PIXEL, CHARACTER_PIXEL);
-    rect(context, '#e9bc77', x - CHARACTER_PIXEL, bodyTop + 8, CHARACTER_PIXEL, CHARACTER_PIXEL);
-    rect(context, '#2b242c', x - 4.7, bodyTop + (seated ? 8.6 : 11.5), 3.4, CHARACTER_PIXEL);
-    rect(context, '#2b242c', x + 1.3, bodyTop + (seated ? 8.6 : 11.5), 3.4, CHARACTER_PIXEL);
-    rect(context, guest.palette.accent, x - 5.6, bodyTop + 6, CHARACTER_PIXEL, 3);
-    rect(context, guest.palette.accent, x + 5.25, bodyTop + 6, CHARACTER_PIXEL, 3);
-
-    if (!seated) {
-      rect(context, '#bca585', x - 3.5, footY - 2, 2, CHARACTER_PIXEL);
-      rect(context, '#bca585', x + 1.5, footY - 2, 2, CHARACTER_PIXEL);
-      rect(context, '#0f141b', x - 4.5, footY + 0.8, 4.5, CHARACTER_PIXEL);
-      rect(context, '#0f141b', x + 1, footY + 0.8, 4.5, CHARACTER_PIXEL);
-    }
-
-    if (this.venue === 'ramen' && guest.state === 'waiting') {
-      rect(context, '#d95c4d', x + facing * 6 - 1, bodyTop + 4, 3, CHARACTER_PIXEL);
-      rect(context, '#f3c979', x + facing * 6, bodyTop + 3.3, 1, CHARACTER_PIXEL);
-    } else if (this.venue === 'arcade' && guest.state === 'activity' && guest.activity === 'phone') {
-      rect(context, '#d260a5', x + facing * 5 - CHARACTER_PIXEL, bodyTop + 3.2, CHARACTER_PIXEL, 2);
-      rect(context, '#68d0d0', x + facing * 5 - CHARACTER_PIXEL, bodyTop + 5.5, CHARACTER_PIXEL, CHARACTER_PIXEL);
-    }
-  }
-
   private drawBarista(barista: Barista, time: number): void {
     const context = this.context;
     const x = snap(barista.position.x);
@@ -1478,10 +1415,7 @@ export class CafeRenderer {
     // lässt Kopf und Schultern eindeutig hinter der hohen Theke hervorschauen.
     const top = y - 29 + bob;
     const facing = barista.task === 'machine' ? 1 : barista.facing;
-    const uniform = this.venue === 'ramen' ? '#873e45' : this.venue === 'arcade' ? '#3d5d86' : '#4f746d';
-    const uniformLight = this.venue === 'ramen' ? '#c25c52' : this.venue === 'arcade' ? '#63a8bd' : '#70938a';
-    const apron = this.venue === 'ramen' ? '#ead5ba' : this.venue === 'arcade' ? '#c6d3d2' : '#d9c4a4';
-    const apronLight = this.venue === 'ramen' ? '#fff0cd' : this.venue === 'arcade' ? '#e7f0e4' : '#ead8ba';
+    const { uniform, uniformLight, apron, apronLight } = this.venues.baristaStyle(this.venue);
 
     rect(context, '#2b2228', x - 6.5, y - 1, 13, 2);
     rect(context, '#243136', x - 5, top + 14, 4, 11);
@@ -1575,58 +1509,24 @@ export class CafeRenderer {
         rect(context, '#bdb5a9', x + 18, workY - 6 - steamRise, HALF_PIXEL, 2);
       }
     }
-    this.drawBaristaFineDetails(x, top, headTop, facing, uniformLight, apron, apronLight);
+    this.characters.drawBaristaFineDetails({
+      context,
+      x,
+      top,
+      headTop,
+      facing,
+      uniformLight,
+      apron,
+      apronLight,
+      venue: this.venue,
+      pixel: CHARACTER_PIXEL,
+    });
   }
 
-  private drawBaristaFineDetails(
-    x: number,
-    top: number,
-    headTop: number,
-    facing: 1 | -1,
-    uniformLight: string,
-    apron: string,
-    apronLight: string,
-  ): void {
-    const context = this.context;
-    const badge = this.venue === 'ramen' ? '#d15b4d' : this.venue === 'arcade' ? '#63d1d0' : '#e7ba70';
-
-    // Feine Gesichtspixel geben der Bedienung dieselbe Lesbarkeit wie den Gästen.
-    rect(context, '#2d2529', x - facing * 1.4, headTop + 2.25, 1.5, CHARACTER_PIXEL);
-    rect(context, '#2d2529', x + facing * 2.2, headTop + 2.1, 1.5, CHARACTER_PIXEL);
-    rect(context, '#fff0cc', x - facing * 1.2, headTop + 3.15, 1.2, CHARACTER_PIXEL);
-    rect(context, '#fff0cc', x + facing * 2.4, headTop + 3.05, 1.35, CHARACTER_PIXEL);
-    rect(context, '#4f5d5a', x - facing * 0.9, headTop + 3.15, CHARACTER_PIXEL, CHARACTER_PIXEL);
-    rect(context, '#4f5d5a', x + facing * 2.65, headTop + 3.05, CHARACTER_PIXEL, CHARACTER_PIXEL);
-    rect(context, '#a55a51', x + facing * 2.4, headTop + 6.4, 1.8, CHARACTER_PIXEL);
-    rect(context, '#e2aa82', x - facing * 3.8, headTop + 5, CHARACTER_PIXEL, 1.8);
-    rect(context, '#1a171d', x - 3.6, headTop + 0.25, 2.3, CHARACTER_PIXEL);
-    rect(context, '#1a171d', x + 1.4, headTop + 0.25, 2.3, CHARACTER_PIXEL);
-
-    // Schürzennähte, Brusttasche und Badge erzeugen ein separates, hochdichtes Arbeitssprite.
-    rect(context, apronLight, x - 3.4, top + 8, 6.8, CHARACTER_PIXEL);
-    rect(context, '#9e725b', x - CHARACTER_PIXEL, top + 8.4, CHARACTER_PIXEL, 7.5);
-    rect(context, '#a77960', x - 2.6, top + 13, 5.2, 2.2);
-    rect(context, apron, x - 2.1, top + 13.4, 4.2, 1.3);
-    rect(context, badge, x + facing * 2.3, top + 4.3, 1.8, 1.8);
-    rect(context, '#fff0bd', x + facing * 2.7, top + 4.65, CHARACTER_PIXEL, CHARACTER_PIXEL);
-    rect(context, uniformLight, x - 5.5, top + 5, CHARACTER_PIXEL, 4);
-    rect(context, uniformLight, x + 5.2, top + 5, CHARACTER_PIXEL, 4);
-    rect(context, '#e3bd83', x - CHARACTER_PIXEL, top + 16.2, CHARACTER_PIXEL, CHARACTER_PIXEL);
-    rect(context, '#e3bd83', x - CHARACTER_PIXEL, top + 19.2, CHARACTER_PIXEL, CHARACTER_PIXEL);
-
-    if (this.venue === 'ramen') {
-      rect(context, '#e9c06c', x - 3, top + 12, 6, CHARACTER_PIXEL);
-      rect(context, '#b94f49', x - 3, top + 15.5, 6, CHARACTER_PIXEL);
-    } else if (this.venue === 'arcade') {
-      rect(context, '#c85ba5', x - 3, top + 12, 6, CHARACTER_PIXEL);
-      rect(context, '#5ed1d0', x - 3, top + 15.5, 6, CHARACTER_PIXEL);
-    }
-  }
-
-  private drawMoment(moment: Readonly<CafeMoment>): void {
+  private drawMoment(moment: Readonly<CafeMoment>, sceneGuests: readonly Guest[]): void {
     const context = this.context;
     const guests = moment.participantIds
-      .map((id) => this.simulation.guests.find((guest) => guest.id === id))
+      .map((id) => sceneGuests.find((guest) => guest.id === id))
       .filter((guest): guest is Guest => Boolean(guest));
     if (guests.length === 0) return;
 
@@ -1716,7 +1616,7 @@ export class CafeRenderer {
     rect(context, '#f0cf7e', guest.position.x + 6, tableY - 6, 3, 1);
   }
 
-  private drawCafeDetails(time: number): void {
+  private drawCafeDetails(time: number, sketchbookStage: number): void {
     const context = this.context;
     const month = (this.environment?.localTime ?? new Date(2026, 6, 14)).getMonth();
     const seasonal = month === 11 || month <= 1 ? '#d9e4dc' : month <= 4 ? '#d99b8d' : month <= 7 ? '#e1bd72' : '#c87955';
@@ -1751,7 +1651,7 @@ export class CafeRenderer {
     rect(context, '#5b785d', 370, 96, 5, 5);
     rect(context, '#d1a066', 365, 105, 7, 3);
     rect(context, '#7c5145', 366, 108, 5, HALF_PIXEL);
-    if (this.simulation.getStoryStage('sketchbook') >= 2) {
+    if (sketchbookStage >= 2) {
       rect(context, '#3d3037', 219, 112, 18, 17);
       rect(context, '#bd835d', 220, 113, 16, 15);
       rect(context, '#f0d9a8', 222, 115, 12, 11);
@@ -1771,9 +1671,9 @@ export class CafeRenderer {
     }
   }
 
-  private drawVenueDetails(time: number): void {
+  private drawVenueDetails(time: number, sketchbookStage: number): void {
     if (this.venue === 'cafe') {
-      this.drawCafeDetails(time);
+      this.drawCafeDetails(time, sketchbookStage);
       return;
     }
     if (this.venue === 'ramen') this.drawRamenDetails(time);
@@ -1868,13 +1768,13 @@ export class CafeRenderer {
     rect(context, '#6d4542', 58, 204, 170, HALF_PIXEL);
   }
 
-  private drawAccident(accident: Readonly<CafeAccident>): void {
+  private drawAccident(accident: Readonly<CafeAccident>, guests: readonly Guest[]): void {
     if (accident.kind === 'tray-drop') this.drawTrayDrop(accident);
     else if (accident.kind === 'coffee-spill') this.drawCoffeeSpill(accident);
-    else this.drawUmbrellaPop(accident);
+    else this.drawUmbrellaPop(accident, guests);
 
     const participantId = accident.guestId ?? accident.witnessId;
-    const guest = this.simulation.guests.find((item) => item.id === participantId);
+    const guest = guests.find((item) => item.id === participantId);
     if (guest) this.drawReactionPose(guest, accident);
   }
 
@@ -1940,9 +1840,9 @@ export class CafeRenderer {
     }
   }
 
-  private drawUmbrellaPop(accident: Readonly<CafeAccident>): void {
+  private drawUmbrellaPop(accident: Readonly<CafeAccident>, guests: readonly Guest[]): void {
     const context = this.context;
-    const guest = this.simulation.guests.find((item) => item.id === accident.guestId);
+    const guest = guests.find((item) => item.id === accident.guestId);
     if (!guest) return;
     const x = snap(guest.position.x + guest.facing * 3);
     const y = snap(guest.position.y - 24);
@@ -1987,12 +1887,8 @@ export class CafeRenderer {
 
   private drawForeground(time: number): void {
     const context = this.context;
-    const arcade = this.venue === 'arcade';
-    const ramen = this.venue === 'ramen';
-    const base = arcade ? '#131a2a' : ramen ? '#352230' : '#38282f';
-    const dark = arcade ? '#0b1120' : ramen ? '#221824' : '#211b24';
-    const plank = arcade ? '#304e6b' : ramen ? '#7e3e43' : '#6c4644';
-    const highlight = arcade ? '#61cbd0' : ramen ? '#e3a65f' : '#9b6250';
+    const theme = this.venues.foregroundTheme(this.venue);
+    const { base, dark, plank, highlight } = theme;
     rect(context, base, 0, 211, WORLD_WIDTH, 5);
     rect(context, dark, 0, 215, WORLD_WIDTH, 1);
     for (let index = 0; index < 12; index += 1) {
@@ -2007,9 +1903,9 @@ export class CafeRenderer {
     for (let index = 0; index < motes; index += 1) {
       const x = 57 + ((index * 41) % 296) + Math.sin(time * 0.3 + index) * 2;
       const y = 32 + ((index * 23 + time * (index % 3 + 0.5)) % 132);
-      const mote = arcade ? (index % 2 ? '#c35aa5' : '#5bcbd0') : ramen ? (index % 2 ? '#e6a964' : '#c65a4e') : (index % 2 ? '#e1b16c' : '#c78c58');
+      const mote = index % 2 ? theme.moteLeft : theme.moteRight;
       rect(context, mote, x, y, HALF_PIXEL, HALF_PIXEL);
-      if (index % 5 === 0) rect(context, arcade ? '#f2dd8e' : '#f2c87d', x + HALF_PIXEL, y - HALF_PIXEL, HALF_PIXEL, HALF_PIXEL);
+      if (index % 5 === 0) rect(context, theme.sparkle, x + HALF_PIXEL, y - HALF_PIXEL, HALF_PIXEL, HALF_PIXEL);
     }
   }
 }

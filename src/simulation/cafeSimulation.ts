@@ -28,6 +28,7 @@ import type {
   RegularId,
   SimulationStats,
 } from './types';
+import type { SceneSnapshot } from '../scene/types';
 
 const NAMES = ['Fritzi', 'Eli', 'Jun', 'Pia', 'Mika', 'Romy'] as const;
 const ACTIVITIES: readonly GuestActivity[] = [
@@ -150,6 +151,36 @@ function copyPoint(point: Point): Point {
 
 function copyPoints(points?: readonly Point[]): Point[] | undefined {
   return points?.map(copyPoint);
+}
+
+function frozenPoint(point: Point): Point {
+  return Object.freeze({ x: point.x, y: point.y }) as Point;
+}
+
+function copyGuest(guest: Guest): Guest {
+  return Object.freeze({
+    ...guest,
+    position: frozenPoint(guest.position),
+    target: frozenPoint(guest.target),
+    waypoints: guest.waypoints ? Object.freeze(guest.waypoints.map(frozenPoint)) as Point[] : undefined,
+    palette: Object.freeze({ ...guest.palette }) as GuestPalette,
+  }) as Guest;
+}
+
+function copyBarista(barista: Barista): Barista {
+  return Object.freeze({ ...barista, position: frozenPoint(barista.position), target: frozenPoint(barista.target) }) as Barista;
+}
+
+function copyAccident(accident: CafeAccident): CafeAccident {
+  return Object.freeze({
+    ...accident,
+    position: frozenPoint(accident.position),
+    detour: accident.detour ? frozenPoint(accident.detour) : undefined,
+  }) as CafeAccident;
+}
+
+function copyMoment(moment: CafeMoment): CafeMoment {
+  return Object.freeze({ ...moment, participantIds: Object.freeze([...moment.participantIds]) }) as CafeMoment;
 }
 
 function distance(a: Point, b: Point): number {
@@ -310,6 +341,19 @@ export class CafeSimulation {
 
   getStoryStage(kind: CafeStoryKind): number {
     return this.storyProgress[kind];
+  }
+
+  getSceneSnapshot(): SceneSnapshot {
+    return Object.freeze({
+      guests: Object.freeze(this.guests.map(copyGuest)),
+      barista: copyBarista(this.barista),
+      accident: this.currentAccident ? copyAccident(this.currentAccident) : undefined,
+      moment: this.currentMoment ? copyMoment(this.currentMoment) : undefined,
+      regularIds: Object.freeze(this.guests
+        .map((guest) => guest.regularId)
+        .filter((regularId): regularId is RegularId => regularId !== undefined)),
+      storyStages: Object.freeze({ ...this.storyProgress }),
+    });
   }
 
   getSecondsUntilNextAccident(): number | undefined {

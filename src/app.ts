@@ -6,6 +6,7 @@ import type { AccidentKind, CafeMoment, CafeMomentKind, CafeStoryKind } from './
 import { CafeEnvironmentController, parseEnvironmentOverrides } from './environment/cafeEnvironmentController';
 import type { CafeEnvironmentSnapshot } from './environment/types';
 import { DEFAULT_VENUE, isVenueKind, VENUES, type VenueKind } from './venue';
+import { SceneRuntime } from './scene/sceneRuntime';
 
 const UI_IDLE_DELAY = 2_500;
 
@@ -110,7 +111,8 @@ export class KaffeepauseApp {
   private readonly simulation = new CafeSimulation(simulationOptions());
   private readonly camera = new CafeCamera();
   private readonly audio = new CafeAudio();
-  private readonly renderer = new CafeRenderer(this.canvas, this.simulation, this.camera);
+  private readonly renderer = new CafeRenderer(this.canvas, this.camera);
+  private readonly runtime = new SceneRuntime(this.simulation, this.camera, this.renderer);
   private readonly environment = new CafeEnvironmentController({
     overrides: parseEnvironmentOverrides(window.location.search, import.meta.env.DEV),
     onNotice: (message) => { this.status.textContent = message; },
@@ -129,7 +131,7 @@ export class KaffeepauseApp {
     this.environment.start();
     this.applyEnvironment(this.environment.update());
     this.selectVenue(this.selectedVenue);
-    this.renderer.render(0);
+    this.runtime.render(0);
     this.enterButton.addEventListener('click', this.enterCafe);
     for (const button of this.venueButtons) button.addEventListener('click', this.venueSelected);
     this.soundButton.addEventListener('click', this.toggleSound);
@@ -153,8 +155,7 @@ export class KaffeepauseApp {
   private readonly enterCafe = (): void => {
     if (this.entered) return;
     this.entered = true;
-    this.simulation.start();
-    this.renderer.setActive(true);
+    this.runtime.start();
     this.welcome.classList.add('is-hidden');
     this.controls.hidden = false;
     document.body.dataset.entered = 'true';
@@ -274,30 +275,30 @@ export class KaffeepauseApp {
     const delta = Math.min(0.1, Math.max(0, (now - this.lastFrame) / 1000));
     this.lastFrame = now;
     this.applyEnvironment(this.environment.update());
+    let scene = this.runtime.snapshot();
     if (this.entered) {
       this.elapsed += delta;
-      this.simulation.update(delta);
-      this.camera.update(delta);
-      const accident = this.simulation.activeAccident;
+      scene = this.runtime.update(delta);
+      const accident = scene.accident;
       if (accident && accident.id !== this.lastAnnouncedAccidentId) {
         this.lastAnnouncedAccidentId = accident.id;
         this.status.textContent = ACCIDENT_MESSAGES[accident.kind];
         this.audio.playAccident(accident.kind);
       }
-      const moment = this.simulation.activeMoment;
+      const moment = scene.moment;
       if (moment && moment.id !== this.lastAnnouncedMomentId) {
         this.lastAnnouncedMomentId = moment.id;
         this.status.textContent = momentMessage(moment);
         this.audio.playMoment(moment.kind);
       }
     }
-    this.renderer.render(this.elapsed);
+    this.runtime.render(this.elapsed, scene);
     this.frame = requestAnimationFrame(this.tick);
   };
 
   private readonly resize = (): void => {
     this.renderer.resize(this.motionQuery.matches);
-    this.renderer.render(this.elapsed);
+    this.runtime.render(this.elapsed);
   };
 
   private readonly updateMotionPreference = (): void => {
@@ -315,7 +316,7 @@ export class KaffeepauseApp {
     cancelAnimationFrame(this.frame);
     if (this.idleTimer !== undefined) window.clearTimeout(this.idleTimer);
     this.environment.stop();
-    this.simulation.stop();
+    this.runtime.stop();
     void this.audio.destroy();
   };
 
