@@ -1,5 +1,5 @@
 import { CafeCamera } from './camera';
-import { WORLD_HEIGHT, WORLD_WIDTH } from './simulation/layout';
+import { CAFE_LAYOUT_REPORT, WORLD_HEIGHT, WORLD_WIDTH } from './simulation/layout';
 import type { Barista, CafeAccident, CafeMoment, Guest } from './simulation/types';
 import type { CafeEnvironmentSnapshot, DayPhase } from './environment/types';
 import type { VenueKind } from './venue';
@@ -11,10 +11,11 @@ import { calculateSceneLighting, LightingRenderer, type SceneLighting } from './
 import { calculateVenueActivityState, VenueActivityRenderer } from './scene/venueActivityRenderer';
 import { VenueOpticsRenderer, windowReflectionLean } from './scene/venueOpticsRenderer';
 import { VenueRenderer } from './scene/venueRenderer';
+import { SCENE_PROPORTIONS, SCENE_PROPORTION_REPORT } from './scene/proportions';
 
 // Drei physische Pixel pro Szenenpixel lassen kleine Licht-, Holz- und Stoffdetails
 // klarer wirken, ohne den bewusst groben Pixel-Art-Charakter zu verlieren.
-export const RENDER_SCALE = 3;
+export const RENDER_SCALE = SCENE_PROPORTIONS.world.renderScale;
 
 const COLORS = {
   ink: '#241923',
@@ -112,6 +113,10 @@ export class CafeRenderer {
     if (!context) throw new Error('Canvas 2D wird von diesem Browser nicht unterstützt.');
     this.context = context;
     this.context.imageSmoothingEnabled = false;
+    const proportionsValid = SCENE_PROPORTION_REPORT.valid && CAFE_LAYOUT_REPORT.valid;
+    this.canvas.dataset.proportionCheck = proportionsValid ? 'pass' : 'warning';
+    this.canvas.dataset.layoutScore = String(Math.min(SCENE_PROPORTION_REPORT.score, CAFE_LAYOUT_REPORT.score));
+    this.canvas.dataset.scaleModel = `${SCENE_PROPORTIONS.character.standingHeight}px-adult`;
   }
 
   setActive(active: boolean): void {
@@ -187,8 +192,7 @@ export class CafeRenderer {
       reducedMotion: this.reducedMotion,
       state: hd2d,
     });
-    this.drawVenueFurnitureBack();
-    this.lighting.drawAmbient({
+    this.optics.drawFloorLight({
       context,
       venue: this.venue,
       time,
@@ -196,7 +200,9 @@ export class CafeRenderer {
       reducedMotion: this.reducedMotion,
       lighting,
     });
-    this.optics.drawFloorLight({
+    this.drawGroundingShadows(lighting);
+    this.drawVenueFurnitureBack();
+    this.lighting.drawAmbient({
       context,
       venue: this.venue,
       time,
@@ -292,7 +298,7 @@ export class CafeRenderer {
     rect(context, '#c58764', 0, 115, WORLD_WIDTH, 1);
     rect(context, COLORS.ink, 0, 130, WORLD_WIDTH, 4);
     rect(context, '#6c4444', 0, 128, WORLD_WIDTH, 2);
-    rect(context, theme.floor, 0, 134, WORLD_WIDTH, 82);
+    rect(context, theme.floor, 0, SCENE_PROPORTIONS.world.floorHorizonY, WORLD_WIDTH, WORLD_HEIGHT - SCENE_PROPORTIONS.world.floorHorizonY);
 
     for (let index = 0; index < 34; index += 1) {
       const x = (index * 37 + 13) % WORLD_WIDTH;
@@ -302,13 +308,13 @@ export class CafeRenderer {
       if (index % 5 === 0) rect(context, '#6f4645', x + 1.5, y + HALF_PIXEL, HALF_PIXEL, 1.5);
     }
 
-    for (let y = 137; y < WORLD_HEIGHT; y += 13) {
+    for (let y = SCENE_PROPORTIONS.world.floorHorizonY + 3; y < WORLD_HEIGHT; y += 13) {
       rect(context, y % 26 === 7 ? mixColor(theme.floor, '#151b2b', 0.42) : theme.floorLight, 0, y, WORLD_WIDTH, HALF_PIXEL);
       rect(context, '#35272f', 0, y + HALF_PIXEL, WORLD_WIDTH, HALF_PIXEL);
     }
     for (let x = -40; x < WORLD_WIDTH + 40; x += 31) {
-      polygon(context, mixColor(theme.floor, '#171c2c', 0.42), [[x, 216], [x + 1.5, 216], [x + 53.5, 134], [x + 52, 134]]);
-      polygon(context, mixColor(theme.floorLight, '#54728a', this.venue === 'arcade' ? 0.7 : 0.22), [[x + 2, 216], [x + 2.5, 216], [x + 54.5, 134], [x + 54, 134]]);
+      polygon(context, mixColor(theme.floor, '#171c2c', 0.42), [[x, WORLD_HEIGHT], [x + 1.5, WORLD_HEIGHT], [x + 53.5, SCENE_PROPORTIONS.world.floorHorizonY], [x + 52, SCENE_PROPORTIONS.world.floorHorizonY]]);
+      polygon(context, mixColor(theme.floorLight, '#54728a', this.venue === 'arcade' ? 0.7 : 0.22), [[x + 2, WORLD_HEIGHT], [x + 2.5, WORLD_HEIGHT], [x + 54.5, SCENE_PROPORTIONS.world.floorHorizonY], [x + 54, SCENE_PROPORTIONS.world.floorHorizonY]]);
     }
 
     for (let index = 0; index < 18; index += 1) {
@@ -405,6 +411,40 @@ export class CafeRenderer {
       rect(context, '#bc825d', x, 207, 3, HALF_PIXEL);
       rect(context, '#9c6757', x + 1, 208, HALF_PIXEL, 2);
     }
+  }
+
+  private drawGroundingShadows(lighting: SceneLighting): void {
+    const context = this.context;
+    const { dining, counter } = SCENE_PROPORTIONS;
+    const shadow = this.venue === 'arcade' ? '#080f1c' : this.venue === 'ramen' ? '#211823' : '#241c24';
+
+    context.save();
+    context.globalAlpha = 0.2 + lighting.wetness * 0.08;
+    // Die Kontaktflächen folgen denselben Ankern wie Tischbeine und Theke.
+    // Dadurch bleiben Möbel auch bei späteren Größenänderungen am Boden verankert.
+    polygon(context, shadow, [[58, 165], [164, 165], [170, 169], [54, 169]]);
+    for (const centerX of dining.frontTableCenters) {
+      polygon(context, shadow, [
+        [centerX - dining.frontTableWidth / 2 - 3, dining.frontTableLegBottomY - 2],
+        [centerX + dining.frontTableWidth / 2 + 3, dining.frontTableLegBottomY - 2],
+        [centerX + dining.frontTableWidth / 2 + 8, dining.frontTableLegBottomY + 3],
+        [centerX - dining.frontTableWidth / 2 - 8, dining.frontTableLegBottomY + 3],
+      ]);
+    }
+    polygon(context, shadow, [
+      [counter.frontX + 4, counter.baseY - 5],
+      [counter.frontX + counter.frontWidth - 4, counter.baseY - 5],
+      [counter.x + counter.width, counter.baseY + 1],
+      [counter.x - 1, counter.baseY + 1],
+    ]);
+    context.restore();
+
+    context.save();
+    context.globalAlpha = 0.16 + lighting.solar * 0.06;
+    for (const centerX of dining.frontTableCenters) {
+      rect(context, lighting.fromRight ? '#c99664' : '#8e6251', centerX - 12, dining.frontTableLegBottomY + 1, 24, HALF_PIXEL);
+    }
+    context.restore();
   }
 
   private drawWindows(time: number, lighting: SceneLighting): void {
@@ -938,6 +978,7 @@ export class CafeRenderer {
 
   private drawRamenFurnitureBack(): void {
     const context = this.context;
+    const { dining } = SCENE_PROPORTIONS;
     // Rückwärtige Sitzbank: etwa zehn Prozent kompakter als die vorderen Tische.
     rect(context, '#342636', 63, 139, 99, 6);
     rect(context, '#8c4143', 65, 136, 95, 5);
@@ -947,15 +988,15 @@ export class CafeRenderer {
       rect(context, '#a94a46', x + 1, 142, 16, 4);
       rect(context, '#e5ad68', x + 3, 143, 12, HALF_PIXEL);
     }
-    for (const x of [105, 179]) {
-      rect(context, '#322432', x - 18, 181, 37, 5);
-      rect(context, '#a74845', x - 16, 178, 33, 4);
-      rect(context, '#ecad63', x - 14, 178.5, 29, HALF_PIXEL);
-      rect(context, '#59313a', x - 2, 183, 4, 20);
-      rect(context, '#2d2531', x - 12, 202, 24, 3);
+    for (const x of dining.frontTableCenters) {
+      rect(context, '#322432', x - 18, dining.frontMomentY, 37, 5);
+      rect(context, '#a74845', x - 16, dining.frontSurfaceY, 33, 4);
+      rect(context, '#ecad63', x - 14, dining.frontSurfaceY + HALF_PIXEL, 29, HALF_PIXEL);
+      rect(context, '#59313a', x - 2, dining.frontSurfaceY + 5, 4, dining.frontTableLegBottomY - dining.frontSurfaceY - 5);
+      rect(context, '#2d2531', x - 12, dining.frontTableLegBottomY - 2, 24, 3);
       for (const direction of [-1, 1] as const) {
-        rect(context, '#56323c', x + direction * 16 - 3, 183, 7, 18);
-        rect(context, '#8f4644', x + direction * 16 - 2, 181, 5, 5);
+        rect(context, '#56323c', x + direction * 16 - 3, dining.frontSurfaceY + 5, 7, 18);
+        rect(context, '#8f4644', x + direction * 16 - 2, dining.frontMomentY, 5, 5);
       }
     }
     for (const x of [94, 168]) {
@@ -967,6 +1008,7 @@ export class CafeRenderer {
 
   private drawArcadeFurnitureBack(): void {
     const context = this.context;
+    const { dining } = SCENE_PROPORTIONS;
     // Hintergrund-Automaten: 45 statt 57 Pixel hoch, damit sie nicht größer als Erwachsene wirken.
     for (const [x, color] of [[59, '#5ccbd0'], [94, '#c35aa5'], [129, '#62bcd2']] as const) {
       rect(context, '#111827', x, 100, 24, 45);
@@ -980,12 +1022,12 @@ export class CafeRenderer {
       rect(context, '#0e1421', x + 6, 136, 13, 7);
       rect(context, color, x + 9, 137, 2, 5);
     }
-    for (const x of [105, 179]) {
-      rect(context, '#101827', x - 18, 181, 37, 5);
-      rect(context, '#293d5c', x - 16, 178, 33, 4);
-      rect(context, '#64c9cd', x - 14, 178.5, 29, HALF_PIXEL);
-      rect(context, '#1b2940', x - 2, 183, 4, 20);
-      rect(context, '#101824', x - 12, 202, 24, 3);
+    for (const x of dining.frontTableCenters) {
+      rect(context, '#101827', x - 18, dining.frontMomentY, 37, 5);
+      rect(context, '#293d5c', x - 16, dining.frontSurfaceY, 33, 4);
+      rect(context, '#64c9cd', x - 14, dining.frontSurfaceY + HALF_PIXEL, 29, HALF_PIXEL);
+      rect(context, '#1b2940', x - 2, dining.frontSurfaceY + 5, 4, dining.frontTableLegBottomY - dining.frontSurfaceY - 5);
+      rect(context, '#101824', x - 12, dining.frontTableLegBottomY - 2, 24, 3);
     }
     for (const [x, color] of [[78, '#c45aa1'], [130, '#63cbd0'], [158, '#c45aa1'], [207, '#63cbd0']] as const) {
       rect(context, '#142038', x, 184, 4, 18);
@@ -1002,6 +1044,7 @@ export class CafeRenderer {
 
   private drawRamenCounterBack(time: number): void {
     const context = this.context;
+    const { counter } = SCENE_PROPORTIONS;
     rect(context, '#362333', 282, 100, 98, 30);
     rect(context, '#5a3540', 284, 103, 94, 24);
     for (const x of [288, 311, 334, 357]) {
@@ -1022,13 +1065,14 @@ export class CafeRenderer {
       const rise = (time * (4 + index * 0.25) + index * 4) % 18;
       rect(context, index % 2 ? '#dfcfb8' : '#f3dfbf', 339 + (index % 3) * 3, 123 - rise, HALF_PIXEL, 3);
     }
-    rect(context, '#211b29', 278, 130, 103, 8);
-    rect(context, '#a84945', 278, 128, 104, 5);
-    rect(context, '#f0b666', 280, 128.5, 100, HALF_PIXEL);
+    rect(context, '#211b29', counter.x + 2, counter.surfaceY + 2, counter.width - 5, 8);
+    rect(context, '#a84945', counter.x + 2, counter.surfaceY, counter.width - 4, 5);
+    rect(context, '#f0b666', counter.x + 4, counter.surfaceY + HALF_PIXEL, counter.width - 8, HALF_PIXEL);
   }
 
   private drawArcadeCounterBack(time: number): void {
     const context = this.context;
+    const { counter } = SCENE_PROPORTIONS;
     const flicker = this.reducedMotion ? 0 : Math.sin(time * 3) * HALF_PIXEL;
     rect(context, '#111827', 282, 100, 98, 30);
     rect(context, '#253a59', 284, 103, 94, 24);
@@ -1047,9 +1091,9 @@ export class CafeRenderer {
     rect(context, '#f2d987', 338, 114, 8, HALF_PIXEL);
     rect(context, '#132034', 336, 121, 4, 5);
     rect(context, '#132034', 347, 121, 4, 5);
-    rect(context, '#101725', 278, 130, 103, 8);
-    rect(context, '#31526d', 278, 128, 104, 5);
-    rect(context, '#5ccbd0', 280, 128.5, 100, HALF_PIXEL);
+    rect(context, '#101725', counter.x + 2, counter.surfaceY + 2, counter.width - 5, 8);
+    rect(context, '#31526d', counter.x + 2, counter.surfaceY, counter.width - 4, 5);
+    rect(context, '#5ccbd0', counter.x + 4, counter.surfaceY + HALF_PIXEL, counter.width - 8, HALF_PIXEL);
   }
 
   private drawVenueCounterFront(): void {
@@ -1060,12 +1104,13 @@ export class CafeRenderer {
 
   private drawRamenCounterFront(): void {
     const context = this.context;
-    rect(context, '#d26852', 276, 128, 107, 6);
-    rect(context, '#f0ba68', 278, 128, 103, 1);
-    rect(context, '#57313c', 278, 134, 104, 4);
+    const { counter } = SCENE_PROPORTIONS;
+    rect(context, '#d26852', counter.x, counter.surfaceY, counter.width - 1, 6);
+    rect(context, '#f0ba68', counter.x + 2, counter.surfaceY, counter.width - 5, 1);
+    rect(context, '#57313c', counter.x + 2, counter.surfaceY + 6, counter.width - 4, 4);
     // Die Front ist zum Boden hin zurückgesetzt. Der breite Sockel verankert
     // die Theke im Raum, ohne sie wieder zu einem mannshohen Block zu machen.
-    rect(context, '#4c2c39', 282, 138, 99, 46);
+    rect(context, '#4c2c39', counter.frontX, counter.frontY, counter.frontWidth, 46);
     for (const x of [290, 315, 340, 365]) {
       rect(context, '#7f3e43', x, 142, 18, 38);
       rect(context, '#b84d48', x + 1, 143, 16, 3);
@@ -1084,15 +1129,16 @@ export class CafeRenderer {
       rect(context, '#e7ac61', x + 3, 199, 13, HALF_PIXEL);
     }
     rect(context, '#261b28', 292, 204, 79, 3);
-    rect(context, '#271c29', 276, 211, 108, 2);
+    rect(context, '#271c29', counter.x, counter.baseY - 2, counter.width, 2);
   }
 
   private drawArcadeCounterFront(): void {
     const context = this.context;
-    rect(context, '#4f91a3', 276, 128, 107, 6);
-    rect(context, '#92e1d5', 278, 128, 103, 1);
-    rect(context, '#17263a', 278, 134, 104, 4);
-    rect(context, '#18253a', 282, 138, 99, 46);
+    const { counter } = SCENE_PROPORTIONS;
+    rect(context, '#4f91a3', counter.x, counter.surfaceY, counter.width - 1, 6);
+    rect(context, '#92e1d5', counter.x + 2, counter.surfaceY, counter.width - 5, 1);
+    rect(context, '#17263a', counter.x + 2, counter.surfaceY + 6, counter.width - 4, 4);
+    rect(context, '#18253a', counter.frontX, counter.frontY, counter.frontWidth, 46);
     for (const [x, color] of [[290, '#c259a2'], [315, '#5ecbd0'], [340, '#c259a2'], [365, '#5ecbd0']] as const) {
       rect(context, '#263d5a', x, 142, 18, 38);
       rect(context, color, x + 1, 143, 16, 2);
@@ -1111,11 +1157,12 @@ export class CafeRenderer {
       rect(context, color, x + 3, 199, 13, HALF_PIXEL);
     }
     rect(context, '#0c1320', 292, 204, 79, 3);
-    rect(context, '#0d1421', 276, 211, 108, 2);
+    rect(context, '#0d1421', counter.x, counter.baseY - 2, counter.width, 2);
   }
 
   private drawFurnitureBack(): void {
     const context = this.context;
+    const { dining } = SCENE_PROPORTIONS;
     // Die Bank liegt hinter den Tischen und wird deshalb etwas kleiner und höher gezeichnet.
     rect(context, '#3a282f', 63, 139, 99, 5);
     rect(context, '#8d5845', 65, 136, 95, 5);
@@ -1133,15 +1180,15 @@ export class CafeRenderer {
     }
     for (let x = 78; x < 150; x += 12) rect(context, '#a76b4f', x, 137, HALF_PIXEL, 2.5);
 
-    for (const x of [105, 179]) {
-      rect(context, '#37272e', x - 18, 181, 37, 5);
-      rect(context, COLORS.woodLight, x - 16, 178, 33, 4);
-      rect(context, '#d0905f', x - 14, 178.5, 29, HALF_PIXEL);
-      rect(context, '#74443d', x - 13, 182, 27, 1);
-      rect(context, '#51343a', x - 2, 183, 4, 21);
-      rect(context, '#724744', x - 1.5, 184, HALF_PIXEL, 18);
-      rect(context, '#3b2930', x - 12, 202, 24, 3);
-      rect(context, '#67413e', x - 9, 202, 18, HALF_PIXEL);
+    for (const x of dining.frontTableCenters) {
+      rect(context, '#37272e', x - 18, dining.frontMomentY, 37, 5);
+      rect(context, COLORS.woodLight, x - 16, dining.frontSurfaceY, 33, 4);
+      rect(context, '#d0905f', x - 14, dining.frontSurfaceY + HALF_PIXEL, 29, HALF_PIXEL);
+      rect(context, '#74443d', x - 13, dining.frontSurfaceY + 4, 27, 1);
+      rect(context, '#51343a', x - 2, dining.frontSurfaceY + 5, 4, dining.frontTableLegBottomY - dining.frontSurfaceY - 5);
+      rect(context, '#724744', x - 1.5, dining.frontSurfaceY + 6, HALF_PIXEL, dining.frontTableLegBottomY - dining.frontSurfaceY - 8);
+      rect(context, '#3b2930', x - 12, dining.frontTableLegBottomY - 2, 24, 3);
+      rect(context, '#67413e', x - 9, dining.frontTableLegBottomY - 2, 18, HALF_PIXEL);
     }
 
     for (const x of [78, 130, 158, 207]) {
@@ -1166,6 +1213,7 @@ export class CafeRenderer {
 
   private drawCounterBack(time: number): void {
     const context = this.context;
+    const { counter } = SCENE_PROPORTIONS;
 
     rect(context, '#4d3338', 282, 101, 32, 27);
     rect(context, '#6f4942', 284, 104, 28, 23);
@@ -1228,16 +1276,17 @@ export class CafeRenderer {
       rect(context, '#9f9b93', x + HALF_PIXEL, 117.5 - rise, HALF_PIXEL, 1);
     }
 
-    rect(context, COLORS.ink, 278, 130, 103, 8);
-    rect(context, '#8a5345', 278, 128, 104, 5);
+    rect(context, COLORS.ink, counter.x + 2, counter.surfaceY + 2, counter.width - 5, 8);
+    rect(context, '#8a5345', counter.x + 2, counter.surfaceY, counter.width - 4, 5);
   }
 
   private drawCounterFront(): void {
     const context = this.context;
-    rect(context, '#d3965f', 276, 128, 107, 6);
-    rect(context, '#f0b776', 278, 128, 103, 1);
-    rect(context, '#71453f', 278, 134, 104, 4);
-    rect(context, COLORS.counter, 282, 138, 99, 46);
+    const { counter } = SCENE_PROPORTIONS;
+    rect(context, '#d3965f', counter.x, counter.surfaceY, counter.width - 1, 6);
+    rect(context, '#f0b776', counter.x + 2, counter.surfaceY, counter.width - 5, 1);
+    rect(context, '#71453f', counter.x + 2, counter.surfaceY + 6, counter.width - 4, 4);
+    rect(context, COLORS.counter, counter.frontX, counter.frontY, counter.frontWidth, 46);
     rect(context, '#7f4e43', 287, 142, 89, 39);
     rect(context, '#965947', 289, 144, 85, 36);
     for (let x = 291; x < 375; x += 14) {
@@ -1267,7 +1316,7 @@ export class CafeRenderer {
     rect(context, '#3d2930', 292, 204, 79, 3);
     rect(context, '#4b3036', 278, 207, 106, 4);
     rect(context, '#6b4140', 281, 207, 99, 1);
-    rect(context, '#2f242b', 276, 211, 108, 2);
+    rect(context, '#2f242b', counter.x, counter.baseY - 2, counter.width, 2);
   }
 
   private drawGuest(guest: Guest): void {
@@ -1277,7 +1326,9 @@ export class CafeRenderer {
     const walking = guest.state.includes('walking') || guest.state === 'entering' || guest.state === 'exiting';
     const bob = this.reducedMotion || !walking ? 0 : Math.round(Math.sin(guest.animation) * 2) * HALF_PIXEL;
     const footY = snap(guest.position.y + bob);
-    const bodyTop = footY - (seated ? 14.5 : 20.5);
+    const bodyTop = footY - (seated
+      ? SCENE_PROPORTIONS.character.seatedBodyHeight
+      : SCENE_PROPORTIONS.character.standingBodyHeight);
     const facing = guest.facing;
     const variant = guestVariant(guest);
     const phase = this.reducedMotion ? 0 : Math.floor(guest.animation * 2) % 4;
@@ -1302,7 +1353,7 @@ export class CafeRenderer {
       rect(context, '#171820', x + 1 - stride, footY, 4.5, 1.5);
     }
 
-    rect(context, COLORS.ink, x - 6.5, bodyTop - 1, 13, seated ? 13 : 16.5);
+    rect(context, COLORS.ink, x - SCENE_PROPORTIONS.character.bodyWidth / 2, bodyTop - 1, SCENE_PROPORTIONS.character.bodyWidth, seated ? 13 : 16.5);
     polygon(context, guest.palette.coat, seated
       ? [[x - 5.5, bodyTop], [x + 5.5, bodyTop], [x + 6, bodyTop + 11.5], [x - 6, bodyTop + 11.5]]
       : [[x - 5.5, bodyTop], [x + 5.5, bodyTop], [x + 6, bodyTop + 15.5], [x - 6, bodyTop + 15.5]]);
@@ -1314,8 +1365,8 @@ export class CafeRenderer {
     rect(context, '#fff0bd', x - HALF_PIXEL, bodyTop + 2, HALF_PIXEL, HALF_PIXEL);
     rect(context, '#392933', x - 5, bodyTop + (seated ? 10 : 14), 10, 1.5);
 
-    const headTop = bodyTop - 10;
-    rect(context, COLORS.ink, x - 5.5, headTop, 11, 10);
+    const headTop = bodyTop - SCENE_PROPORTIONS.character.headHeight;
+    rect(context, COLORS.ink, x - 5.5, headTop, 11, SCENE_PROPORTIONS.character.headHeight);
     rect(context, guest.palette.skin, x - 4.5, headTop + 1, 9, 8);
     rect(context, '#f0c6a0', x + facing * 2, headTop + 2, 2, 1.5);
     rect(context, '#9b654f', x + facing * 4, headTop + 5, HALF_PIXEL, 1);
@@ -1566,7 +1617,7 @@ export class CafeRenderer {
     const bob = this.reducedMotion ? 0 : Math.round(Math.sin(barista.animation) * 2) * HALF_PIXEL;
     // Die Füße bleiben in Simulationskoordinaten; die angehobene Silhouette
     // lässt Kopf und Schultern eindeutig hinter der hohen Theke hervorschauen.
-    const top = y - 29 + bob;
+    const top = y - (SCENE_PROPORTIONS.character.hostHeight - 9) + bob;
     const facing = barista.task === 'machine' ? 1 : barista.facing;
     const { uniform, uniformLight, apron, apronLight } = this.venues.baristaStyle(this.venue);
 
@@ -1597,7 +1648,7 @@ export class CafeRenderer {
     rect(context, '#d8b16f', x - 5, headTop - 2, 10, 1.5);
     rect(context, '#f0ca7b', x - 3.5, headTop - 2.5, 7, HALF_PIXEL);
 
-    const workY = 126;
+    const workY = SCENE_PROPORTIONS.counter.surfaceY - 2;
     if (barista.task === 'wiping') {
       const wipe = phase < 2 ? -3 : 3;
       rect(context, uniform, x + facing * 4, workY - 4, 7 + Math.abs(wipe), 3);
@@ -1687,7 +1738,7 @@ export class CafeRenderer {
     const averageY = guests.reduce((sum, guest) => sum + guest.position.y, 0) / guests.length;
     // Die Tischkante liegt bewusst auf Kniehöhe. So bleibt das Gesicht
     // sitzender Figuren frei, obwohl die Vorderkante darüber gezeichnet wird.
-    const tableY = averageY < 165 ? 160 : 181;
+    const tableY = averageY < 165 ? SCENE_PROPORTIONS.dining.rearSurfaceY : SCENE_PROPORTIONS.dining.frontMomentY;
     const pulse = this.reducedMotion ? 0 : Math.sin(moment.elapsed * 4) * HALF_PIXEL;
 
     if (moment.kind === 'shared-cake') {
@@ -1956,13 +2007,14 @@ export class CafeRenderer {
     }
     const context = this.context;
     const arcade = this.venue === 'arcade';
+    const { dining } = SCENE_PROPORTIONS;
     const edge = arcade ? '#5bcbd0' : '#e4ad62';
     const table = arcade ? '#2b4562' : '#a94b46';
     const shadow = arcade ? '#101725' : '#342331';
-    for (const x of [105, 179]) {
-      rect(context, shadow, x - 17, 181, 35, 3);
-      rect(context, table, x - 15, 178, 31, 3);
-      rect(context, edge, x - 13, 178, 27, HALF_PIXEL);
+    for (const x of dining.frontTableCenters) {
+      rect(context, shadow, x - 17, dining.frontMomentY, 35, dining.frontTableThickness);
+      rect(context, table, x - dining.frontTableWidth / 2, dining.frontSurfaceY, dining.frontTableWidth, dining.frontTableThickness);
+      rect(context, edge, x - dining.frontTableWidth / 2 + 2, dining.frontSurfaceY, dining.frontTableWidth - 4, HALF_PIXEL);
     }
     rect(context, shadow, 55, 204, 176, 4);
     rect(context, table, 58, 204, 170, HALF_PIXEL);
@@ -1970,11 +2022,12 @@ export class CafeRenderer {
 
   private drawFurnitureFront(): void {
     const context = this.context;
-    for (const x of [105, 179]) {
-      rect(context, '#33242b', x - 17, 181, 35, 3);
-      rect(context, '#a66b4b', x - 15, 178, 31, 3);
-      rect(context, '#d28b5b', x - 13, 178, 27, HALF_PIXEL);
-      rect(context, '#70433e', x - 13, 180.5, 27, HALF_PIXEL);
+    const { dining } = SCENE_PROPORTIONS;
+    for (const x of dining.frontTableCenters) {
+      rect(context, '#33242b', x - 17, dining.frontMomentY, 35, dining.frontTableThickness);
+      rect(context, '#a66b4b', x - dining.frontTableWidth / 2, dining.frontSurfaceY, dining.frontTableWidth, dining.frontTableThickness);
+      rect(context, '#d28b5b', x - dining.frontTableWidth / 2 + 2, dining.frontSurfaceY, dining.frontTableWidth - 4, HALF_PIXEL);
+      rect(context, '#70433e', x - dining.frontTableWidth / 2 + 2, dining.frontSurfaceY + 2.5, dining.frontTableWidth - 4, HALF_PIXEL);
     }
     rect(context, '#33242a', 55, 204, 176, 4);
     rect(context, '#6d4542', 58, 204, 170, HALF_PIXEL);
@@ -2029,7 +2082,7 @@ export class CafeRenderer {
   private drawCoffeeSpill(accident: Readonly<CafeAccident>): void {
     const context = this.context;
     const x = snap(accident.position.x);
-    const tableY = accident.position.y < 165 ? 160 : 181;
+    const tableY = accident.position.y < 165 ? SCENE_PROPORTIONS.dining.rearSurfaceY : SCENE_PROPORTIONS.dining.frontMomentY;
     const progress = Math.min(1, accident.phaseElapsed / Math.max(0.001, accident.phaseDuration));
     const spillWidth = accident.phase === 'startle' ? 4 + progress * 6 : accident.phase === 'cleanup' ? 14 - progress * 8 : 14;
 
@@ -2092,7 +2145,7 @@ export class CafeRenderer {
     }
 
     if (accident.kind === 'coffee-spill' && accident.phase === 'cleanup') {
-      const tableY = guest.position.y < 165 ? 160 : 181;
+      const tableY = guest.position.y < 165 ? SCENE_PROPORTIONS.dining.rearSurfaceY : SCENE_PROPORTIONS.dining.frontMomentY;
       rect(context, guest.palette.skin, x + guest.facing * 5, tableY - 5, 3, 2);
     }
   }

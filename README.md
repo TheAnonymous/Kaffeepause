@@ -28,6 +28,7 @@ Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen
 - leuchtende HD-2D-Diorama-Inszenierung mit Lichtblüten, Tiefendunst, Fokuszone und sanfter Vignette
 - deterministische Figuren-Zustandsautomaten und zentrale Platzreservierung
 - kollisionsbewusste Routen um Theke, Tische und andere laufende Gäste
+- zentrales Proportionsmodell mit automatischen Prüfungen für Figuren, Tische, Theke, Tür, Tiefenstaffelung und freie Laufwege
 - schlanke Szenenlaufzeit mit unveränderlichen Snapshots zwischen Simulation und Canvas-Renderer
 - seltene, vollständig reversible Café-Unfälle mit Tablett, Kaffeetasse oder Regenschirm
 - adaptive Lo-fi-Musik, räumlicher Regen und Wind sowie seltene, belegungsabhängige Ortsgeräusche über Web Audio
@@ -60,5 +61,7 @@ npm run test:e2e
 ```
 
 Die Simulation verwendet stabile Szenenkoordinaten von 384 × 216. Gerendert wird auf einem intrinsischen 1152 × 648-Pixel-Canvas mit Faktor 3 und ohne Weichzeichnung. Auf Smartphones bleibt die Szenenhöhe erhalten; die intrinsische Canvasbreite und der sichtbare Kameraausschnitt werden gemeinsam angepasst.
+
+Tragende Maße liegen zentral in `src/scene/proportions.ts`. Die Prüfung vergleicht keine isolierten Zahlen, sondern Beziehungen wie Tischkante zu Sitzfigur, Thekenkante zu Personal, Tür zu Körperbreite, hintere zu vorderer Möbelebene sowie sichtbare Möbel zu Kollisionen und Laufzielen. Der Canvas veröffentlicht das Ergebnis zusätzlich über `data-proportion-check` und `data-layout-score`.
 
 Im Entwicklungsserver lassen sich visuelle Szenen mit `?time=HH:MM`, `?weather=clear|cloudy|fog|rain|snow|storm`, `?lat=<Breite>` und `?lon=<Länge>` kombinieren. Genau eine Unfallart kann zusätzlich beschleunigt werden, zum Beispiel mit `?accident=tray-drop`, `?accident=coffee-spill` oder `?accident=umbrella-pop`; ebenso ein Alltagsmoment mit `?moment=shared-cake|card-game|window-gaze|sketch-reveal` oder eine Stammgast-Geschichte mit `?story=sketchbook|first-date|knit-gift`. Produktionsbuilds ignorieren sämtliche Testparameter.

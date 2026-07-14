@@ -1,5 +1,6 @@
 import type { Barista, Guest } from '../simulation/types';
 import type { VenueKind } from '../venue';
+import { SCENE_PROPORTIONS } from './proportions';
 
 type Rect = (context: CanvasRenderingContext2D, color: string, x: number, y: number, width: number, height: number) => void;
 
@@ -141,9 +142,10 @@ export class VenueActivityRenderer {
 
   private drawCafeTables(frame: ActivityFrame): void {
     const { context, state } = frame;
-    this.drawCafePlace(context, 96, 163, state.tables.window, state.drinking);
-    this.drawCafePlace(context, 105, 178, state.tables.left, state.drinking);
-    this.drawCafePlace(context, 179, 178, state.tables.right, state.drinking);
+    const { dining } = SCENE_PROPORTIONS;
+    this.drawCafePlace(context, 96, dining.rearSurfaceY + 3, state.tables.window, state.drinking);
+    this.drawCafePlace(context, dining.frontTableCenters[0], dining.frontSurfaceY, state.tables.left, state.drinking);
+    this.drawCafePlace(context, dining.frontTableCenters[1], dining.frontSurfaceY, state.tables.right, state.drinking);
   }
 
   private drawCafePlace(context: CanvasRenderingContext2D, x: number, y: number, occupied: number, drinking: number): void {
@@ -160,9 +162,10 @@ export class VenueActivityRenderer {
 
   private drawRamenTables(frame: ActivityFrame): void {
     const { context, state } = frame;
-    this.drawRamenPlace(context, 96, 163, state.tables.window);
-    this.drawRamenPlace(context, 105, 178, state.tables.left);
-    this.drawRamenPlace(context, 179, 178, state.tables.right);
+    const { dining } = SCENE_PROPORTIONS;
+    this.drawRamenPlace(context, 96, dining.rearSurfaceY + 3, state.tables.window);
+    this.drawRamenPlace(context, dining.frontTableCenters[0], dining.frontSurfaceY, state.tables.left);
+    this.drawRamenPlace(context, dining.frontTableCenters[1], dining.frontSurfaceY, state.tables.right);
   }
 
   private drawRamenPlace(context: CanvasRenderingContext2D, x: number, y: number, occupied: number): void {
@@ -176,9 +179,10 @@ export class VenueActivityRenderer {
 
   private drawArcadeTables(frame: ActivityFrame): void {
     const { context, state } = frame;
-    this.drawArcadePlace(context, 96, 163, state.tables.window);
-    this.drawArcadePlace(context, 105, 178, state.tables.left);
-    this.drawArcadePlace(context, 179, 178, state.tables.right);
+    const { dining } = SCENE_PROPORTIONS;
+    this.drawArcadePlace(context, 96, dining.rearSurfaceY + 3, state.tables.window);
+    this.drawArcadePlace(context, dining.frontTableCenters[0], dining.frontSurfaceY, state.tables.left);
+    this.drawArcadePlace(context, dining.frontTableCenters[1], dining.frontSurfaceY, state.tables.right);
   }
 
   private drawArcadePlace(context: CanvasRenderingContext2D, x: number, y: number, occupied: number): void {

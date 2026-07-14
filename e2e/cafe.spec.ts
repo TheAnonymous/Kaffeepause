@@ -17,6 +17,9 @@ test('betritt das Café, füllt den Viewport und schaltet den Ton', async ({ pag
   await expect(canvas).toHaveAttribute('data-render-scale', '3');
   await expect(canvas).toHaveAttribute('data-character-detail', 'physical-pixel');
   await expect(canvas).toHaveAttribute('data-navigation', 'collision-aware');
+  await expect(canvas).toHaveAttribute('data-proportion-check', 'pass');
+  await expect(canvas).toHaveAttribute('data-layout-score', '100');
+  await expect(canvas).toHaveAttribute('data-scale-model', '32px-adult');
   expect(await canvas.evaluate((element) => {
     const target = element as HTMLCanvasElement;
     return { width: target.width, height: target.height };
