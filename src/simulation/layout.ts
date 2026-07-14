@@ -16,7 +16,9 @@ export interface CollisionRect {
 // Große Möbel werden auch von der Simulation genutzt. Die Sitzplätze liegen
 // bewusst direkt an den Kanten, damit Gäste an Stühlen und Bänken ankommen können.
 export const CAFE_COLLIDERS: readonly CollisionRect[] = [
-  { id: 'door', x: 3, y: 36, width: 43, height: 146 },
+  // Der obere Bereich ist eine feste Wandzone; nur der untere, kompakte Rahmen ist die Eingangstür.
+  { id: 'left-wall', x: 3, y: 36, width: 43, height: 64 },
+  { id: 'door', x: 3, y: 100, width: 43, height: 82 },
   { id: 'window-bench', x: 58, y: 134, width: 109, height: 8 },
   { id: 'window-table-left', x: 87, y: 166, width: 37, height: 10 },
   { id: 'window-table-right', x: 161, y: 166, width: 37, height: 10 },

@@ -5,10 +5,11 @@ import { CAFE_COLLIDERS, GUEST_RADIUS, pointHitsCafeCollider } from '../src/simu
 describe('Café-Kollisionen', () => {
   it('markiert große Möbel als feste Hindernisse und lässt Zugänge frei', () => {
     expect(CAFE_COLLIDERS.map((collider) => collider.id)).toEqual(expect.arrayContaining([
-      'door', 'window-bench', 'window-table-left', 'window-table-right', 'counter',
+      'left-wall', 'door', 'window-bench', 'window-table-left', 'window-table-right', 'counter',
     ]));
     expect(pointHitsCafeCollider({ x: 320, y: 170 })).toBe(true);
     expect(pointHitsCafeCollider({ x: 270, y: 173 })).toBe(false);
+    expect(pointHitsCafeCollider({ x: 24, y: 90 })).toBe(true);
     expect(pointHitsCafeCollider({ x: 24, y: 188 })).toBe(false);
   });
 

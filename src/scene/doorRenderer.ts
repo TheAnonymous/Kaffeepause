@@ -9,6 +9,15 @@ export interface DoorVisualState {
   readonly active: boolean;
 }
 
+// Referenzmaßstab: eine stehende Figur ist rund 32 logische Pixel hoch.
+// Der bewegliche Flügel bleibt mit 54 Pixeln klar als normale Eingangstür lesbar.
+export const DOOR_PANEL = {
+  x: 10,
+  y: 127,
+  width: 29,
+  height: 54,
+} as const;
+
 interface DoorFrame {
   readonly context: CanvasRenderingContext2D;
   readonly venue: VenueKind;
@@ -60,30 +69,31 @@ export class DoorRenderer {
         ? { frame: '#304968', light: '#5ccbd0', panel: '#253b59', panelLight: '#64cbd0', inside: '#152136', outside: '#293d57' }
         : { frame: '#8c5a49', light: '#d08d60', panel: '#734744', panelLight: '#9d6450', inside: '#342a34', outside: '#455369' };
     const open = clamp(opening);
-    const width = 29 * (1 - open * 0.72);
+    const width = DOOR_PANEL.width * (1 - open * 0.72);
     const depth = open * 5;
-    const right = 10 + width;
+    const right = DOOR_PANEL.x + width;
+    const { x, y, width: closedWidth, height } = DOOR_PANEL;
 
-    this.rect(context, palette.frame, 10, 127, 29, 54);
-    this.rect(context, palette.inside, 13, 133, 23, 45);
-    this.rect(context, palette.outside, 14, 134, 21, 41);
-    this.rect(context, '#1e2637', 14, 171, 21, 4);
-    this.rect(context, palette.light, 14, 173, 21, this.pixel);
+    this.rect(context, palette.frame, x, y, closedWidth, height);
+    this.rect(context, palette.inside, x + 3, y + 6, 23, 45);
+    this.rect(context, palette.outside, x + 4, y + 7, 21, 41);
+    this.rect(context, '#1e2637', x + 4, y + 44, 21, 4);
+    this.rect(context, palette.light, x + 4, y + 46, 21, this.pixel);
     if (open > 0.08) {
-      this.rect(context, '#9db1bb', 15, 137, 2, 21);
-      this.rect(context, '#d5cfb2', 18, 162, 13, this.pixel);
-      this.rect(context, '#506578', 16, 166, 17, this.pixel);
+      this.rect(context, '#9db1bb', x + 5, y + 10, 2, 21);
+      this.rect(context, '#d5cfb2', x + 8, y + 35, 13, this.pixel);
+      this.rect(context, '#506578', x + 6, y + 39, 17, this.pixel);
     }
 
-    this.polygon(context, palette.panel, [[10, 128], [right, 128 + depth], [right, 178 - depth], [10, 180]]);
-    this.polygon(context, palette.panelLight, [[11, 129], [right - 1, 129 + depth], [right - 1, 132 + depth], [11, 132]]);
-    this.polygon(context, '#593b3f', [[11, 174], [right - 1, 173 - depth], [right - 1, 178 - depth], [11, 179]]);
-    this.rect(context, palette.light, 12, 134, this.pixel, 38);
-    this.rect(context, '#3e2e35', right - 2, 136 + depth, this.pixel, Math.max(8, 34 - depth * 2));
-    this.rect(context, '#d5a266', right - 4, 150 + depth * 0.5, 2, 4);
-    this.rect(context, '#f4d18a', right - 3.5, 150.5 + depth * 0.5, this.pixel, 2);
-    this.rect(context, '#d3b47a', right - 5, 154 + depth * 0.5, 4, 2);
-    this.rect(context, palette.frame, 10, 180, 29, 2);
-    this.rect(context, palette.light, 13, 181, 19, this.pixel);
+    this.polygon(context, palette.panel, [[x, y + 1], [right, y + 1 + depth], [right, y + height - 3 - depth], [x, y + height - 1]]);
+    this.polygon(context, palette.panelLight, [[x + 1, y + 2], [right - 1, y + 2 + depth], [right - 1, y + 5 + depth], [x + 1, y + 5]]);
+    this.polygon(context, '#593b3f', [[x + 1, y + height - 7], [right - 1, y + height - 8 - depth], [right - 1, y + height - 3 - depth], [x + 1, y + height - 2]]);
+    this.rect(context, palette.light, x + 2, y + 7, this.pixel, 38);
+    this.rect(context, '#3e2e35', right - 2, y + 9 + depth, this.pixel, Math.max(8, 34 - depth * 2));
+    this.rect(context, '#d5a266', right - 4, y + 23 + depth * 0.5, 2, 4);
+    this.rect(context, '#f4d18a', right - 3.5, y + 23.5 + depth * 0.5, this.pixel, 2);
+    this.rect(context, '#d3b47a', right - 5, y + 27 + depth * 0.5, 4, 2);
+    this.rect(context, palette.frame, x, y + height - 1, closedWidth, 2);
+    this.rect(context, palette.light, x + 3, y + height, 19, this.pixel);
   }
 }

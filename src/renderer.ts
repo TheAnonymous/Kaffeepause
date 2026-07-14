@@ -663,41 +663,43 @@ export class CafeRenderer {
   private drawDoor(time: number, guests: readonly Guest[]): DoorVisualState {
     const context = this.context;
     const palette = skyPalette(this.environment?.dayPhase ?? 'night');
-    rect(context, COLORS.ink, 3, 36, 43, 155);
-    rect(context, '#704b46', 7, 41, 35, 146);
-    rect(context, '#a46b54', 8, 42, 33, 2);
-    rect(context, mixColor(palette[0], '#202538', 0.34), 11, 47, 27, 78);
-    rect(context, mixColor(palette[1], '#37445b', 0.45), 13, 49, 23, 74);
-    rect(context, mixColor(palette[2], '#526078', 0.55), 14, 50, 3, 72);
-    rect(context, '#2b3145', 13, 96, 23, 27);
-    rect(context, '#1f2638', 14, 99, 21, 23);
-    for (let index = 0; index < 4; index += 1) {
-      rect(context, index % 2 ? '#6e8198' : '#9aa8b7', 17 + index * 5, 53 + index * 13, HALF_PIXEL, 5);
+    // Die feste Glasblende sitzt direkt über dem Flügel. So liest der Eingang als normale Tür
+    // und nicht mehr als überhohe Schaufensterwand.
+    rect(context, COLORS.ink, 3, 100, 43, 88);
+    rect(context, '#704b46', 7, 104, 35, 80);
+    rect(context, '#a46b54', 8, 105, 33, 2);
+    rect(context, mixColor(palette[0], '#202538', 0.34), 11, 109, 27, 16);
+    rect(context, mixColor(palette[1], '#37445b', 0.45), 13, 111, 23, 12);
+    rect(context, mixColor(palette[2], '#526078', 0.55), 14, 112, 3, 10);
+    rect(context, '#2b3145', 12, 123, 25, 3);
+    rect(context, '#1f2638', 14, 124, 21, 2);
+    for (let index = 0; index < 3; index += 1) {
+      rect(context, index % 2 ? '#6e8198' : '#9aa8b7', 17 + index * 6, 112 + index * 3, HALF_PIXEL, 3);
     }
-    polygon(context, '#352b34', [[7, 187], [38, 187], [43, 193], [2, 193]]);
-    rect(context, '#9d6552', 9, 188, 27, 3);
-    rect(context, '#c58a61', 13, 189, 19, HALF_PIXEL);
-    for (let x = 10; x < 36; x += 5) rect(context, '#d5a66b', x, 192, 2, HALF_PIXEL);
+    polygon(context, '#352b34', [[7, 184], [38, 184], [43, 190], [2, 190]]);
+    rect(context, '#9d6552', 9, 185, 27, 3);
+    rect(context, '#c58a61', 13, 186, 19, HALF_PIXEL);
+    for (let x = 10; x < 36; x += 5) rect(context, '#d5a66b', x, 189, 2, HALF_PIXEL);
 
-    rect(context, '#d8b16f', 17, 64, 15, 13);
-    rect(context, '#f0d391', 18, 65, 13, 1);
-    rect(context, '#5d3c3c', 19, 67, 11, 8);
-    rect(context, '#e6cb91', 20, 68.5, 9, 1);
-    rect(context, '#e6cb91', 22, 71.5, 5, HALF_PIXEL);
-    rect(context, '#9c5f49', 20, 74, 9, HALF_PIXEL);
+    rect(context, '#d8b16f', 17, 111, 15, 11);
+    rect(context, '#f0d391', 18, 112, 13, 1);
+    rect(context, '#5d3c3c', 19, 114, 11, 6);
+    rect(context, '#e6cb91', 20, 115, 9, HALF_PIXEL);
+    rect(context, '#e6cb91', 22, 117.5, 5, HALF_PIXEL);
+    rect(context, '#9c5f49', 20, 120, 9, HALF_PIXEL);
 
     if (this.venue === 'ramen') {
-      rect(context, '#b84e49', 16, 62, 17, 16);
-      rect(context, '#f0bd6d', 18, 64, 13, 12);
-      rect(context, '#5c303a', 20, 66, 9, 8);
-      rect(context, '#f8dc98', 21, 68, 7, HALF_PIXEL);
-      rect(context, '#b94f49', 23, 71, 3, 1);
+      rect(context, '#b84e49', 16, 109, 17, 14);
+      rect(context, '#f0bd6d', 18, 111, 13, 10);
+      rect(context, '#5c303a', 20, 113, 9, 6);
+      rect(context, '#f8dc98', 21, 115, 7, HALF_PIXEL);
+      rect(context, '#b94f49', 23, 118, 3, 1);
     } else if (this.venue === 'arcade') {
-      rect(context, '#243b59', 16, 62, 17, 16);
-      rect(context, '#5bcbd0', 18, 64, 13, 10);
-      rect(context, '#18243a', 20, 66, 9, 6);
-      rect(context, '#e5d982', 22, 67, 5, HALF_PIXEL);
-      rect(context, '#c35aa5', 22, 72, 5, 1);
+      rect(context, '#243b59', 16, 109, 17, 14);
+      rect(context, '#5bcbd0', 18, 111, 13, 8);
+      rect(context, '#18243a', 20, 113, 9, 5);
+      rect(context, '#e5d982', 22, 114, 5, HALF_PIXEL);
+      rect(context, '#c35aa5', 22, 118, 5, 1);
     }
 
     const door = this.door.draw({
@@ -712,7 +714,7 @@ export class CafeRenderer {
     const rain = clamp(((this.environment?.weather.rain ?? 0) + (this.environment?.weather.showers ?? 0)) / 4);
     if (!this.active || rain <= 0) return door;
     for (let index = 0; index < Math.round((this.reducedMotion ? 4 : 12) * rain); index += 1) {
-      const y = 48 + ((index * 23 + time * (10 + index)) % 74);
+      const y = 109 + ((index * 17 + time * (10 + index)) % 61);
       rect(context, index % 2 ? '#8594a6' : '#aeb8c2', 14 + ((index * 7) % 21), y, HALF_PIXEL, 2.5 + (index % 2));
     }
     return door;
@@ -936,13 +938,14 @@ export class CafeRenderer {
 
   private drawRamenFurnitureBack(): void {
     const context = this.context;
-    rect(context, '#342636', 58, 138, 109, 7);
-    rect(context, '#8c4143', 60, 135, 105, 6);
-    rect(context, '#d46854', 62, 136, 101, 1);
-    for (const x of [70, 99, 128, 151]) {
-      rect(context, '#4c2d3a', x, 140, 22, 10);
-      rect(context, '#a94a46', x + 1, 141, 20, 5);
-      rect(context, '#e5ad68', x + 3, 142, 16, HALF_PIXEL);
+    // Rückwärtige Sitzbank: etwa zehn Prozent kompakter als die vorderen Tische.
+    rect(context, '#342636', 63, 139, 99, 6);
+    rect(context, '#8c4143', 65, 136, 95, 5);
+    rect(context, '#d46854', 67, 137, 91, HALF_PIXEL);
+    for (const x of [76, 100, 124, 146]) {
+      rect(context, '#4c2d3a', x, 141, 18, 8);
+      rect(context, '#a94a46', x + 1, 142, 16, 4);
+      rect(context, '#e5ad68', x + 3, 143, 12, HALF_PIXEL);
     }
     for (const x of [105, 179]) {
       rect(context, '#322432', x - 18, 170, 37, 5);
@@ -964,17 +967,18 @@ export class CafeRenderer {
 
   private drawArcadeFurnitureBack(): void {
     const context = this.context;
-    for (const [x, color] of [[59, '#5ccbd0'], [96, '#c35aa5'], [133, '#62bcd2']] as const) {
-      rect(context, '#111827', x, 88, 29, 57);
-      rect(context, '#314666', x + 2, 90, 25, 51);
-      rect(context, color, x + 4, 93, 21, 22);
-      rect(context, '#1b2740', x + 6, 95, 17, 15);
-      rect(context, '#e4d681', x + 8, 98, 12, HALF_PIXEL);
-      rect(context, '#243752', x + 6, 118, 17, 9);
-      rect(context, color, x + 9, 121, 7, 1);
-      rect(context, '#d06a9e', x + 17, 121, 2, 2);
-      rect(context, '#0e1421', x + 7, 130, 15, 11);
-      rect(context, color, x + 10, 131, 2, 8);
+    // Hintergrund-Automaten: 45 statt 57 Pixel hoch, damit sie nicht größer als Erwachsene wirken.
+    for (const [x, color] of [[59, '#5ccbd0'], [94, '#c35aa5'], [129, '#62bcd2']] as const) {
+      rect(context, '#111827', x, 100, 24, 45);
+      rect(context, '#314666', x + 2, 102, 20, 40);
+      rect(context, color, x + 3, 105, 18, 18);
+      rect(context, '#1b2740', x + 5, 107, 14, 12);
+      rect(context, '#e4d681', x + 7, 110, 10, HALF_PIXEL);
+      rect(context, '#243752', x + 5, 126, 14, 7);
+      rect(context, color, x + 8, 128, 6, 1);
+      rect(context, '#d06a9e', x + 15, 128, 2, 2);
+      rect(context, '#0e1421', x + 6, 136, 13, 7);
+      rect(context, color, x + 9, 137, 2, 5);
     }
     for (const x of [105, 179]) {
       rect(context, '#101827', x - 18, 170, 37, 5);
@@ -1006,17 +1010,17 @@ export class CafeRenderer {
       rect(context, '#e8c57d', x + 5, 99, 7, 2);
       rect(context, '#c15249', x + 6, 102, 5, 4);
     }
-    rect(context, '#25222d', 321, 79, 42, 37);
-    rect(context, '#5f3a44', 323, 81, 38, 34);
-    rect(context, '#a84b46', 325, 83, 34, 2);
+    rect(context, '#25222d', 325, 88, 34, 28);
+    rect(context, '#5f3a44', 327, 90, 30, 25);
+    rect(context, '#a84b46', 329, 92, 26, 2);
     for (let index = 0; index < 4; index += 1) {
-      rect(context, '#dca45f', 328 + index * 7, 89, 4, 16);
-      rect(context, '#f6d78f', 329 + index * 7, 90, 2, HALF_PIXEL);
+      rect(context, '#dca45f', 331 + index * 5, 97, 3, 12);
+      rect(context, '#f6d78f', 332 + index * 5, 98, HALF_PIXEL, HALF_PIXEL);
     }
     const steamCount = this.reducedMotion ? 2 : 5;
     for (let index = 0; index < steamCount; index += 1) {
       const rise = (time * (4 + index * 0.25) + index * 4) % 18;
-      rect(context, index % 2 ? '#dfcfb8' : '#f3dfbf', 339 + (index % 3) * 3, 108 - rise, HALF_PIXEL, 3);
+      rect(context, index % 2 ? '#dfcfb8' : '#f3dfbf', 339 + (index % 3) * 3, 111 - rise, HALF_PIXEL, 3);
     }
     rect(context, '#211b29', 278, 118, 103, 8);
     rect(context, '#a84945', 278, 116, 104, 5);
@@ -1034,15 +1038,15 @@ export class CafeRenderer {
       rect(context, '#f2dd8e', x + 4, 99 + flicker, 9, HALF_PIXEL);
       rect(context, '#374f6a', x + 3, 107, 11, 3);
     }
-    rect(context, '#0e1525', 321, 79, 42, 37);
-    rect(context, '#29435f', 323, 81, 38, 34);
-    rect(context, '#50cbd0', 325, 83, 34, 2);
-    rect(context, '#172539', 327, 87, 30, 18);
-    rect(context, '#87578e', 329, 89, 26, 14);
-    rect(context, '#d25ca6', 331, 91, 22, 8);
-    rect(context, '#f2d987', 335, 93, 10, HALF_PIXEL);
-    rect(context, '#132034', 332, 106, 5, 7);
-    rect(context, '#132034', 348, 106, 5, 7);
+    rect(context, '#0e1525', 325, 88, 34, 28);
+    rect(context, '#29435f', 327, 90, 30, 25);
+    rect(context, '#50cbd0', 329, 92, 26, 2);
+    rect(context, '#172539', 331, 96, 22, 14);
+    rect(context, '#87578e', 333, 98, 18, 10);
+    rect(context, '#d25ca6', 335, 100, 14, 6);
+    rect(context, '#f2d987', 338, 102, 8, HALF_PIXEL);
+    rect(context, '#132034', 336, 109, 4, 5);
+    rect(context, '#132034', 347, 109, 4, 5);
     rect(context, '#101725', 278, 118, 103, 8);
     rect(context, '#31526d', 278, 116, 104, 5);
     rect(context, '#5ccbd0', 280, 116.5, 100, HALF_PIXEL);
@@ -1092,21 +1096,22 @@ export class CafeRenderer {
 
   private drawFurnitureBack(): void {
     const context = this.context;
-    rect(context, '#3a282f', 58, 138, 109, 6);
-    rect(context, '#8d5845', 60, 135, 105, 6);
-    rect(context, '#b27154', 62, 136, 101, 1);
-    rect(context, '#72443f', 65, 139, 95, 2);
-    for (const x of [74, 100, 126, 148]) {
-      rect(context, '#6f4a48', x, 140, 19, 8);
-      rect(context, '#a66a56', x + 1, 140.5, 17, HALF_PIXEL);
-      rect(context, x % 2 ? '#b36f5b' : '#8f5c55', x + 3, 143, 13, 3);
-      rect(context, '#d79b6b', x + 5, 143.5, 9, HALF_PIXEL);
+    // Die Bank liegt hinter den Tischen und wird deshalb etwas kleiner und höher gezeichnet.
+    rect(context, '#3a282f', 63, 139, 99, 5);
+    rect(context, '#8d5845', 65, 136, 95, 5);
+    rect(context, '#b27154', 67, 137, 91, HALF_PIXEL);
+    rect(context, '#72443f', 70, 140, 85, 1.5);
+    for (const x of [77, 101, 125, 147]) {
+      rect(context, '#6f4a48', x, 141, 17, 7);
+      rect(context, '#a66a56', x + 1, 141.5, 15, HALF_PIXEL);
+      rect(context, x % 2 ? '#b36f5b' : '#8f5c55', x + 3, 143, 11, 2.5);
+      rect(context, '#d79b6b', x + 5, 143.5, 7, HALF_PIXEL);
     }
-    for (const x of [68, 153]) {
-      rect(context, '#50353a', x, 141, 4, 29);
-      rect(context, '#6e4843', x + HALF_PIXEL, 142, HALF_PIXEL, 26);
+    for (const x of [72, 151]) {
+      rect(context, '#50353a', x, 142, 3.5, 27);
+      rect(context, '#6e4843', x + HALF_PIXEL, 143, HALF_PIXEL, 24);
     }
-    for (let x = 75; x < 150; x += 13) rect(context, '#a76b4f', x, 137, HALF_PIXEL, 3);
+    for (let x = 78; x < 150; x += 12) rect(context, '#a76b4f', x, 137, HALF_PIXEL, 2.5);
 
     for (const x of [105, 179]) {
       rect(context, '#37272e', x - 18, 170, 37, 5);
@@ -1167,25 +1172,26 @@ export class CafeRenderer {
       rect(context, '#6d5b55', 308, 106, 1, 3);
     }
 
-    rect(context, '#332c34', 322, 80, 40, 36);
-    rect(context, '#4c4650', 324, 82, 36, 33);
-    rect(context, '#858088', 326, 84, 32, 29);
-    rect(context, '#aaa1a0', 328, 86, 28, 2);
-    rect(context, '#302b32', 329, 88, 26, 12);
-    rect(context, '#181920', 331, 90, 22, 7);
-    rect(context, '#d7a55f', 333, 92, 3, 2);
-    rect(context, '#e5bd72', 338, 92, HALF_PIXEL, 2);
-    rect(context, '#8f3739', 344, 92, 3, 2);
-    rect(context, '#b8544e', 349, 92, HALF_PIXEL, 2);
-    rect(context, '#1f1e25', 330, 101, 7, 12);
-    rect(context, '#1f1e25', 348, 101, 7, 12);
-    rect(context, '#625b60', 332, 102, 3, 10);
-    rect(context, '#625b60', 350, 102, 3, 10);
-    rect(context, '#c9b6a0', 334, 110, 16, 5);
-    rect(context, '#f4e5ca', 336, 108, 12, 4);
-    rect(context, '#ffffff', 338, 108.5, 8, HALF_PIXEL);
-    rect(context, '#3a3034', 340, 100, 5, 2);
-    rect(context, '#b8aba2', 344, 100.5, 7, 1);
+    // Die Espressomaschine ist nun klar ein Arbeitsgerät auf der Theke statt ein mannshoher Block.
+    rect(context, '#332c34', 325, 88, 34, 28);
+    rect(context, '#4c4650', 327, 90, 30, 25);
+    rect(context, '#858088', 329, 92, 26, 21);
+    rect(context, '#aaa1a0', 331, 94, 22, 1.5);
+    rect(context, '#302b32', 332, 96, 20, 9);
+    rect(context, '#181920', 334, 98, 16, 5);
+    rect(context, '#d7a55f', 336, 99, 3, 1.5);
+    rect(context, '#e5bd72', 341, 99, HALF_PIXEL, 1.5);
+    rect(context, '#8f3739', 346, 99, 3, 1.5);
+    rect(context, '#b8544e', 350, 99, HALF_PIXEL, 1.5);
+    rect(context, '#1f1e25', 333, 106, 6, 7);
+    rect(context, '#1f1e25', 348, 106, 6, 7);
+    rect(context, '#625b60', 335, 107, 2, 6);
+    rect(context, '#625b60', 350, 107, 2, 6);
+    rect(context, '#c9b6a0', 337, 111, 13, 3);
+    rect(context, '#f4e5ca', 339, 109, 9, 3);
+    rect(context, '#ffffff', 341, 109.5, 5, HALF_PIXEL);
+    rect(context, '#3a3034', 341, 105, 4, 1.5);
+    rect(context, '#b8aba2', 344, 105.5, 5, HALF_PIXEL);
 
     for (const x of [290, 305, 367]) {
       rect(context, '#efe0bd', x, 110, 8, 6);
