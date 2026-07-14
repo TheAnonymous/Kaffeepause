@@ -59,9 +59,9 @@ export class CharacterRenderer {
     if (variant === 2 || variant === 4) this.rect(context, '#b67b59', x - facing * 4.5, headTop + 6, pixel, 2.2);
 
     this.polygon(context, '#2a232b', [[x - 5.1, bodyTop + 1], [x, bodyTop + 4], [x + 5.1, bodyTop + 1], [x + 3.2, bodyTop + 4.7], [x - 3.2, bodyTop + 4.7]]);
-    this.rect(context, guest.palette.accent, x - 1.1, bodyTop + 2.2, 2.2, seated ? 6 : 9);
+    this.rect(context, guest.palette.accent, x - 1.1, bodyTop + 2.2, 2.2, seated ? 2.5 : 9);
     this.rect(context, '#e9bc77', x - pixel, bodyTop + 5, pixel, pixel);
-    this.rect(context, '#e9bc77', x - pixel, bodyTop + 8, pixel, pixel);
+    if (!seated) this.rect(context, '#e9bc77', x - pixel, bodyTop + 8, pixel, pixel);
     this.rect(context, '#2b242c', x - 4.7, bodyTop + (seated ? 8.6 : 11.5), 3.4, pixel);
     this.rect(context, '#2b242c', x + 1.3, bodyTop + (seated ? 8.6 : 11.5), 3.4, pixel);
     this.rect(context, guest.palette.accent, x - 5.6, bodyTop + 6, pixel, 3);

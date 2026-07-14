@@ -1306,9 +1306,11 @@ export class CafeRenderer {
     polygon(context, guest.palette.coat, seated
       ? [[x - 5.5, bodyTop], [x + 5.5, bodyTop], [x + 6, bodyTop + 11.5], [x - 6, bodyTop + 11.5]]
       : [[x - 5.5, bodyTop], [x + 5.5, bodyTop], [x + 6, bodyTop + 15.5], [x - 6, bodyTop + 15.5]]);
-    rect(context, guest.palette.accent, x + (facing > 0 ? 3.5 : -5.5), bodyTop + 4, 2, seated ? 7.5 : 10);
-    rect(context, '#e7bb75', x - HALF_PIXEL, bodyTop + 1, 1, seated ? 10 : 13);
-    rect(context, '#2c232a', x, bodyTop + 1, HALF_PIXEL, seated ? 10 : 13);
+    // Sitzende Figuren bekommen nur kurze Revers und Knöpfe. Lange, vertikale
+    // Kontraststreifen lesen sich neben der Tischkante irrtümlich als Arme.
+    rect(context, guest.palette.accent, x + (facing > 0 ? 3.5 : -5.5), bodyTop + 4, 2, seated ? 2.5 : 10);
+    rect(context, '#e7bb75', x - HALF_PIXEL, bodyTop + 1, 1, seated ? 3 : 13);
+    rect(context, '#2c232a', x, bodyTop + 1, HALF_PIXEL, seated ? 3 : 13);
     rect(context, '#fff0bd', x - HALF_PIXEL, bodyTop + 2, HALF_PIXEL, HALF_PIXEL);
     rect(context, '#392933', x - 5, bodyTop + (seated ? 10 : 14), 10, 1.5);
 
@@ -1336,7 +1338,7 @@ export class CafeRenderer {
       rect(context, '#1d1920', x - facing * 6, headTop - 1, 4, 4);
     } else if (variant === 3) {
       rect(context, guest.palette.accent, x - 5.5, bodyTop, 11, 2);
-      rect(context, '#f0c978', x - facing * 5, bodyTop + 1, 2, 7);
+      rect(context, '#f0c978', x - facing * 5, bodyTop + 1, 2, seated ? 2.5 : 7);
     } else if (variant === 4) {
       rect(context, '#efc76f', x + facing * 5.5, headTop + 6, 1, 1.5);
     } else if (!seated) {
@@ -1353,10 +1355,10 @@ export class CafeRenderer {
       rect(context, '#f3dc98', x + facing * 4.5, headTop + 1.5, HALF_PIXEL, HALF_PIXEL);
     } else if (guest.regularId === 'toni') {
       rect(context, '#d98f5f', x - 5.5, bodyTop, 11, 2);
-      rect(context, '#f0c778', x - facing * 5, bodyTop + 2, 2, 7);
+      rect(context, '#f0c778', x - facing * 5, bodyTop + 2, 2, seated ? 2.5 : 7);
     } else if (guest.regularId === 'linn') {
       rect(context, '#77a095', x - 5.5, bodyTop - 1, 11, 2.5);
-      rect(context, '#d8c06f', x - facing * 5, bodyTop + 4, 2, 8);
+      rect(context, '#d8c06f', x - facing * 5, bodyTop + 4, 2, seated ? 2.5 : 8);
       rect(context, '#b77869', x - facing * 8, bodyTop + 10, 4, 4);
     } else if (guest.regularId === 'sora') {
       rect(context, '#e65f9c', x - facing * 5.5, headTop + 1.5, 2, 2);
@@ -1407,9 +1409,9 @@ export class CafeRenderer {
     }
     if (guest.accessory === 'scarf') {
       rect(context, '#dfb65f', x - 5.5, bodyTop - 1.5, 11, 2.5);
-      rect(context, '#bd704d', x - facing * 5, bodyTop, 2.5, 8);
+      rect(context, '#bd704d', x - facing * 5, bodyTop, 2.5, seated ? 2.5 : 8);
     } else if (guest.accessory === 'coat') {
-      rect(context, '#d3b27b', x - 1, bodyTop + 1, 2, seated ? 9 : 13);
+      rect(context, '#d3b27b', x - 1, bodyTop + 1, 2, seated ? 3 : 13);
       rect(context, '#4b3437', x - HALF_PIXEL, bodyTop + 3, 1, 1);
       rect(context, '#4b3437', x - HALF_PIXEL, bodyTop + 7, 1, 1);
     } else if (guest.accessory === 'sunglasses') {
