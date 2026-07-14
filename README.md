@@ -15,6 +15,7 @@ Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen
 - hochauflösendes 1152 × 648-Pixel-Canvas mit feineren Ein-Pixel-Details
 - hochdichte 3×-Figurensprites mit Gesichtszügen, Haarsträhnen, Stoffnähten, Händen und lesbaren Requisiten
 - bis zu acht Gäste mit lesbaren Tätigkeiten, Wetteraccessoires und einer detaillierten animierten Bedienung
+- eine echte Eingangstür, die sich für ankommende und gehende Gäste am Simulations-Eingang öffnet und ruhig wieder schließt
 - ortsspezifische, simulationsgebundene Requisiten: Espressomaschine, Küchenpass, Arcade-Screens sowie belegte Tische und Warteschlangen
 - neun Gasttätigkeiten, darunter Tagebuchschreiben, Stricken und Brettspiel; Barista mahlt, verkostet und bedient
 - sanfte, deterministische Café-Momente mit eigenen Bild- und Klangdetails, die nicht mit Unfällen kollidieren

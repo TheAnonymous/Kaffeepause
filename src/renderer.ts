@@ -5,6 +5,7 @@ import type { CafeEnvironmentSnapshot, DayPhase } from './environment/types';
 import type { VenueKind } from './venue';
 import type { SceneSnapshot } from './scene/types';
 import { CharacterRenderer } from './scene/characterRenderer';
+import { DoorRenderer, type DoorVisualState } from './scene/doorRenderer';
 import { calculateSceneLighting, LightingRenderer, type SceneLighting } from './scene/lightingRenderer';
 import { calculateVenueActivityState, VenueActivityRenderer } from './scene/venueActivityRenderer';
 import { VenueRenderer } from './scene/venueRenderer';
@@ -94,6 +95,7 @@ export class CafeRenderer {
   private environment?: CafeEnvironmentSnapshot;
   private venue: VenueKind = 'cafe';
   private readonly characters = new CharacterRenderer(rect, polygon);
+  private readonly door = new DoorRenderer(rect, polygon, HALF_PIXEL);
   private readonly lighting = new LightingRenderer(rect, polygon, HALF_PIXEL);
   private readonly activities = new VenueActivityRenderer(rect, HALF_PIXEL);
   private readonly venues = new VenueRenderer();
@@ -170,7 +172,7 @@ export class CafeRenderer {
     this.drawRoom(time);
     this.drawFloorDecor(time);
     this.drawWindows(time);
-    this.drawDoor(time);
+    const door = this.drawDoor(time, snapshot.guests);
     this.drawVenueArchitecture(time);
     this.drawVenueFurnitureBack();
     this.lighting.drawAmbient({
@@ -229,6 +231,8 @@ export class CafeRenderer {
     this.canvas.dataset.material = lighting.wetness > 0.12 ? 'wet' : lighting.fog > 0.15 ? 'misty' : 'dry';
     this.canvas.dataset.venueActivity = snapshot.barista.task;
     this.canvas.dataset.occupiedTables = String(activityState.seated);
+    this.canvas.dataset.door = door.active ? 'opening' : 'closed';
+    this.canvas.dataset.doorOpen = door.opening.toFixed(2);
   }
 
   private drawRoom(time: number): void {
@@ -578,7 +582,7 @@ export class CafeRenderer {
     }
   }
 
-  private drawDoor(time: number): void {
+  private drawDoor(time: number, guests: readonly Guest[]): DoorVisualState {
     const context = this.context;
     const palette = skyPalette(this.environment?.dayPhase ?? 'night');
     rect(context, COLORS.ink, 3, 36, 43, 155);
@@ -592,23 +596,6 @@ export class CafeRenderer {
     for (let index = 0; index < 4; index += 1) {
       rect(context, index % 2 ? '#6e8198' : '#9aa8b7', 17 + index * 5, 53 + index * 13, HALF_PIXEL, 5);
     }
-    rect(context, '#a46b50', 10, 127, 29, 5);
-    rect(context, '#d08d60', 11, 128, 27, 1);
-    rect(context, '#8c5a49', 10, 134, 29, 49);
-    rect(context, '#734744', 13, 137, 23, 42);
-    rect(context, '#9d6450', 14, 138, 21, 1);
-    rect(context, '#59393d', 13, 179, 23, 2);
-    rect(context, '#5f3c40', 16, 142, 16, 32);
-    rect(context, '#7d5048', 17, 143, 14, 1);
-    rect(context, '#9b6250', 18, 170, 12, 1);
-    rect(context, '#3e2e35', 30, 141, 2, 29);
-    rect(context, '#d5a266', 32, 143, 2, 9);
-    rect(context, '#f4d18a', 32 + HALF_PIXEL, 144, HALF_PIXEL, 6);
-    rect(context, '#d3b47a', 31, 152, 4, 2);
-    rect(context, '#7f4b43', 32, 153 + HALF_PIXEL, 3, HALF_PIXEL);
-    rect(context, COLORS.cream, 33, 139, 3, 3);
-    rect(context, '#fff0bd', 34, 139.5, HALF_PIXEL, HALF_PIXEL);
-
     polygon(context, '#352b34', [[7, 187], [38, 187], [43, 193], [2, 193]]);
     rect(context, '#9d6552', 9, 188, 27, 3);
     rect(context, '#c58a61', 13, 189, 19, HALF_PIXEL);
@@ -635,13 +622,22 @@ export class CafeRenderer {
       rect(context, '#c35aa5', 22, 72, 5, 1);
     }
 
+    const door = this.door.draw({
+      context,
+      venue: this.venue,
+      time,
+      active: this.active,
+      reducedMotion: this.reducedMotion,
+      guests,
+    });
     this.drawWallClock();
     const rain = clamp(((this.environment?.weather.rain ?? 0) + (this.environment?.weather.showers ?? 0)) / 4);
-    if (!this.active || rain <= 0) return;
+    if (!this.active || rain <= 0) return door;
     for (let index = 0; index < Math.round((this.reducedMotion ? 4 : 12) * rain); index += 1) {
       const y = 48 + ((index * 23 + time * (10 + index)) % 74);
       rect(context, index % 2 ? '#8594a6' : '#aeb8c2', 14 + ((index * 7) % 21), y, HALF_PIXEL, 2.5 + (index % 2));
     }
+    return door;
   }
 
   private drawWallClock(): void {
