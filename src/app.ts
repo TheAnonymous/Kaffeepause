@@ -2,7 +2,7 @@ import { CafeAudio } from './audio';
 import { CafeCamera } from './camera';
 import { CafeRenderer } from './renderer';
 import { CafeSimulation, type CafeSimulationOptions } from './simulation/cafeSimulation';
-import type { AccidentKind } from './simulation/types';
+import type { AccidentKind, CafeMomentKind } from './simulation/types';
 import { CafeEnvironmentController, parseEnvironmentOverrides } from './environment/cafeEnvironmentController';
 import type { CafeEnvironmentSnapshot } from './environment/types';
 
@@ -14,6 +14,13 @@ const ACCIDENT_MESSAGES: Readonly<Record<AccidentKind, string>> = {
   'umbrella-pop': 'Plopp! Ein Regenschirm ist im Café aufgegangen und wird wieder eingefangen.',
 };
 
+const MOMENT_MESSAGES: Readonly<Record<CafeMomentKind, string>> = {
+  'shared-cake': 'Zwei Gäste teilen sich ein Stück Kuchen und bleiben noch ein wenig länger.',
+  'card-game': 'An einem Tisch beginnt eine kleine Kartenrunde.',
+  'window-gaze': 'Ein Gast hält inne und schaut dem Wetter draußen zu.',
+  'sketch-reveal': 'Eine neue Skizze bekommt ihren letzten kleinen Strich.',
+};
+
 function requiredElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
   if (!element) throw new Error(`Erwartetes Element fehlt: ${selector}`);
@@ -22,20 +29,34 @@ function requiredElement<T extends HTMLElement>(selector: string): T {
 
 function simulationOptions(): CafeSimulationOptions {
   if (!import.meta.env.DEV) return {};
-  const requested = new URLSearchParams(window.location.search).get('accident');
+  const parameters = new URLSearchParams(window.location.search);
+  const options: CafeSimulationOptions = {};
+  const requested = parameters.get('accident');
   const kinds: readonly AccidentKind[] = ['tray-drop', 'coffee-spill', 'umbrella-pop'];
-  if (!kinds.includes(requested as AccidentKind)) return {};
-  const kind = requested as AccidentKind;
-  return {
-    initialGuests: kind === 'umbrella-pop' ? 3 : 4,
-    accidents: {
+  if (kinds.includes(requested as AccidentKind)) {
+    const kind = requested as AccidentKind;
+    options.initialGuests = kind === 'umbrella-pop' ? 3 : 4;
+    options.accidents = {
       seed: 0xe2e_2026,
       minDelaySeconds: kind === 'umbrella-pop' ? 1.5 : 0.35,
       maxDelaySeconds: kind === 'umbrella-pop' ? 1.5 : 0.35,
       kinds: [kind],
       phaseDurationScale: 0.6,
-    },
-  };
+    };
+  }
+  const requestedMoment = parameters.get('moment');
+  const momentKinds: readonly CafeMomentKind[] = ['shared-cake', 'card-game', 'window-gaze', 'sketch-reveal'];
+  if (momentKinds.includes(requestedMoment as CafeMomentKind)) {
+    options.initialGuests = Math.max(options.initialGuests ?? 0, requestedMoment === 'window-gaze' ? 2 : 4);
+    options.moments = {
+      seed: 0x51ce_2026,
+      minDelaySeconds: 0.35,
+      maxDelaySeconds: 0.35,
+      kinds: [requestedMoment as CafeMomentKind],
+      durationScale: 0.45,
+    };
+  }
+  return options;
 }
 
 export class KaffeepauseApp {
@@ -62,6 +83,7 @@ export class KaffeepauseApp {
   private elapsed = 0;
   private idleTimer?: number;
   private lastAnnouncedAccidentId = 0;
+  private lastAnnouncedMomentId = 0;
 
   start(): void {
     this.updateMotionPreference();
@@ -196,6 +218,12 @@ export class KaffeepauseApp {
         this.lastAnnouncedAccidentId = accident.id;
         this.status.textContent = ACCIDENT_MESSAGES[accident.kind];
         this.audio.playAccident(accident.kind);
+      }
+      const moment = this.simulation.activeMoment;
+      if (moment && moment.id !== this.lastAnnouncedMomentId) {
+        this.lastAnnouncedMomentId = moment.id;
+        this.status.textContent = MOMENT_MESSAGES[moment.kind];
+        this.audio.playMoment(moment.kind);
       }
     }
     this.renderer.render(this.elapsed);

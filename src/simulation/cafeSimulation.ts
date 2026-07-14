@@ -7,6 +7,8 @@ import type {
   AccidentPhase,
   Barista,
   CafeAccident,
+  CafeMoment,
+  CafeMomentKind,
   Guest,
   GuestActivity,
   GuestPalette,
@@ -15,7 +17,9 @@ import type {
 } from './types';
 
 const NAMES = ['Mara', 'Noor', 'Fritzi', 'Eli', 'Jun', 'Pia', 'Mika', 'Linn', 'Toni', 'Romy'] as const;
-const ACTIVITIES: readonly GuestActivity[] = ['reading', 'typing', 'talking', 'drinking', 'phone', 'sketching'];
+const ACTIVITIES: readonly GuestActivity[] = [
+  'reading', 'typing', 'talking', 'drinking', 'phone', 'sketching', 'journaling', 'knitting', 'board-game',
+];
 const PALETTES: readonly GuestPalette[] = [
   { skin: '#d8a071', hair: '#3a252b', coat: '#557b78', accent: '#e5b568' },
   { skin: '#8f5c48', hair: '#241c25', coat: '#a5544e', accent: '#e6c589' },
@@ -32,6 +36,7 @@ export interface CafeSimulationOptions {
   maxGuests?: number;
   durationScale?: number;
   accidents?: CafeAccidentOptions | false;
+  moments?: CafeMomentOptions | false;
 }
 
 export interface CafeAccidentOptions {
@@ -43,11 +48,27 @@ export interface CafeAccidentOptions {
   phaseDurationScale?: number;
 }
 
+export interface CafeMomentOptions {
+  enabled?: boolean;
+  seed?: number;
+  minDelaySeconds?: number;
+  maxDelaySeconds?: number;
+  kinds?: readonly CafeMomentKind[];
+  durationScale?: number;
+}
+
 const ACCIDENT_KINDS: readonly AccidentKind[] = ['tray-drop', 'coffee-spill', 'umbrella-pop'];
+const MOMENT_KINDS: readonly CafeMomentKind[] = ['shared-cake', 'card-game', 'window-gaze', 'sketch-reveal'];
 const ACCIDENT_PHASE_DURATIONS: Readonly<Record<AccidentPhase, number>> = {
   startle: 0.9,
   chaos: 1.8,
   cleanup: 2.6,
+};
+const MOMENT_DURATIONS: Readonly<Record<CafeMomentKind, number>> = {
+  'shared-cake': 13,
+  'card-game': 16,
+  'window-gaze': 10,
+  'sketch-reveal': 11,
 };
 
 interface GuestSnapshot {
@@ -95,7 +116,7 @@ export class CafeSimulation {
     facing: 1,
   };
 
-  readonly stats: SimulationStats = { arrivals: 0, departures: 0, elapsed: 0, accidentsCompleted: 0 };
+  readonly stats: SimulationStats = { arrivals: 0, departures: 0, elapsed: 0, accidentsCompleted: 0, momentsCompleted: 0 };
 
   private readonly random: SeededRandom;
   private readonly initialGuests: number;
@@ -108,6 +129,12 @@ export class CafeSimulation {
   private readonly accidentMaxDelay: number;
   private readonly accidentKinds: readonly AccidentKind[];
   private readonly accidentPhaseScale: number;
+  private readonly momentRandom: SeededRandom;
+  private readonly momentEnabled: boolean;
+  private readonly momentMinDelay: number;
+  private readonly momentMaxDelay: number;
+  private readonly momentKinds: readonly CafeMomentKind[];
+  private readonly momentDurationScale: number;
   private started = false;
   private nextGuestId = 1;
   private spawnClock = 0;
@@ -119,6 +146,10 @@ export class CafeSimulation {
   private accidentGuestSnapshot?: GuestSnapshot;
   private accidentBaristaSnapshot?: BaristaSnapshot;
   private nextAccidentId = 1;
+  private momentCountdown?: number;
+  private currentMoment?: CafeMoment;
+  private lastMomentKind?: CafeMomentKind;
+  private nextMomentId = 1;
   private environment?: CafeEnvironmentSnapshot;
 
   constructor(options: CafeSimulationOptions = {}) {
@@ -136,6 +167,14 @@ export class CafeSimulation {
     this.accidentMaxDelay = Math.max(this.accidentMinDelay, accidentOptions.maxDelaySeconds ?? 420);
     this.accidentKinds = accidentOptions.kinds?.length ? [...new Set(accidentOptions.kinds)] : ACCIDENT_KINDS;
     this.accidentPhaseScale = Math.max(0.001, accidentOptions.phaseDurationScale ?? 1);
+
+    const momentOptions = options.moments === false ? { enabled: false } : (options.moments ?? {});
+    this.momentEnabled = momentOptions.enabled !== false;
+    this.momentRandom = new SeededRandom(momentOptions.seed ?? ((options.seed ?? 0x4b41_4646) ^ 0xcafe_2026));
+    this.momentMinDelay = Math.max(0, momentOptions.minDelaySeconds ?? 22);
+    this.momentMaxDelay = Math.max(this.momentMinDelay, momentOptions.maxDelaySeconds ?? 50);
+    this.momentKinds = momentOptions.kinds?.length ? [...new Set(momentOptions.kinds)] : MOMENT_KINDS;
+    this.momentDurationScale = Math.max(0.001, momentOptions.durationScale ?? 1);
   }
 
   start(): void {
@@ -146,6 +185,7 @@ export class CafeSimulation {
       : Math.min(this.initialGuests, SEATS.length);
     for (let index = 0; index < initialCount; index += 1) this.addInitialGuest();
     if (this.accidentEnabled && this.accidentCountdown === undefined) this.scheduleNextAccident();
+    if (this.momentEnabled && this.momentCountdown === undefined) this.scheduleNextMoment();
   }
 
   stop(): void {
@@ -160,8 +200,16 @@ export class CafeSimulation {
     return this.currentAccident;
   }
 
+  get activeMoment(): Readonly<CafeMoment> | undefined {
+    return this.currentMoment;
+  }
+
   getSecondsUntilNextAccident(): number | undefined {
     return this.currentAccident ? undefined : this.accidentCountdown;
+  }
+
+  getSecondsUntilNextMoment(): number | undefined {
+    return this.currentMoment ? undefined : this.momentCountdown;
   }
 
   get crowdTarget(): number {
@@ -201,13 +249,15 @@ export class CafeSimulation {
     if (this.currentAccident?.guestId) pausedGuests.add(this.currentAccident.guestId);
     if (this.currentAccident?.witnessId) pausedGuests.add(this.currentAccident.witnessId);
     baristaPaused ||= this.currentAccident?.kind === 'tray-drop';
+    if (!this.currentAccident) this.updateMoment(delta);
     this.updatePopulation(delta);
     if (!baristaPaused) this.updateBarista(delta);
 
     const departed: Guest[] = [];
+    const momentGuests = new Set(this.currentMoment?.participantIds ?? []);
     for (const guest of this.guests) {
       if (pausedGuests.has(guest.id)) continue;
-      guest.stateTime += delta;
+      if (!momentGuests.has(guest.id)) guest.stateTime += delta;
       guest.animation += delta * (guest.state.includes('walking') || guest.state === 'entering' ? 8 : 2);
       this.updateGuest(guest, delta, departed);
     }
@@ -276,6 +326,78 @@ export class CafeSimulation {
   private scheduleNextAccident(): void {
     this.accidentCountdown = this.accidentRandom.range(this.accidentMinDelay, this.accidentMaxDelay);
     this.pendingAccidentKind = undefined;
+  }
+
+  private scheduleNextMoment(): void {
+    this.momentCountdown = this.momentRandom.range(this.momentMinDelay, this.momentMaxDelay);
+  }
+
+  private updateMoment(delta: number): void {
+    const moment = this.currentMoment;
+    if (moment) {
+      moment.elapsed += delta;
+      if (moment.elapsed < moment.duration) return;
+      this.stats.momentsCompleted += 1;
+      this.lastMomentKind = moment.kind;
+      this.currentMoment = undefined;
+      this.scheduleNextMoment();
+      return;
+    }
+
+    if (!this.momentEnabled || this.momentCountdown === undefined) return;
+    this.momentCountdown = Math.max(0, this.momentCountdown - delta);
+    if (this.momentCountdown > 0) return;
+    if (!this.beginMoment()) this.scheduleNextMoment();
+  }
+
+  private beginMoment(): boolean {
+    const seated = this.guests.filter((guest) => guest.state === 'activity');
+    const rainy = ['rain', 'snow', 'fog', 'storm'].includes(this.environment?.weather.kind ?? 'rain');
+    const eligible = this.momentKinds.filter((kind) => {
+      if (kind === 'shared-cake' || kind === 'card-game') return seated.length >= 2;
+      if (kind === 'window-gaze') return rainy && seated.length >= 1;
+      return seated.length >= 1;
+    });
+    if (eligible.length === 0) return false;
+    const fresh = eligible.filter((kind) => kind !== this.lastMomentKind);
+    const kind = this.momentRandom.pick(fresh.length ? fresh : eligible);
+    if (!kind) return false;
+
+    const participants = this.pickMomentParticipants(kind, seated);
+    if (participants.length === 0) return false;
+    this.currentMoment = {
+      id: this.nextMomentId,
+      kind,
+      startedAt: this.stats.elapsed,
+      participantIds: participants.map((guest) => guest.id),
+      elapsed: 0,
+      duration: MOMENT_DURATIONS[kind] * this.momentDurationScale,
+    };
+    this.nextMomentId += 1;
+    this.momentCountdown = undefined;
+    return true;
+  }
+
+  private pickMomentParticipants(kind: CafeMomentKind, seated: readonly Guest[]): Guest[] {
+    if (kind === 'shared-cake' || kind === 'card-game') {
+      const pairs: Array<readonly [Guest, Guest]> = [];
+      for (let left = 0; left < seated.length; left += 1) {
+        for (let right = left + 1; right < seated.length; right += 1) {
+          const first = seated[left];
+          const second = seated[right];
+          if (first && second) pairs.push([first, second]);
+        }
+      }
+      pairs.sort(([leftA, rightA], [leftB, rightB]) => distance(leftA.position, rightA.position) - distance(leftB.position, rightB.position));
+      const nearbyPairs = pairs.slice(0, Math.min(3, pairs.length));
+      return nearbyPairs.length > 0 ? [...this.momentRandom.pick(nearbyPairs)] : [];
+    }
+    if (kind === 'window-gaze') {
+      const byWindow = [...seated].sort((left, right) => left.position.y - right.position.y || left.position.x - right.position.x);
+      return byWindow[0] ? [byWindow[0]] : [];
+    }
+    const artist = seated.find((guest) => guest.activity === 'sketching') ?? this.momentRandom.pick(seated);
+    return artist ? [artist] : [];
   }
 
   private updateAccident(delta: number): void {
@@ -577,10 +699,10 @@ export class CafeSimulation {
     barista.taskTime = 0;
     const waiting = this.guests.some((guest) => guest.state === 'waiting' || guest.state === 'ordering');
     barista.task = waiting
-      ? this.random.pick(['machine', 'machine', 'serving'] as const)
+      ? this.random.pick(['machine', 'machine', 'grinding', 'serving'] as const)
       : this.desiredGuestCount <= 2
-        ? this.random.pick(['wiping', 'restocking', 'polishing', 'polishing'] as const)
-        : this.random.pick(['machine', 'wiping', 'restocking'] as const);
+        ? this.random.pick(['wiping', 'restocking', 'polishing', 'polishing', 'tasting'] as const)
+        : this.random.pick(['machine', 'grinding', 'wiping', 'restocking'] as const);
     barista.target = copyPoint(BARISTA_PLACES[barista.task]);
     barista.taskDuration = this.random.range(6, 11);
   }

@@ -170,6 +170,29 @@ test('zeigt einen beschleunigten Unfall auch bei reduzierter Bewegung', async ({
   await expect(page.locator('#status')).toHaveText(/Kaffee verschüttet/);
 });
 
+for (const scenario of [
+  { kind: 'shared-cake', message: /Stück Kuchen/ },
+  { kind: 'card-game', message: /Kartenrunde/ },
+  { kind: 'window-gaze', message: /Wetter draußen/ },
+  { kind: 'sketch-reveal', message: /Skizze/ },
+] as const) {
+  test(`zeigt den beschleunigten Café-Moment ${scenario.kind}`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') errors.push(message.text());
+    });
+    page.on('pageerror', (error) => errors.push(error.message));
+    await page.setViewportSize({ width: 1440, height: 810 });
+    await page.goto(`/?moment=${scenario.kind}&time=12:30&weather=rain`);
+    await page.getByTestId('enter').click();
+
+    const canvas = page.locator('#cafe');
+    await expect(canvas).toHaveAttribute('data-moment', scenario.kind, { timeout: 5_000 });
+    await expect(page.locator('#status')).toHaveText(scenario.message);
+    expect(errors).toEqual([]);
+  });
+}
+
 const openMeteoPayload = {
   current: {
     time: '2026-07-14T12:30',
