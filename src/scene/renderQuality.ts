@@ -10,20 +10,21 @@ export interface RenderQualityProfile {
   readonly bloomStrength: number;
   readonly miniatureBlur: 'full' | 'simplified';
   readonly miniatureBlurStrength: number;
+  readonly characterFrameRate: 6 | 4 | 3;
 }
 
 export const RENDER_QUALITY_PROFILES: Readonly<Record<RenderQualityTier, RenderQualityProfile>> = {
   master: {
     tier: 'master', renderScale: 6, shadowMapSize: 2048,
-    bloom: 'full', bloomStrength: 1, miniatureBlur: 'full', miniatureBlurStrength: 1,
+    bloom: 'full', bloomStrength: 1, miniatureBlur: 'full', miniatureBlurStrength: 1, characterFrameRate: 6,
   },
   balanced: {
     tier: 'balanced', renderScale: 4, shadowMapSize: 1024,
-    bloom: 'reduced', bloomStrength: 0.62, miniatureBlur: 'full', miniatureBlurStrength: 0.72,
+    bloom: 'reduced', bloomStrength: 0.62, miniatureBlur: 'full', miniatureBlurStrength: 0.72, characterFrameRate: 4,
   },
   fallback: {
     tier: 'fallback', renderScale: 3, shadowMapSize: 512,
-    bloom: 'off', bloomStrength: 0, miniatureBlur: 'simplified', miniatureBlurStrength: 0.48,
+    bloom: 'off', bloomStrength: 0, miniatureBlur: 'simplified', miniatureBlurStrength: 0.48, characterFrameRate: 3,
   },
 };
 

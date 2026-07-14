@@ -23,6 +23,12 @@ export const REGULAR_APPEARANCES: Readonly<Record<RegularId, GuestAppearance>> =
   linn: GUEST_APPEARANCE_PRESETS[3] as GuestAppearance,
   sora: GUEST_APPEARANCE_PRESETS[4] as GuestAppearance,
   kai: GUEST_APPEARANCE_PRESETS[5] as GuestAppearance,
+  bo: GUEST_APPEARANCE_PRESETS[6] as GuestAppearance,
+  cleo: GUEST_APPEARANCE_PRESETS[7] as GuestAppearance,
+  jun: GUEST_APPEARANCE_PRESETS[8] as GuestAppearance,
+  emi: GUEST_APPEARANCE_PRESETS[9] as GuestAppearance,
+  ari: GUEST_APPEARANCE_PRESETS[10] as GuestAppearance,
+  mika: GUEST_APPEARANCE_PRESETS[11] as GuestAppearance,
 };
 
 export interface GuestGeometry {

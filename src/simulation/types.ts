@@ -45,9 +45,28 @@ export interface GuestAppearance {
   pattern: number;
 }
 
-export type RegularId = 'mara' | 'noor' | 'toni' | 'linn' | 'sora' | 'kai';
+export type RegularId =
+  | 'mara'
+  | 'noor'
+  | 'toni'
+  | 'linn'
+  | 'bo'
+  | 'cleo'
+  | 'jun'
+  | 'emi'
+  | 'sora'
+  | 'kai'
+  | 'ari'
+  | 'mika';
 
-export type CafeStoryKind = 'sketchbook' | 'first-date' | 'knit-gift' | 'arcade-rivals';
+export type CafeStoryKind =
+  | 'sketchbook'
+  | 'first-date'
+  | 'knit-gift'
+  | 'arcade-rivals'
+  | 'order-mixup'
+  | 'noodle-mishap'
+  | 'glitched-coop';
 
 export interface GuestPalette {
   skin: string;
@@ -113,7 +132,13 @@ export type CafeMomentKind =
   | 'ramen-slurp'
   | 'arcade-duel'
   | 'arcade-high-score'
-  | 'umbrella-handoff';
+  | 'umbrella-handoff'
+  | 'foam-moustache'
+  | 'sugar-packet-domino'
+  | 'steam-glasses'
+  | 'chopstick-drop'
+  | 'ticket-stream'
+  | 'button-mash-sync';
 
 export interface CafeMoment {
   readonly id: number;
@@ -123,7 +148,7 @@ export interface CafeMoment {
   elapsed: number;
   duration: number;
   readonly story?: CafeStoryKind;
-  readonly storyStep?: 1 | 2;
+  readonly storyStep?: 1 | 2 | 3;
 }
 
 export type AccidentKind = 'tray-drop' | 'coffee-spill' | 'umbrella-pop';

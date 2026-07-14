@@ -11,6 +11,11 @@ export class CafeCamera {
   private stopIndex = 0;
   private pauseRemaining = 4;
   private direction: 1 | -1 = 1;
+  private focusPaused = false;
+
+  setFocusPaused(paused: boolean): void {
+    this.focusPaused = paused;
+  }
 
   configure(viewportWidth: number, mobile: boolean, reducedMotion: boolean): void {
     this.viewportWidth = viewportWidth;
@@ -30,7 +35,7 @@ export class CafeCamera {
   }
 
   update(deltaSeconds: number): void {
-    if (this.mode !== 'tour' || this.reducedMotion) return;
+    if (this.mode !== 'tour' || this.reducedMotion || this.focusPaused) return;
     const stops = [0, this.maxX() * 0.48, this.maxX()];
     if (this.pauseRemaining > 0) {
       this.pauseRemaining -= deltaSeconds;

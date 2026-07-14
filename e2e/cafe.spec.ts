@@ -11,6 +11,25 @@ async function openCafe(page: Page, path = '/', tier: 'master' | 'balanced' | 'f
   await expect(page.locator('#cafe')).toHaveAttribute('data-renderer-state', 'ready', { timeout: 15_000 });
 }
 
+async function reactionTarget(page: Page, preferredId?: string): Promise<{ id: string; x: number; y: number }> {
+  const canvas = page.locator('#cafe');
+  await expect.poll(async () => await canvas.getAttribute('data-reaction-targets')).toMatch(/.+:\d+,-?\d+/);
+  const raw = await canvas.getAttribute('data-reaction-targets') ?? '';
+  const targets = raw.split('|').map((entry) => {
+    const match = entry.match(/^(.+):(-?\d+),(-?\d+)$/);
+    return match ? { id: match[1] ?? '', x: Number(match[2]), y: Number(match[3]) } : undefined;
+  }).filter((target): target is { id: string; x: number; y: number } => target !== undefined);
+  const viewport = page.viewportSize() ?? { width: 1280, height: 720 };
+  const visible = targets.filter((entry) => entry.x >= 0 && entry.x <= viewport.width && entry.y >= 0 && entry.y <= viewport.height);
+  const preferred = visible.find((entry) => entry.id === preferredId);
+  const target = preferred ?? [...visible].sort((left, right) => (
+    Math.hypot(left.x - viewport.width / 2, left.y - viewport.height / 2)
+      - Math.hypot(right.x - viewport.width / 2, right.y - viewport.height / 2)
+  ))[0];
+  if (!target) throw new Error('Kein Reaktionsziel im Canvas veröffentlicht.');
+  return target;
+}
+
 test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadaten', async ({ page }) => {
   const errors: string[] = [];
   page.on('console', (message) => {
@@ -33,7 +52,7 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
   await expect(canvas).toHaveAttribute('data-renderer', 'webgl-diorama');
   await expect(canvas).toHaveAttribute('data-depth-model', 'physical-2.5d');
   await expect(canvas).toHaveAttribute('data-diorama-scale-check', 'pass');
-  await expect(canvas).toHaveAttribute('data-speech-language', 'procedural-pseudo-language');
+  await expect(canvas).toHaveAttribute('data-speech-language', 'symbolic-emotes');
   await expect(canvas).toHaveAttribute('data-speech-bubble-resolution', '256x112');
   await expect(canvas).toHaveAttribute('data-navigation', 'collision-aware');
   await expect(canvas).toHaveAttribute('data-proportion-check', 'pass');
@@ -41,6 +60,8 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
   await expect(canvas).toHaveAttribute('data-scale-model', '32px-adult');
   await expect(canvas).toHaveAttribute('data-character-variation', '12-silhouettes');
   await expect(canvas).toHaveAttribute('data-character-diversity', '100');
+  await expect(canvas).toHaveAttribute('data-character-frame-rate', '6');
+  await expect(canvas).toHaveAttribute('data-emote-bubbles', '0');
   await expect(canvas).toHaveAttribute('data-exposure', '1.10');
   await expect(canvas).toHaveAttribute('data-character-emissive', '0.04');
   await expect(canvas).toHaveAttribute('data-shadow-lift', '0.03');
@@ -70,6 +91,7 @@ test('betritt das Café auf fallback und schaltet den Ton', async ({ page }) => 
   const canvas = page.locator('#cafe');
   await expect(canvas).toHaveAttribute('data-quality-tier', 'fallback');
   await expect(canvas).toHaveAttribute('data-render-scale', '3');
+  await expect(canvas).toHaveAttribute('data-character-frame-rate', '3');
   await page.getByTestId('enter').evaluate((button) => {
     button.addEventListener('click', () => document.querySelector<HTMLElement>('[data-testid="sound"]')?.focus(), { once: true });
   });
@@ -250,6 +272,92 @@ test('respektiert reduzierte Bewegung ohne automatische Kamerafahrt', async ({ p
   await expect(canvas).toHaveAttribute('data-camera-x', position ?? '0.0');
 });
 
+test('reagiert nach Mausverweildauer genau einmal mit Emote, Fokus und leisem Akzent', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await openCafe(page, '/?time=12:30&weather=clear');
+  await page.getByTestId('enter').click();
+  const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-camera-focus-source', 'conversation', { timeout: 5_000 });
+  await page.waitForTimeout(1_000);
+  await expect(page.getByTestId('sound')).toHaveAttribute('data-audio-state', /playing|unavailable/);
+  const target = await reactionTarget(page);
+  await page.mouse.move(target.x, target.y);
+
+  await expect(canvas).toHaveAttribute('data-reacting-character', target.id, { timeout: 2_000 });
+  await expect(canvas).toHaveAttribute('data-reaction', /wave|nod|laugh/);
+  await expect(canvas).toHaveAttribute('data-camera-focus-source', 'reaction');
+  await expect(canvas).toHaveAttribute('data-emote-bubbles', /[1-2]/);
+  const token = await canvas.getAttribute('data-reaction-token');
+  expect(Number(token)).toBeGreaterThan(0);
+  if (await page.getByTestId('sound').getAttribute('data-audio-state') === 'playing') {
+    await expect(canvas).toHaveAttribute('data-reaction-audio-gain', '0.008');
+  }
+  await page.waitForTimeout(900);
+  await expect(canvas).toHaveAttribute('data-reaction-token', token ?? '1');
+});
+
+test('ignoriert Touch- und Stiftbewegungen für Figurenreaktionen', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await openCafe(page, '/?time=12:30&weather=clear');
+  await page.getByTestId('enter').click();
+  const target = await reactionTarget(page);
+  await page.locator('#cafe').evaluate((canvas, point) => {
+    for (const pointerType of ['touch', 'pen']) {
+      canvas.dispatchEvent(new PointerEvent('pointermove', {
+        bubbles: true, pointerType, clientX: point.x, clientY: point.y,
+      }));
+    }
+  }, target);
+  await page.waitForTimeout(500);
+  await expect(page.locator('#cafe')).toHaveAttribute('data-reacting-character', 'none');
+});
+
+test('fokussiert ein normales Gespräch höchstens als ruhige Gesprächsszene', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await openCafe(page, '/?time=12:30&weather=clear');
+  await page.getByTestId('enter').click();
+  const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-camera-focus-source', 'conversation', { timeout: 5_000 });
+  await expect(canvas).toHaveAttribute('data-camera-focus', 'active');
+});
+
+test('lässt Geschichten den Mausfokus überstimmen', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await openCafe(page, '/?story=order-mixup&time=12:30&weather=clear');
+  await page.getByTestId('enter').click();
+  const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-story', 'order-mixup', { timeout: 5_000 });
+  await expect(canvas).toHaveAttribute('data-camera-focus-source', 'story');
+  const target = await reactionTarget(page, 'guest-5');
+  await page.mouse.move(target.x, target.y);
+  await expect(canvas).toHaveAttribute('data-reacting-character', target.id, { timeout: 2_000 });
+  await expect(canvas).toHaveAttribute('data-camera-focus-source', 'story');
+});
+
+test('deaktiviert Fokusfahrten bei Reduced Motion vollständig', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openCafe(page, '/?story=order-mixup&time=12:30&weather=clear');
+  await page.getByTestId('enter').click();
+  const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-story', 'order-mixup', { timeout: 5_000 });
+  await expect(canvas).toHaveAttribute('data-camera-focus', 'none');
+  await expect(canvas).toHaveAttribute('data-camera-focus-source', 'none');
+});
+
+test('pausiert die mobile Tour während eines Fokus und setzt sie danach fort', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openCafe(page, '/?time=12:30&weather=clear');
+  await page.getByTestId('enter').click();
+  const canvas = page.locator('#cafe');
+  const target = await reactionTarget(page);
+  await page.mouse.move(target.x, target.y);
+  await expect(canvas).toHaveAttribute('data-camera-focus-source', 'reaction', { timeout: 2_000 });
+  await expect(canvas).toHaveAttribute('data-mobile-tour-paused', 'true');
+  await expect(canvas).toHaveAttribute('data-camera-focus-source', 'none', { timeout: 6_000 });
+  await expect(canvas).toHaveAttribute('data-mobile-tour-paused', 'false');
+});
+
 test('lässt die Einstiegskarte stehen und blendet Controls erst nach dem Eintritt aus', async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 810 });
@@ -379,6 +487,25 @@ test('zeigt Sora und Kais Arcade-Revanche mit der ausgewählten Venue', async ({
   await expect(page.locator('#status')).toHaveText(/Sora und Kai.*Revanche/i);
 });
 
+for (const scenario of [
+  { kind: 'order-mixup', venue: 'Café', entry: 'Café betreten', regulars: /bo,cleo/, message: /falschen Getränke/i },
+  { kind: 'noodle-mishap', venue: 'Ramen', entry: 'Ramen-Restaurant betreten', regulars: /jun,emi/, message: /lange Nudel/i },
+  { kind: 'glitched-coop', venue: 'Arcade', entry: 'Arcade-Halle betreten', regulars: /ari,mika/, message: /flackert.*Automat/i },
+] as const) {
+  test(`zeigt die dreiteilige Geschichte ${scenario.kind}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 810 });
+    await openCafe(page, `/?story=${scenario.kind}&time=12:30&weather=clear`);
+    if (scenario.venue !== 'Café') await page.getByRole('radio', { name: new RegExp(scenario.venue) }).click();
+    await page.getByRole('button', { name: scenario.entry }).click();
+    const canvas = page.locator('#cafe');
+    await expect(canvas).toHaveAttribute('data-story', scenario.kind, { timeout: 5_000 });
+    await expect(canvas).toHaveAttribute('data-story-step', '1');
+    await expect(canvas).toHaveAttribute('data-regulars', scenario.regulars);
+    await expect(canvas).toHaveAttribute('data-emote-bubbles', /[1-2]/);
+    await expect(page.locator('#status')).toHaveText(scenario.message);
+  });
+}
+
 test('zeigt einen beschleunigten Unfall auch bei reduzierter Bewegung', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await openCafe(page, '/?accident=coffee-spill&time=12:30&weather=rain');
@@ -419,6 +546,12 @@ for (const scenario of [
   { kind: 'arcade-duel', venue: 'Arcade', entry: 'Arcade-Halle betreten', query: 'time=20:30&weather=rain', message: /Arcade-Runde/i },
   { kind: 'arcade-high-score', venue: 'Arcade', entry: 'Arcade-Halle betreten', query: 'time=20:30&weather=rain', message: /Highscore/i },
   { kind: 'umbrella-handoff', venue: 'Café', entry: 'Café betreten', query: 'time=20:30&weather=rain', message: /Schirm zusammen/i },
+  { kind: 'foam-moustache', venue: 'Café', entry: 'Café betreten', query: 'time=12:30&weather=clear', message: /Milchschaumbart/i },
+  { kind: 'sugar-packet-domino', venue: 'Café', entry: 'Café betreten', query: 'time=12:30&weather=clear', message: /Dominosteine/i },
+  { kind: 'steam-glasses', venue: 'Ramen', entry: 'Ramen-Restaurant betreten', query: 'time=20:30&weather=rain', message: /beschlägt eine Brille/i },
+  { kind: 'chopstick-drop', venue: 'Ramen', entry: 'Ramen-Restaurant betreten', query: 'time=20:30&weather=clear', message: /Stäbchen fällt/i },
+  { kind: 'ticket-stream', venue: 'Arcade', entry: 'Arcade-Halle betreten', query: 'time=20:30&weather=clear', message: /Ticketstreifen/i },
+  { kind: 'button-mash-sync', venue: 'Arcade', entry: 'Arcade-Halle betreten', query: 'time=20:30&weather=clear', message: /Arcade-Rhythmus/i },
 ] as const) {
   test(`zeigt den ortsabhängigen Moment ${scenario.kind}`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 810 });
@@ -515,6 +648,44 @@ for (const scene of [
     await expect(canvas).toHaveAttribute('data-clock', 'analog');
     await expect(canvas).toHaveAttribute('data-clock-time', scene.query.slice(5, 10));
     expect(errors).toEqual([]);
+  });
+}
+
+for (const scene of [
+  { name: 'cafe-conversation-focus', venue: 'cafe', path: '/?time=12:30&weather=clear', waitFor: 'conversation' },
+  { name: 'ramen-noodle-mishap', venue: 'ramen', path: '/?story=noodle-mishap&time=20:30&weather=rain', waitFor: 'story' },
+  { name: 'arcade-pointer-reaction', venue: 'arcade', path: '/?time=22:00&weather=clear', waitFor: 'reaction' },
+] as const) {
+  test(`hält die fokussierte Szene ${scene.name} als deterministische Baseline`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 810 });
+    await page.addInitScript(() => {
+      let hidden = false;
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+      (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama = () => {
+        hidden = true;
+        document.dispatchEvent(new Event('visibilitychange'));
+      };
+    });
+    await openCafe(page, scene.path);
+    if (scene.venue !== 'cafe') await page.getByRole('radio', { name: new RegExp(scene.venue, 'i') }).click();
+    await page.getByTestId('enter').click();
+    const canvas = page.locator('#cafe');
+    if (scene.waitFor === 'reaction') {
+      const target = await reactionTarget(page);
+      await page.mouse.move(target.x, target.y);
+      await expect(canvas).toHaveAttribute('data-camera-focus-source', 'reaction', { timeout: 2_000 });
+    } else {
+      await expect(canvas).toHaveAttribute('data-camera-focus-source', scene.waitFor, { timeout: 5_000 });
+    }
+    await page.waitForTimeout(1_000);
+    await page.evaluate(() => (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama?.());
+    await expect(canvas).toHaveAttribute('data-render-loop', 'paused');
+    await page.getByTestId('welcome').evaluate((element) => { element.style.display = 'none'; });
+    await page.getByTestId('controls').evaluate((element) => { (element as HTMLElement).hidden = true; });
+    await expect(page.locator('#app')).toHaveScreenshot(`${scene.name}.png`, {
+      animations: 'disabled',
+      maxDiffPixelRatio: 0.02,
+    });
   });
 }
 

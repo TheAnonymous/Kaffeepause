@@ -8,12 +8,17 @@ function updateUntil(simulation: CafeSimulation, predicate: () => boolean, limit
 }
 
 function storySimulation(kind: CafeStoryKind): CafeSimulation {
+  const venue = kind === 'arcade-rivals' || kind === 'glitched-coop' ? 'arcade'
+    : kind === 'noodle-mishap' ? 'ramen' : 'cafe';
+  const guestCount = kind === 'order-mixup' ? 6
+    : kind === 'noodle-mishap' ? 2
+      : venue === 'arcade' ? 4 : 4;
   const simulation = new CafeSimulation({
     seed: 81,
-    initialGuests: kind === 'arcade-rivals' ? 6 : 4,
+    initialGuests: guestCount,
     minGuests: 0,
-    maxGuests: kind === 'arcade-rivals' ? 6 : 4,
-    venue: kind === 'arcade-rivals' ? 'arcade' : 'cafe',
+    maxGuests: guestCount,
+    venue,
     accidents: false,
     moments: false,
     stories: { seed: 31, minDelaySeconds: 0.1, maxDelaySeconds: 0.1, kinds: [kind] },
@@ -49,6 +54,37 @@ describe('Stammgäste und kleine Geschichten', () => {
     updateUntil(simulation, () => simulation.getStoryStage(story) === finalStep);
     expect(simulation.stats.storyBeatsCompleted).toBe(2);
     expect(simulation.stats.storiesCompleted).toBe(1);
+  });
+
+  it.each<[CafeStoryKind, readonly string[]]>([
+    ['order-mixup', ['bo', 'cleo']],
+    ['noodle-mishap', ['jun', 'emi']],
+    ['glitched-coop', ['ari', 'mika']],
+  ])('%s entfaltet sich in drei lesbaren Schritten', (story, regulars) => {
+    const simulation = storySimulation(story);
+    for (const step of [1, 2, 3] as const) {
+      updateUntil(simulation, () => simulation.activeMoment?.story === story && simulation.activeMoment.storyStep === step);
+      expect(simulation.activeMoment?.participantIds).toEqual(
+        expect.arrayContaining(regulars.map((regular) => simulation.activeRegulars.find((guest) => guest.regularId === regular)?.id)),
+      );
+    }
+    updateUntil(simulation, () => simulation.getStoryStage(story) === 3);
+    expect(simulation.stats.storyBeatsCompleted).toBe(3);
+    expect(simulation.stats.storiesCompleted).toBe(1);
+  });
+
+  it.each([
+    ['cafe', ['mara', 'noor', 'toni', 'linn', 'bo', 'cleo']],
+    ['ramen', ['jun', 'emi']],
+    ['arcade', ['sora', 'kai', 'ari', 'mika']],
+  ] as const)('ordnet die Stammgäste in %s ausschließlich ihrem Heimatort zu', (venue, expected) => {
+    const simulation = new CafeSimulation({
+      venue, seed: 4, initialGuests: 6, minGuests: 0, maxGuests: 6,
+      accidents: false, moments: false, stories: false,
+    });
+    simulation.start();
+    expect(simulation.activeRegulars.map((guest) => guest.regularId)).toEqual(expected);
+    expect(simulation.guests.slice(expected.length).every((guest) => guest.regularId === undefined)).toBe(true);
   });
 
   it('setzt die Arcade-Revanche sichtbar aus Duell und Highscore zusammen', () => {

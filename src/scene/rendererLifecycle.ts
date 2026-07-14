@@ -4,6 +4,7 @@ import type { CafeSimulation } from '../simulation/cafeSimulation';
 import type { VenueKind } from '../venue';
 import type { RenderQualityTier } from './renderQuality';
 import type { SceneSnapshot } from './types';
+import type { PointerSample } from '../diorama/pointerReaction';
 
 export type RendererState = 'loading' | 'ready' | 'failed';
 
@@ -23,6 +24,8 @@ export interface RendererLifecycle {
   setVenue(venue: VenueKind): void;
   setEnvironment(snapshot: CafeEnvironmentSnapshot): void;
   setQualityTier(tier: RenderQualityTier): void;
+  setPointerSample(sample: PointerSample): void;
+  clearPointerSample(): void;
   dispose(): void;
 }
 

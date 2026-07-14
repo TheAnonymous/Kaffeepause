@@ -4,6 +4,7 @@ import type { CafeEnvironmentSnapshot } from './environment/types';
 import type { VenueKind } from './venue';
 
 export type AudioState = 'idle' | 'playing' | 'muted' | 'unavailable';
+export const REACTION_ACCENT_MAX_GAIN = 0.008;
 
 const CHORDS = [
   [0, 3, 7, 10],
@@ -205,7 +206,36 @@ export class CafeAudio {
       this.playEffectTone(920, 1_140, start + 0.05, 0.14, 0.012, 'sine');
       return;
     }
+    if (kind === 'foam-moustache' || kind === 'steam-glasses') {
+      this.playEffectTone(920, 1_380, start, 0.13, 0.012, 'sine');
+      this.playEffectTone(1_420, 1_780, start + 0.08, 0.11, 0.009, 'triangle');
+      return;
+    }
+    if (kind === 'sugar-packet-domino' || kind === 'chopstick-drop') {
+      this.playEffectTone(1_250, 720, start, 0.07, 0.012, 'triangle');
+      this.playEffectTone(1_020, 620, start + 0.09, 0.08, 0.009, 'triangle');
+      return;
+    }
+    if (kind === 'ticket-stream' || kind === 'button-mash-sync') {
+      this.playEffectTone(520, 920, start, 0.09, 0.012, 'square');
+      this.playEffectTone(780, 1_260, start + 0.08, 0.11, 0.01, 'square');
+      return;
+    }
     this.playEffectTone(1_120, 1_520, start, 0.16, 0.015, 'triangle');
+  }
+
+  playReaction(): boolean {
+    const context = this.context;
+    if (!context || !this.master || this.muted || this.state !== 'playing') return false;
+    const start = context.currentTime + 0.015;
+    const frequencies: Readonly<Record<VenueKind, readonly [number, number]>> = {
+      cafe: [880, 1_120],
+      ramen: [660, 880],
+      arcade: [740, 1_180],
+    };
+    const [from, to] = frequencies[this.venue];
+    this.playEffectTone(from, to, start, 0.11, REACTION_ACCENT_MAX_GAIN, this.venue === 'arcade' ? 'square' : 'sine');
+    return true;
   }
 
   getState(): AudioState {

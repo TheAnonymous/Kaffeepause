@@ -22,8 +22,8 @@ function makeMomentSimulation(kind: CafeMomentKind): CafeSimulation {
       durationScale: 0.05,
     },
   });
-  if (kind === 'ramen-slurp') simulation.setVenue('ramen');
-  if (kind === 'arcade-duel' || kind === 'arcade-high-score') simulation.setVenue('arcade');
+  if (kind === 'ramen-slurp' || kind === 'steam-glasses' || kind === 'chopstick-drop') simulation.setVenue('ramen');
+  if (kind === 'arcade-duel' || kind === 'arcade-high-score' || kind === 'ticket-stream' || kind === 'button-mash-sync') simulation.setVenue('arcade');
   simulation.start();
   return simulation;
 }
@@ -51,6 +51,12 @@ describe('Café-Momente', () => {
     ['arcade-duel', 2],
     ['arcade-high-score', 1],
     ['umbrella-handoff', 2],
+    ['foam-moustache', 1],
+    ['sugar-packet-domino', 2],
+    ['steam-glasses', 1],
+    ['chopstick-drop', 1],
+    ['ticket-stream', 1],
+    ['button-mash-sync', 2],
   ])('%s startet mit passenden Beteiligten und endet sauber', (kind, participants) => {
     const simulation = makeMomentSimulation(kind);
     updateUntil(simulation, () => simulation.activeMoment?.kind === kind);
@@ -67,6 +73,23 @@ describe('Café-Momente', () => {
     updateUntil(simulation, () => simulation.stats.momentsCompleted === 1);
     expect(simulation.activeMoment).toBeUndefined();
     expect(simulation.getSecondsUntilNextMoment()).toBeCloseTo(0.1);
+  });
+
+  it.each<CafeMomentKind>([
+    'foam-moustache', 'sugar-packet-domino', 'steam-glasses',
+    'chopstick-drop', 'ticket-stream', 'button-mash-sync',
+  ])('%s stellt Tätigkeiten, Wege, Reservierungen und Barista vollständig wieder her', (kind) => {
+    const simulation = makeMomentSimulation(kind);
+    updateUntil(simulation, () => simulation.activeMoment?.kind === kind);
+    const participantIds = simulation.activeMoment?.participantIds ?? [];
+    const beforeGuests = participantIds.map((id) => structuredClone(simulation.guests.find((guest) => guest.id === id)));
+    const beforeReservations = participantIds.map((id) => simulation.reservations.resourcesOf(id));
+    const beforeBarista = structuredClone(simulation.barista);
+
+    updateUntil(simulation, () => simulation.stats.momentsCompleted === 1);
+    expect(participantIds.map((id) => simulation.guests.find((guest) => guest.id === id))).toEqual(beforeGuests);
+    expect(participantIds.map((id) => simulation.reservations.resourcesOf(id))).toEqual(beforeReservations);
+    expect(simulation.barista).toEqual(beforeBarista);
   });
 
   it('lässt keine kleine Szene parallel zu einem Unfall beginnen', () => {

@@ -6,8 +6,9 @@ import {
   SRGBColorSpace,
   type Texture,
 } from 'three';
-import type { Barista, Guest, GuestActivity, GuestAppearance, GuestPalette } from '../simulation/types';
+import type { Barista, Guest, GuestAppearance, GuestPalette } from '../simulation/types';
 import type { VenueKind } from '../venue';
+import type { CharacterPose, CharacterVisualState } from './characterVisualState';
 import { DIORAMA } from './types';
 
 type PixelContext = CanvasRenderingContext2D;
@@ -16,11 +17,12 @@ interface SpriteDescription {
   readonly palette: GuestPalette;
   readonly appearance: GuestAppearance;
   readonly seated: boolean;
-  readonly activity: GuestActivity | Barista['task'];
+  readonly activity: CharacterPose;
   readonly accessory?: Guest['accessory'];
   readonly regular: boolean;
   readonly venue: VenueKind;
   readonly barista: boolean;
+  readonly visual: CharacterVisualState;
 }
 
 const BARISTA_APPEARANCE: GuestAppearance = {
@@ -110,7 +112,17 @@ function face(context: PixelContext, description: SpriteDescription, x: number, 
   pixel(context, '#f1d5bb', x + 8, y + 13, 1, 1);
   pixel(context, '#f1d5bb', x + width - 10, y + 13, 1, 1);
   pixel(context, skinDark, x + Math.floor(width / 2), y + 18, 3, 4);
-  pixel(context, '#75434a', x + Math.floor(width / 2) - 4, y + 26, 10, 2);
+  if (description.visual.expression === 'laugh') {
+    pixel(context, '#75434a', x + Math.floor(width / 2) - 6, y + 25, 14, 7);
+    pixel(context, '#f4d2b3', x + Math.floor(width / 2) - 3, y + 25, 8, 3);
+  } else if (description.visual.expression === 'surprised') {
+    pixel(context, '#75434a', x + Math.floor(width / 2) - 3, y + 25, 7, 7);
+  } else if (description.visual.expression === 'smile') {
+    pixel(context, '#75434a', x + Math.floor(width / 2) - 5, y + 25, 12, 4);
+    pixel(context, palette.skin, x + Math.floor(width / 2) - 3, y + 25, 8, 2);
+  } else {
+    pixel(context, '#75434a', x + Math.floor(width / 2) - 4, y + 26, 10, 2);
+  }
 
   if (appearance.detail === 'glasses') {
     pixel(context, '#313141', x + 3, y + 10, 11, 2);
@@ -135,6 +147,8 @@ function face(context: PixelContext, description: SpriteDescription, x: number, 
 }
 
 function activityProp(context: PixelContext, description: SpriteDescription, centerX: number, y: number): void {
+  const frameLift = description.visual.frame === 1 ? -3 : description.visual.frame === 3 ? 2 : 0;
+  y += frameLift;
   const ink = '#211923';
   const paper = '#f2dfb5';
   switch (description.activity) {
@@ -210,7 +224,8 @@ function drawSprite(context: PixelContext, description: SpriteDescription): void
   const headWidth = appearance.face === 'narrow' ? 33 : appearance.face === 'square' ? 41 : 37;
   const headHeight = appearance.face === 'round' ? 37 : 40;
   const headX = center - headWidth / 2;
-  const headY = 19 + (seated ? 22 : 0) - appearance.heightOffset * 2;
+  const nod = description.visual.gesture === 'nod' && (description.visual.frame === 1 || description.visual.frame === 2) ? 4 : 0;
+  const headY = 19 + (seated ? 22 : 0) - appearance.heightOffset * 2 + nod;
   const shoulderY = headY + headHeight - 2;
   const torsoHeight = seated ? 48 : 60;
   const torsoX = center - bodyWidth / 2;
@@ -220,10 +235,11 @@ function drawSprite(context: PixelContext, description: SpriteDescription): void
   const coatLight = shade(palette.coat, 0.18);
 
   if (!seated) {
-    pixel(context, palette.trousers, center - 19, legTop, 15, 43);
-    pixel(context, shade(palette.trousers, -0.2), center + 4, legTop, 15, 43);
-    pixel(context, palette.shoes, center - 23, legTop + 37, 23, 10);
-    pixel(context, palette.shoes, center + 3, legTop + 37, 23, 10);
+    const gait = description.visual.pose === 'walking' ? (description.visual.frame === 1 ? 5 : description.visual.frame === 3 ? -5 : 0) : 0;
+    pixel(context, palette.trousers, center - 19 + gait, legTop, 15, 43);
+    pixel(context, shade(palette.trousers, -0.2), center + 4 - gait, legTop, 15, 43);
+    pixel(context, palette.shoes, center - 23 + gait, legTop + 37, 23, 10);
+    pixel(context, palette.shoes, center + 3 - gait, legTop + 37, 23, 10);
   } else {
     pixel(context, palette.trousers, center - 22, legTop - 3, 20, 28);
     pixel(context, shade(palette.trousers, -0.2), center + 2, legTop - 3, 20, 28);
@@ -254,12 +270,20 @@ function drawSprite(context: PixelContext, description: SpriteDescription): void
   // Arme sind immer am Schultergelenk verankert. Die Hände enden am jeweiligen Requisit.
   const armY = shoulderY + 8;
   const handY = seated ? shoulderY + 48 : shoulderY + 38;
-  pixel(context, coatDark, torsoX - 10, armY, 11, handY - armY + 5);
-  pixel(context, palette.coat, torsoX - 8, armY + 2, 8, handY - armY);
-  pixel(context, coatDark, torsoX + bodyWidth - 1, armY, 11, handY - armY + 5);
-  pixel(context, palette.coat, torsoX + bodyWidth, armY + 2, 8, handY - armY);
-  pixel(context, skinDark, torsoX - 9, handY, 11, 10);
-  pixel(context, palette.skin, torsoX + bodyWidth - 1, handY, 11, 10);
+  const gestureLift = description.visual.frame === 1 || description.visual.frame === 2 ? 8 : 3;
+  const poseMotion = ([0, -5, 0, 4] as const)[description.visual.frame];
+  const activePose = description.visual.pose !== 'waiting';
+  const baseLeftHandY = description.visual.pose === 'walking' ? handY + poseMotion : activePose ? handY + Math.min(0, poseMotion) : handY;
+  const baseRightHandY = description.visual.pose === 'walking' ? handY - poseMotion : activePose ? handY - Math.max(0, poseMotion) : handY;
+  const leftHandY = description.visual.gesture === 'wave' ? shoulderY - 13 + gestureLift : description.visual.gesture === 'compare' ? handY - 12 : baseLeftHandY;
+  const rightHandY = description.visual.gesture === 'toast' || description.visual.gesture === 'swap' ? handY - 17
+    : description.visual.gesture === 'startle' || description.visual.gesture === 'clean' ? handY - 12 : baseRightHandY;
+  pixel(context, coatDark, torsoX - 10, Math.min(armY, leftHandY), 11, Math.abs(leftHandY - armY) + 9);
+  pixel(context, palette.coat, torsoX - 8, Math.min(armY + 2, leftHandY), 8, Math.abs(leftHandY - armY) + 4);
+  pixel(context, coatDark, torsoX + bodyWidth - 1, Math.min(armY, rightHandY), 11, Math.abs(rightHandY - armY) + 9);
+  pixel(context, palette.coat, torsoX + bodyWidth, Math.min(armY + 2, rightHandY), 8, Math.abs(rightHandY - armY) + 4);
+  pixel(context, skinDark, torsoX - 9, leftHandY, 11, 10);
+  pixel(context, palette.skin, torsoX + bodyWidth - 1, rightHandY, 11, 10);
 
   face(context, description, headX, headY + 4, headWidth, headHeight);
   hair(context, description, headX, headY, headWidth);
@@ -303,56 +327,131 @@ function spriteKey(description: SpriteDescription): string {
     description.palette.accent, description.palette.trousers, description.palette.shoes,
     description.appearance.body, description.appearance.face, description.appearance.hair,
     description.appearance.outfit, description.appearance.detail, description.appearance.maturity,
-    description.seated, description.activity, description.accessory, description.regular, description.barista].join('|');
+    description.seated, description.activity, description.accessory, description.regular, description.barista,
+    description.visual.frame, description.visual.expression, description.visual.gesture].join('|');
+}
+
+interface DisposableTexture {
+  dispose(): void;
+}
+
+interface TextureCacheEntry<T extends DisposableTexture> {
+  readonly value: T;
+  lastUsedFrame: number;
+  active: boolean;
+}
+
+/** LRU bounded by inactive entries; textures touched in the current frame are protected. */
+export class FrameTextureCache<T extends DisposableTexture> {
+  private readonly entries = new Map<string, TextureCacheEntry<T>>();
+  private frame = 0;
+
+  constructor(readonly maxInactiveEntries = 192) {}
+
+  get size(): number {
+    return this.entries.size;
+  }
+
+  get inactiveSize(): number {
+    return [...this.entries.values()].filter((entry) => !entry.active).length;
+  }
+
+  beginFrame(): void {
+    this.frame += 1;
+    for (const entry of this.entries.values()) entry.active = false;
+  }
+
+  getOrCreate(key: string, create: () => T): T {
+    let entry = this.entries.get(key);
+    if (!entry) {
+      entry = { value: create(), lastUsedFrame: this.frame, active: true };
+      this.entries.set(key, entry);
+    }
+    entry.lastUsedFrame = this.frame;
+    entry.active = true;
+    return entry.value;
+  }
+
+  endFrame(): void {
+    const inactive = [...this.entries.entries()]
+      .filter(([, entry]) => !entry.active)
+      .sort(([, left], [, right]) => left.lastUsedFrame - right.lastUsedFrame);
+    const removeCount = Math.max(0, inactive.length - Math.max(0, this.maxInactiveEntries));
+    for (const [key, entry] of inactive.slice(0, removeCount)) {
+      entry.value.dispose();
+      this.entries.delete(key);
+    }
+  }
+
+  clear(): void {
+    for (const entry of this.entries.values()) entry.value.dispose();
+    this.entries.clear();
+  }
 }
 
 export class SpriteTextureLibrary {
-  private readonly textures = new Map<string, CanvasTexture>();
+  private readonly textures = new FrameTextureCache<CanvasTexture>(192);
 
-  forGuest(guest: Guest, venue: VenueKind): Texture {
+  get cacheSize(): number {
+    return this.textures.size;
+  }
+
+  get inactiveCacheSize(): number {
+    return this.textures.inactiveSize;
+  }
+
+  beginFrame(): void {
+    this.textures.beginFrame();
+  }
+
+  endFrame(): void {
+    this.textures.endFrame();
+  }
+
+  forGuest(guest: Guest, venue: VenueKind, visual: CharacterVisualState): Texture {
     return this.texture({
       palette: guest.palette,
       appearance: guest.appearance,
       seated: guest.state === 'activity',
-      activity: guest.activity,
+      activity: visual.pose,
       accessory: guest.accessory,
       regular: Boolean(guest.regularId),
       venue,
       barista: false,
+      visual,
     });
   }
 
-  forBarista(barista: Barista, venue: VenueKind): Texture {
+  forBarista(_barista: Barista, venue: VenueKind, visual: CharacterVisualState): Texture {
     return this.texture({
       palette: BARISTA_PALETTES[venue],
       appearance: BARISTA_APPEARANCE,
       seated: false,
-      activity: barista.task,
+      activity: visual.pose,
       regular: false,
       venue,
       barista: true,
+      visual,
     });
   }
 
   dispose(): void {
-    for (const texture of this.textures.values()) texture.dispose();
     this.textures.clear();
   }
 
   private texture(description: SpriteDescription): CanvasTexture {
     const key = spriteKey(description);
-    const cached = this.textures.get(key);
-    if (cached) return cached;
-    const canvas = document.createElement('canvas');
-    canvas.width = DIORAMA.spriteWidth;
-    canvas.height = DIORAMA.spriteHeight;
-    const context = canvas.getContext('2d', { alpha: true, colorSpace: 'srgb' });
-    if (!context) throw new Error('Pixelsprites können in diesem Browser nicht erzeugt werden.');
-    drawSprite(context, description);
-    const texture = configureTexture(canvas);
-    texture.name = `character:${key}`;
-    this.textures.set(key, texture);
-    return texture;
+    return this.textures.getOrCreate(key, () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = DIORAMA.spriteWidth;
+      canvas.height = DIORAMA.spriteHeight;
+      const context = canvas.getContext('2d', { alpha: true, colorSpace: 'srgb' });
+      if (!context) throw new Error('Pixelsprites können in diesem Browser nicht erzeugt werden.');
+      drawSprite(context, description);
+      const texture = configureTexture(canvas);
+      texture.name = `character:${key}`;
+      return texture;
+    });
   }
 }
 

@@ -1,4 +1,4 @@
-import { CafeAudio } from './audio';
+import { CafeAudio, REACTION_ACCENT_MAX_GAIN } from './audio';
 import { CafeCamera } from './camera';
 import { CafeSimulation, type CafeSimulationOptions } from './simulation/cafeSimulation';
 import type { AccidentKind, CafeMoment, CafeMomentKind, CafeStoryKind } from './simulation/types';
@@ -36,9 +36,15 @@ const MOMENT_MESSAGES: Readonly<Record<CafeMomentKind, string>> = {
   'arcade-duel': 'Zwei Gäste fordern sich zu einer freundlichen Arcade-Runde heraus.',
   'arcade-high-score': 'Ein neuer Highscore lässt die kleinen Bildschirme kurz aufleuchten.',
   'umbrella-handoff': 'Zwei Gäste falten einen tropfenden Schirm zusammen und teilen ein Lächeln.',
+  'foam-moustache': 'Ein kleiner Milchschaumbart sorgt am Café-Tisch für leises Gelächter.',
+  'sugar-packet-domino': 'Zuckerpäckchen kippen wie Dominosteine über den Café-Tisch.',
+  'steam-glasses': 'Der Ramendampf beschlägt eine Brille und wird lachend weggewischt.',
+  'chopstick-drop': 'Ein Stäbchen fällt klappernd zu Boden und wird schnell aufgehoben.',
+  'ticket-stream': 'Ein langer Ticketstreifen kringelt sich durch die Arcade-Halle.',
+  'button-mash-sync': 'Zwei Gäste finden gleichzeitig denselben Arcade-Rhythmus.',
 };
 
-const STORY_MESSAGES: Readonly<Record<CafeStoryKind, readonly [string, string]>> = {
+const STORY_MESSAGES: Readonly<Record<CafeStoryKind, readonly string[]>> = {
   sketchbook: [
     'Mara schlägt ihr abgewetztes Skizzenbuch auf und arbeitet an einer neuen Zeichnung.',
     'Mara hängt ihre fertige kleine Skizze neben dem Fenster auf.',
@@ -54,6 +60,21 @@ const STORY_MESSAGES: Readonly<Record<CafeStoryKind, readonly [string, string]>>
   'arcade-rivals': [
     'Sora und Kai treffen sich an einem Tisch zur freundlichen Revanche.',
     'Sora und Kai feiern gemeinsam einen neuen Highscore – die Revanche bleibt offen.',
+  ],
+  'order-mixup': [
+    'Bo und Cleo erhalten die falschen Getränke und schauen überrascht von Tasse zu Tasse.',
+    'Bo und Cleo vergleichen die Bestellungen – dann wird der kleine Irrtum klar.',
+    'Die Getränke werden getauscht, Bo und Cleo stoßen lachend miteinander an.',
+  ],
+  'noodle-mishap': [
+    'Jun zieht eine erstaunlich lange Nudel aus der dampfenden Schüssel.',
+    'Ein winziger Brühespritzer überrascht Jun und Emi am Ramen-Tisch.',
+    'Jun und Emi lachen, reichen Servietten weiter und retten die Nudel.',
+  ],
+  'glitched-coop': [
+    'Vor Ari und Mika flackert ein Arcade-Automat verdächtig auf.',
+    'Die Steuerungen scheinen vertauscht – Ari und Mika spielen einfach gemeinsam weiter.',
+    'Ein zufälliger Co-op-Sieg lässt Ari und Mika unter dem Highscore aufleuchten.',
   ],
 };
 
@@ -90,6 +111,8 @@ function simulationOptions(): CafeSimulationOptions {
   const momentKinds: readonly CafeMomentKind[] = [
     'shared-cake', 'card-game', 'window-gaze', 'sketch-reveal', 'coffee-tasting',
     'ramen-slurp', 'arcade-duel', 'arcade-high-score', 'umbrella-handoff',
+    'foam-moustache', 'sugar-packet-domino', 'steam-glasses', 'chopstick-drop',
+    'ticket-stream', 'button-mash-sync',
   ];
   if (momentKinds.includes(requestedMoment as CafeMomentKind)) {
     options.initialGuests = Math.max(options.initialGuests ?? 0, requestedMoment === 'window-gaze' ? 2 : 4);
@@ -102,9 +125,15 @@ function simulationOptions(): CafeSimulationOptions {
     };
   }
   const requestedStory = parameters.get('story');
-  const storyKinds: readonly CafeStoryKind[] = ['sketchbook', 'first-date', 'knit-gift', 'arcade-rivals'];
+  const storyKinds: readonly CafeStoryKind[] = [
+    'sketchbook', 'first-date', 'knit-gift', 'arcade-rivals',
+    'order-mixup', 'noodle-mishap', 'glitched-coop',
+  ];
   if (storyKinds.includes(requestedStory as CafeStoryKind)) {
-    options.initialGuests = Math.max(options.initialGuests ?? 0, requestedStory === 'arcade-rivals' ? 6 : 4);
+    const storyGuests = requestedStory === 'order-mixup' ? 6
+      : requestedStory === 'arcade-rivals' || requestedStory === 'glitched-coop' ? 4
+        : requestedStory === 'noodle-mishap' ? 2 : 4;
+    options.initialGuests = Math.max(options.initialGuests ?? 0, storyGuests);
     options.moments = false;
     options.stories = {
       seed: 0x5707_2026,
@@ -155,6 +184,7 @@ export class KaffeepauseApp {
   private idleTimer?: number;
   private lastAnnouncedAccidentId = 0;
   private lastAnnouncedMomentId = 0;
+  private lastReactionAudioToken = 0;
   private selectedVenue: VenueKind = DEFAULT_VENUE;
 
   start(): void {
@@ -182,6 +212,8 @@ export class KaffeepauseApp {
     document.addEventListener('visibilitychange', this.visibilityChanged);
     this.motionQuery.addEventListener('change', this.updateMotionPreference);
     window.addEventListener('pagehide', this.destroy, { once: true });
+    this.canvas.addEventListener('pointermove', this.pointerMoved);
+    this.canvas.addEventListener('pointerleave', this.pointerLeft);
     document.body.dataset.uiIdle = 'false';
     this.updateFullscreenState();
     this.scheduleRendererPreparation();
@@ -374,6 +406,15 @@ export class KaffeepauseApp {
     this.scheduleIdle();
   };
 
+  private readonly pointerMoved = (event: PointerEvent): void => {
+    if (!this.entered || event.pointerType !== 'mouse') return;
+    this.lifecycle?.setPointerSample({ x: event.clientX, y: event.clientY });
+  };
+
+  private readonly pointerLeft = (): void => {
+    this.lifecycle?.clearPointerSample();
+  };
+
   private readonly keyPressed = (event: KeyboardEvent): void => {
     this.noteActivity();
     if (event.key !== 'Escape' || !document.fullscreenElement || !this.supportsFullscreen()) return;
@@ -425,6 +466,11 @@ export class KaffeepauseApp {
       this.audio.playMoment(moment.kind);
     }
     this.lifecycle.renderOnce(this.elapsed, scene);
+    const reactionToken = Number(this.canvas.dataset.reactionToken ?? 0);
+    if (reactionToken > this.lastReactionAudioToken) {
+      this.lastReactionAudioToken = reactionToken;
+      if (this.audio.playReaction()) this.canvas.dataset.reactionAudioGain = String(REACTION_ACCENT_MAX_GAIN);
+    }
 
     const reducedTier = this.qualityGovernor?.observeVisibleFrame(frameDurationMs);
     if (reducedTier) {
@@ -489,6 +535,8 @@ export class KaffeepauseApp {
     if (this.idleTimer !== undefined) window.clearTimeout(this.idleTimer);
     this.environmentUnsubscribe?.();
     this.environment.stop();
+    this.canvas.removeEventListener('pointermove', this.pointerMoved);
+    this.canvas.removeEventListener('pointerleave', this.pointerLeft);
     this.lifecycle?.dispose();
     void this.audio.destroy();
   };

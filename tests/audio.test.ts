@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { soundDetailDelayMs } from '../src/audio';
+import { REACTION_ACCENT_MAX_GAIN, soundDetailDelayMs } from '../src/audio';
 
 describe('Soundscape-Rhythmus', () => {
+  it('begrenzt den dekorativen Reaktionsakzent auf einen kaum hörbaren Pegel', () => {
+    expect(REACTION_ACCENT_MAX_GAIN).toBeLessThanOrEqual(0.008);
+  });
   it('streut kleine Raumdetails über ruhige, ortsabhängige Intervalle', () => {
     expect(soundDetailDelayMs('cafe', 0, 0)).toBe(10_500);
     expect(soundDetailDelayMs('ramen', 0, 1)).toBe(18_000);

@@ -26,10 +26,10 @@ describe('HD-2D-Masterauflösung', () => {
   });
 
   it('definiert die drei internen Stufen mit realen Render- und Effektgrenzen', () => {
-    expect(RENDER_QUALITY_PROFILES.master).toMatchObject({ renderScale: 6, shadowMapSize: 2048, bloom: 'full' });
-    expect(RENDER_QUALITY_PROFILES.balanced).toMatchObject({ renderScale: 4, shadowMapSize: 1024, bloom: 'reduced' });
+    expect(RENDER_QUALITY_PROFILES.master).toMatchObject({ renderScale: 6, shadowMapSize: 2048, bloom: 'full', characterFrameRate: 6 });
+    expect(RENDER_QUALITY_PROFILES.balanced).toMatchObject({ renderScale: 4, shadowMapSize: 1024, bloom: 'reduced', characterFrameRate: 4 });
     expect(RENDER_QUALITY_PROFILES.fallback).toMatchObject({
-      renderScale: 3, shadowMapSize: 512, bloom: 'off', miniatureBlur: 'simplified',
+      renderScale: 3, shadowMapSize: 512, bloom: 'off', miniatureBlur: 'simplified', characterFrameRate: 3,
     });
     expect(lowerQualityTier('master')).toBe('balanced');
     expect(lowerQualityTier('balanced')).toBe('fallback');

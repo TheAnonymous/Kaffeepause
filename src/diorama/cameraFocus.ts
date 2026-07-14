@@ -1,0 +1,122 @@
+export type CameraFocusSource = 'story' | 'accident' | 'reaction' | 'moment' | 'conversation';
+
+export interface CameraFocusCandidate {
+  readonly source: CameraFocusSource;
+  readonly key: string;
+  readonly worldX: number;
+}
+
+export interface CameraFocusState {
+  readonly active: boolean;
+  readonly source?: CameraFocusSource;
+  readonly key?: string;
+  readonly worldX?: number;
+  readonly amount: number;
+  readonly fieldOfView: number;
+}
+
+const PRIORITY: Readonly<Record<CameraFocusSource, number>> = {
+  story: 5,
+  accident: 4,
+  reaction: 3,
+  moment: 2,
+  conversation: 1,
+};
+
+const DURATION: Readonly<Record<CameraFocusSource, number>> = {
+  story: 8,
+  accident: 8,
+  reaction: 3.2,
+  moment: 6,
+  conversation: 4.2,
+};
+
+export const CAMERA_FOCUS_ENTER_SECONDS = 0.9;
+export const CAMERA_FOCUS_EXIT_SECONDS = 1.2;
+export const CAMERA_CONVERSATION_COOLDOWN_SECONDS = 18;
+export const CAMERA_OVERVIEW_FOV = 30;
+export const CAMERA_FOCUS_FOV = 24;
+
+interface ActiveFocus {
+  readonly source: CameraFocusSource;
+  readonly key: string;
+  readonly worldX: number;
+  readonly startedAt: number;
+  readonly exitAt: number;
+  readonly endsAt: number;
+}
+
+function clamp(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+export function cameraFocusEase(progress: number): number {
+  const value = clamp(progress);
+  return value * value * (3 - 2 * value);
+}
+
+export function participantMidpoint(values: readonly number[]): number | undefined {
+  if (values.length === 0) return undefined;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+export class CameraFocusDirector {
+  private current?: ActiveFocus;
+  private readonly completedKeys = new Set<string>();
+  private lastConversationFocusAt = Number.NEGATIVE_INFINITY;
+
+  reset(): void {
+    this.current = undefined;
+  }
+
+  update(now: number, candidates: readonly CameraFocusCandidate[], reducedMotion = false): CameraFocusState {
+    if (reducedMotion) {
+      this.reset();
+      return { active: false, amount: 0, fieldOfView: CAMERA_OVERVIEW_FOV };
+    }
+
+    if (this.current && now >= this.current.endsAt) {
+      this.completedKeys.add(`${this.current.source}:${this.current.key}`);
+      this.current = undefined;
+    }
+
+    const eligible = candidates
+      .filter((candidate) => this.canStart(candidate, now))
+      .sort((left, right) => PRIORITY[right.source] - PRIORITY[left.source]);
+    const next = eligible[0];
+    const shouldStart = next && (!this.current || PRIORITY[next.source] > PRIORITY[this.current.source]);
+    if (shouldStart) this.start(next, now);
+
+    const current = this.current;
+    if (!current) return { active: false, amount: 0, fieldOfView: CAMERA_OVERVIEW_FOV };
+    const amount = now < current.exitAt
+      ? cameraFocusEase((now - current.startedAt) / CAMERA_FOCUS_ENTER_SECONDS)
+      : 1 - cameraFocusEase((now - current.exitAt) / CAMERA_FOCUS_EXIT_SECONDS);
+    return {
+      active: true,
+      source: current.source,
+      key: current.key,
+      worldX: current.worldX,
+      amount,
+      fieldOfView: CAMERA_OVERVIEW_FOV - (CAMERA_OVERVIEW_FOV - CAMERA_FOCUS_FOV) * amount,
+    };
+  }
+
+  private canStart(candidate: CameraFocusCandidate, now: number): boolean {
+    if (this.current?.source === candidate.source && this.current.key === candidate.key) return false;
+    if (candidate.source === 'conversation') return now - this.lastConversationFocusAt >= CAMERA_CONVERSATION_COOLDOWN_SECONDS;
+    return !this.completedKeys.has(`${candidate.source}:${candidate.key}`);
+  }
+
+  private start(candidate: CameraFocusCandidate, now: number): void {
+    if (this.current) this.completedKeys.add(`${this.current.source}:${this.current.key}`);
+    const duration = DURATION[candidate.source];
+    this.current = {
+      ...candidate,
+      startedAt: now,
+      exitAt: now + Math.max(CAMERA_FOCUS_ENTER_SECONDS, duration - CAMERA_FOCUS_EXIT_SECONDS),
+      endsAt: now + duration,
+    };
+    if (candidate.source === 'conversation') this.lastConversationFocusAt = now;
+  }
+}

@@ -6,14 +6,14 @@ Ein autonomes Pixel-Art-Diorama für eine kleine Pause im Browser.
 
 ## Über das Projekt
 
-Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen-Restaurant oder eine ruhige Arcade-Halle. Alle drei Varianten teilen sich die autonome, kollisionsbewusste Gäste-Simulation, erhalten aber jeweils eigene Einrichtung, Palette, Theke, Lichtdetails und zurückhaltende Klangfarbe. Gerätezeit, Sonnenstand, Wetter und Tagesprofil verändern Außenwelt, Licht, Auslage, Geräuschkulisse und Belegung weich. Gäste kommen und gehen, bestellen, lesen, arbeiten, zeichnen, telefonieren, reden und trinken – vollständig selbstständig und ohne sichtbaren Schleifensprung. Wiederkehrende Stammgäste bringen ruhige Geschichten mit: Mara füllt und hängt eine Skizze auf, Noor und Toni verbringen einen ersten Abend miteinander, Linn verschenkt etwas Selbstgestricktes. Dazwischen verbinden kleine Alltagsmomente die Szene.
+Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen-Restaurant oder eine ruhige Arcade-Halle. Alle drei Varianten teilen sich die autonome, kollisionsbewusste Gäste-Simulation, erhalten aber jeweils eigene Einrichtung, Palette, Theke, Lichtdetails und zurückhaltende Klangfarbe. Gerätezeit, Sonnenstand, Wetter und Tagesprofil verändern Außenwelt, Licht, Auslage, Geräuschkulisse und Belegung weich. Gäste kommen und gehen, bestellen, lesen, arbeiten, zeichnen, telefonieren, reden und trinken – vollständig selbstständig und ohne sichtbaren Schleifensprung. Zwölf venuegebundene Stammgäste bringen ruhige und verspielte Geschichten mit, von Maras Skizzenbuch bis zu einer vertauschten Bestellung, einer widerspenstigen Nudel und einem unerwarteten Co-op-Sieg. Dazwischen verbinden kleine Alltagsmomente die Szene.
 
 - vollständig prozedurale WebGL-Dioramen ohne fremde Spiel- oder Grafikassets
 - Auswahl zwischen Café, Ramen-Restaurant und Arcade-Halle vor dem Eintritt; keine nachträgliche Menühürde
 - echte 2304 × 1296-HD-Masterfläche (6×) mit 144 × 208 Pixel großen Original-Figurentexturen
 - perspektivische 2,5D-Kamera, physische Raumkörper, Möbel, Fenster, Tür, Bodenkontakt und echte Tiefenverdeckung
 - hochauflösende Gesichter, Haare, Stoffnähte, Hände, Schuhe, Accessoires und tätigkeitsgebundene Requisiten
-- animierte Pixel-Sprechblasen mit venueabhängiger Pseudosprache, abwechselnden Gesprächsrunden und Tipp-Effekt
+- animierte Pixel-Sprechblasen mit 15 gezeichneten Symbol-Emotes, semantischen Gesprächsfolgen und Reveal-Effekt
 - separate HD-2D-Kompositionskette für Bloom, Farblicht, Miniatur-Fokus und Vignette
 - zwölf deterministische Figuren-Silhouetten mit fünf Körperformen, vier Gesichtsformen, acht Frisuren, sechs Outfit-Schnitten, unterschiedlichen Größen, Hauttönen und persönlichen Details
 - bis zu acht Gäste mit lesbaren Tätigkeiten, Wetteraccessoires und einer detaillierten animierten Bedienung
@@ -21,7 +21,10 @@ Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen
 - ortsspezifische, simulationsgebundene Requisiten: Espressomaschine, Küchenpass, Arcade-Screens sowie belegte Tische und Warteschlangen
 - neun Gasttätigkeiten, darunter Tagebuchschreiben, Stricken und Brettspiel; Barista mahlt, verkostet und bedient
 - sanfte, deterministische Café-Momente mit eigenen Bild- und Klangdetails, die nicht mit Unfällen kollidieren
-- vier visuell wiedererkennbare Stammgäste mit seltenen, zusammenhängenden Mini-Geschichten
+- zwölf venuegebundene Stammgäste und sieben seltene, zusammenhängende Mini-Geschichten
+- vier lesbare Animationsposen für Gehen, Warten, Bestellen, neun Gasttätigkeiten und sieben Barista-Aufgaben
+- sanfter Ereignisfokus mit priorisierter Kameraregie; Reduced Motion hält die Übersicht vollständig statisch
+- rein dekorative Mausnähe-Reaktionen mit Blickkontakt, Geste, Emote und sehr leisem venueabhängigem Akzent
 - funktionierende Pixel-Wanduhr sowie lokaler Sonnenstand mit Dämmerung und Polarzuständen
 - klare, bewölkte, neblige, regnerische, verschneite und stürmische Außenwelten
 - räumliche Stadtsilhouette, Wetterpartikel und Stadtlichter hinter einer echten Glasscheibe
@@ -66,4 +69,4 @@ Die Simulation verwendet weiterhin stabile Szenenkoordinaten von 384 × 216. Der
 
 Tragende Simulationsmaße liegen in `src/scene/proportions.ts`, die physische Maßkette des Dioramas in `src/diorama/types.ts`. Die automatische Prüfung vergleicht Beziehungen wie Tisch zu Figur, Theke zu Personal, Tür zu Körperhöhe, Sitz- zu Stehhöhe, Texturauflösung und freie Laufwege. Der Canvas veröffentlicht die Ergebnisse zusätzlich über `data-proportion-check`, `data-diorama-scale-check` und `data-layout-score`.
 
-Im Entwicklungsserver lassen sich visuelle Szenen mit `?time=HH:MM`, `?weather=clear|cloudy|fog|rain|snow|storm`, `?lat=<Breite>` und `?lon=<Länge>` kombinieren. Genau eine Unfallart kann zusätzlich beschleunigt werden, zum Beispiel mit `?accident=tray-drop`, `?accident=coffee-spill` oder `?accident=umbrella-pop`; ebenso ein Alltagsmoment mit `?moment=shared-cake|card-game|window-gaze|sketch-reveal` oder eine Stammgast-Geschichte mit `?story=sketchbook|first-date|knit-gift`. Produktionsbuilds ignorieren sämtliche Testparameter.
+Im Entwicklungsserver lassen sich visuelle Szenen mit `?time=HH:MM`, `?weather=clear|cloudy|fog|rain|snow|storm`, `?lat=<Breite>` und `?lon=<Länge>` kombinieren. Genau eine Unfallart kann zusätzlich beschleunigt werden, zum Beispiel mit `?accident=tray-drop`, `?accident=coffee-spill` oder `?accident=umbrella-pop`. `?moment=` akzeptiert neben den bestehenden Szenen auch `foam-moustache`, `sugar-packet-domino`, `steam-glasses`, `chopstick-drop`, `ticket-stream` und `button-mash-sync`; `?story=` zusätzlich `order-mixup`, `noodle-mishap` und `glitched-coop`. Produktionsbuilds ignorieren sämtliche Testparameter.

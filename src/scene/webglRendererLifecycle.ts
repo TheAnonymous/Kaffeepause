@@ -5,6 +5,7 @@ import type { RenderQualityTier } from './renderQuality';
 import type { CafeEnvironmentSnapshot } from '../environment/types';
 import type { VenueKind } from '../venue';
 import type { SceneSnapshot } from './types';
+import type { PointerSample } from '../diorama/pointerReaction';
 
 class WebglRendererLifecycle implements RendererLifecycle {
   private readonly renderer: CafeRenderer;
@@ -47,6 +48,14 @@ class WebglRendererLifecycle implements RendererLifecycle {
 
   setQualityTier(tier: RenderQualityTier): void {
     this.renderer.setQualityTier(tier);
+  }
+
+  setPointerSample(sample: PointerSample): void {
+    this.renderer.setPointerSample(sample);
+  }
+
+  clearPointerSample(): void {
+    this.renderer.clearPointerSample();
   }
 
   dispose(): void {

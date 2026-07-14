@@ -94,14 +94,14 @@ describe('Cafe-Unfälle', () => {
     for (const resourceId of resourcesBefore) expect(simulation.reservations.ownerOf(resourceId)).toBe(guest.id);
   });
 
-  it('lässt den Schirmgast wirklich ausweichen und gibt danach sein Originalziel zurück', () => {
+  it('choreografiert das Ausweichen rein visuell und lässt Simulationsposition und Ziel unverändert', () => {
     const { simulation, guest } = makeAccidentSimulation('umbrella-pop');
     const targetBefore = point(guest.target);
     updateUntil(simulation, () => simulation.activeAccident?.phase === 'chaos');
     const positionBefore = point(guest.position);
     simulation.update(0.1);
 
-    expect(guest.position).not.toEqual(positionBefore);
+    expect(guest.position).toEqual(positionBefore);
     expect(simulation.activeAccident?.detour).toBeDefined();
     updateUntil(simulation, () => simulation.stats.accidentsCompleted === 1);
     expect(guest.target).toEqual(targetBefore);

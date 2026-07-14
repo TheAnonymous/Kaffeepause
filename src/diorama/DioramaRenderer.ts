@@ -22,6 +22,7 @@ import {
   Scene,
   SRGBColorSpace,
   Vector2,
+  Vector3,
   WebGLRenderer,
   type Texture,
 } from 'three';
@@ -47,6 +48,22 @@ import { calculateDioramaLook, type DioramaLook } from './look';
 import { calculateDialogue, type DialogueLine } from './dialogue';
 import { SPEECH_BUBBLE_RESOLUTION, SpeechBubble } from './speechBubble';
 import { SpriteTextureLibrary } from './spriteFactory';
+import {
+  calculateBaristaVisualState,
+  calculateGuestVisualState,
+  type CharacterVisualState,
+} from './characterVisualState';
+import {
+  PointerReactionController,
+  type ActivePointerReaction,
+  type PointerSample,
+  type ReactionTarget,
+} from './pointerReaction';
+import {
+  CameraFocusDirector,
+  participantMidpoint,
+  type CameraFocusState,
+} from './cameraFocus';
 import { DIORAMA, DIORAMA_SCALE_REPORT, cameraPanForWorldX, worldToDiorama, type DioramaSet } from './types';
 import { buildVenue } from './venueBuilder';
 
@@ -153,6 +170,12 @@ export class DioramaRenderer {
   private sceneWidth = WORLD_WIDTH;
   private doorOpen = 0;
   private activeSpeechBubbles = 0;
+  private pointerSample?: PointerSample;
+  private readonly pointerReactions = new PointerReactionController();
+  private activeReaction?: ActivePointerReaction;
+  private reactionTargets: readonly ReactionTarget[] = [];
+  private readonly focusDirector = new CameraFocusDirector();
+  private focusState: CameraFocusState = { active: false, amount: 0, fieldOfView: 30 };
   private qualityTier: RenderQualityTier;
   private qualityProfile: RenderQualityProfile;
   private renderCount = 0;
@@ -229,13 +252,27 @@ export class DioramaRenderer {
     canvas.dataset.characterDetail = `${DIORAMA.spriteWidth}x${DIORAMA.spriteHeight}-original-pixel-sprite`;
     canvas.dataset.navigation = 'collision-aware';
     canvas.dataset.optics = 'hd-2d-diorama';
-    canvas.dataset.speechLanguage = 'procedural-pseudo-language';
+    canvas.dataset.speechLanguage = 'symbolic-emotes';
     canvas.dataset.speechBubbleResolution = SPEECH_BUBBLE_RESOLUTION;
     canvas.dataset.renderCount = '0';
+    canvas.dataset.reactingCharacter = 'none';
+    canvas.dataset.reaction = 'none';
+    canvas.dataset.cameraFocus = 'none';
+    canvas.dataset.cameraFocusSource = 'none';
+    canvas.dataset.emoteBubbles = '0';
   }
 
   setActive(active: boolean): void {
     this.active = active;
+  }
+
+  setPointerSample(sample: PointerSample): void {
+    this.pointerSample = sample;
+  }
+
+  clearPointerSample(): void {
+    this.pointerSample = undefined;
+    this.pointerReactions.clearPointer();
   }
 
   setQualityTier(tier: RenderQualityTier): void {
@@ -295,10 +332,13 @@ export class DioramaRenderer {
   render(elapsed: number, snapshot: SceneSnapshot): void {
     const time = this.active ? elapsed : 0;
     this.applyLook(time);
+    this.updatePointerReaction(snapshot, time);
+    const dialogue = this.active ? calculateDialogue(snapshot, time, this.venue, this.reducedMotion, this.activeReaction) : [];
+    this.updateFocus(snapshot, time, dialogue);
     this.updateCamera();
     this.updateVenue(time);
     this.updateDoor(snapshot.guests);
-    this.updateCharacters(snapshot, time);
+    this.updateCharacters(snapshot, time, dialogue);
     this.updateWeather(time);
     this.updateEvent(snapshot, time);
     this.composer.render();
@@ -366,12 +406,79 @@ export class DioramaRenderer {
     this.canvas.dataset.shadowMapSize = String(profile.shadowMapSize);
     this.canvas.dataset.bloomPass = profile.bloom;
     this.canvas.dataset.miniatureBlur = profile.miniatureBlur;
+    this.canvas.dataset.characterFrameRate = String(profile.characterFrameRate);
+  }
+
+  private updatePointerReaction(snapshot: SceneSnapshot, time: number): void {
+    this.reactionTargets = [
+      ...snapshot.guests.map((guest) => this.projectReactionTarget(guest.id, guest.position)),
+      this.projectReactionTarget('barista', snapshot.barista.position),
+    ];
+    const pointer = this.active ? this.pointerSample : undefined;
+    const update = this.pointerReactions.update(time, pointer, this.reactionTargets, this.venue);
+    this.activeReaction = update.active;
+    if (update.started) this.canvas.dataset.reactionToken = String(update.started.serial);
+  }
+
+  private projectReactionTarget(id: string | 'barista', position: Guest['position']): ReactionTarget {
+    const point = worldToDiorama(position);
+    const projected = new Vector3(point.x, id === 'barista' ? 1.55 : 1.35, point.z).project(this.perspective);
+    const bounds = this.canvas.getBoundingClientRect();
+    return {
+      id,
+      x: bounds.left + (projected.x + 1) * bounds.width / 2,
+      y: bounds.top + (1 - projected.y) * bounds.height / 2,
+    };
+  }
+
+  private updateFocus(snapshot: SceneSnapshot, time: number, dialogue: readonly DialogueLine[]): void {
+    const candidates = [];
+    const moment = snapshot.moment;
+    const participantX = moment
+      ? participantMidpoint(moment.participantIds
+        .map((id) => snapshot.guests.find((guest) => guest.id === id)?.position.x)
+        .filter((value): value is number => value !== undefined))
+      : undefined;
+    if (moment?.story && participantX !== undefined) {
+      candidates.push({ source: 'story' as const, key: String(moment.id), worldX: participantX });
+    }
+    if (snapshot.accident) {
+      candidates.push({ source: 'accident' as const, key: String(snapshot.accident.id), worldX: snapshot.accident.position.x });
+    }
+    if (this.activeReaction) {
+      const reactionX = this.activeReaction.characterId === 'barista'
+        ? snapshot.barista.position.x
+        : snapshot.guests.find((guest) => guest.id === this.activeReaction?.characterId)?.position.x;
+      if (reactionX !== undefined) candidates.push({ source: 'reaction' as const, key: String(this.activeReaction.serial), worldX: reactionX });
+    }
+    if (moment && !moment.story && participantX !== undefined) {
+      candidates.push({ source: 'moment' as const, key: String(moment.id), worldX: participantX });
+    }
+    const conversation = dialogue.find((line) => line.kind === 'conversation');
+    const conversationGuest = snapshot.guests.find((guest) => guest.id === conversation?.speakerId);
+    if (conversationGuest) {
+      candidates.push({
+        source: 'conversation' as const,
+        key: `${conversationGuest.id}:${Math.floor(time / 4.6)}`,
+        worldX: conversationGuest.position.x,
+      });
+    }
+    this.focusState = this.focusDirector.update(time, this.active ? candidates : [], this.reducedMotion);
+    this.camera.setFocusPaused(this.focusState.active);
   }
 
   private updateCamera(): void {
     const worldCenter = this.camera.x + this.sceneWidth / 2;
-    const targetX = cameraPanForWorldX(worldCenter) - DIORAMA.width / 2;
+    const overviewX = cameraPanForWorldX(worldCenter) - DIORAMA.width / 2;
+    const focusX = this.focusState.worldX === undefined
+      ? overviewX
+      : cameraPanForWorldX(this.focusState.worldX) - DIORAMA.width / 2;
+    const targetX = overviewX + (focusX - overviewX) * this.focusState.amount;
     this.perspective.position.x = targetX;
+    if (Math.abs(this.perspective.fov - this.focusState.fieldOfView) > 0.001) {
+      this.perspective.fov = this.focusState.fieldOfView;
+      this.perspective.updateProjectionMatrix();
+    }
     this.perspective.lookAt(targetX, 2.55, -0.2);
   }
 
@@ -397,8 +504,8 @@ export class DioramaRenderer {
     this.venueSet.doorPivot.rotation.y = this.doorOpen * 1.18;
   }
 
-  private updateCharacters(snapshot: SceneSnapshot, time: number): void {
-    const dialogue = this.active ? calculateDialogue(snapshot, time, this.venue, this.reducedMotion) : [];
+  private updateCharacters(snapshot: SceneSnapshot, time: number, dialogue: readonly DialogueLine[]): void {
+    this.spriteTextures.beginFrame();
     const lines = new Map(dialogue.map((line) => [line.speakerId, line]));
     this.activeSpeechBubbles = dialogue.length;
     const visibleIds = new Set(snapshot.guests.map((guest) => guest.id));
@@ -416,17 +523,38 @@ export class DioramaRenderer {
         this.guestNodes.set(guest.id, node);
         this.scene.add(node.root);
       }
-      this.updateGuestNode(node, guest, time, lines.get(guest.id));
+      const participantPositions = snapshot.moment?.participantIds
+        .map((id) => snapshot.guests.find((entry) => entry.id === id)?.position.x)
+        .filter((value): value is number => value !== undefined) ?? [];
+      const visual = calculateGuestVisualState({
+        guest,
+        moment: snapshot.moment,
+        accident: snapshot.accident,
+        reaction: this.activeReaction,
+        time,
+        frameRate: this.qualityProfile.characterFrameRate,
+        reducedMotion: this.reducedMotion,
+        participantCenterX: participantMidpoint(participantPositions),
+      });
+      this.updateGuestNode(node, guest, visual, lines.get(guest.id));
     }
-    this.updateBaristaNode(this.baristaNode, snapshot.barista, time, lines.get('barista'));
+    const baristaVisual = calculateBaristaVisualState({
+      barista: snapshot.barista,
+      accident: snapshot.accident,
+      reaction: this.activeReaction,
+      time,
+      frameRate: this.qualityProfile.characterFrameRate,
+      reducedMotion: this.reducedMotion,
+    });
+    this.updateBaristaNode(this.baristaNode, snapshot.barista, baristaVisual, lines.get('barista'));
+    this.spriteTextures.endFrame();
   }
 
-  private updateGuestNode(node: CharacterNode, guest: Guest, time: number, dialogue?: DialogueLine): void {
+  private updateGuestNode(node: CharacterNode, guest: Guest, visual: CharacterVisualState, dialogue?: DialogueLine): void {
     const point = worldToDiorama(guest.position);
-    const seated = guest.state === 'activity';
-    const bounce = this.active && !this.reducedMotion && !seated ? Math.abs(Math.sin(guest.animation * 5.5)) * 0.045 : 0;
-    node.root.position.set(point.x, 0.07 + bounce, point.z);
-    this.applySprite(node, this.spriteTextures.forGuest(guest, this.venue), seated, guest.facing);
+    const seated = visual.seated;
+    node.root.position.set(point.x + visual.offsetX, 0.07 + visual.offsetY, point.z);
+    this.applySprite(node, this.spriteTextures.forGuest(guest, this.venue, visual), seated, visual.facing);
     node.plane.rotation.copy(this.perspective.rotation);
     node.speech.mesh.rotation.copy(this.perspective.rotation);
     const tailLeft = point.x < -6 ? true : point.x > 6 ? false : guest.facing > 0;
@@ -434,19 +562,17 @@ export class DioramaRenderer {
     node.shadow.scale.set(seated ? 0.92 : 0.72, seated ? 1.3 : 1, 1);
     node.shadow.material.opacity = 0.22 + this.look.daylight * 0.09;
     node.root.renderOrder = Math.round(point.z * 100);
-    if (guest.state === 'ordering') node.root.position.y += Math.sin(time * 2.2 + guest.animation) * 0.012;
   }
 
-  private updateBaristaNode(node: CharacterNode, barista: Barista, time: number, dialogue?: DialogueLine): void {
+  private updateBaristaNode(node: CharacterNode, barista: Barista, visual: CharacterVisualState, dialogue?: DialogueLine): void {
     const point = worldToDiorama(barista.position);
-    const bounce = this.active && !this.reducedMotion ? Math.abs(Math.sin(barista.animation * 4.2)) * 0.025 : 0;
-    node.root.position.set(point.x, 0.07 + bounce, point.z);
-    this.applySprite(node, this.spriteTextures.forBarista(barista, this.venue), false, barista.facing);
+    node.root.position.set(point.x + visual.offsetX, 0.07 + visual.offsetY, point.z);
+    this.applySprite(node, this.spriteTextures.forBarista(barista, this.venue, visual), false, visual.facing);
     node.plane.rotation.copy(this.perspective.rotation);
     node.speech.mesh.rotation.copy(this.perspective.rotation);
     const tailLeft = point.x < -6 ? true : point.x > 6 ? false : barista.facing > 0;
     node.speech.update(dialogue, this.venue, tailLeft, DIORAMA.standingHeight);
-    if (barista.task === 'grinding') node.root.rotation.y = Math.sin(time * 8) * 0.012;
+    node.root.rotation.y = 0;
   }
 
   private applySprite(node: CharacterNode, texture: Texture, seated: boolean, facing: -1 | 1): void {
@@ -528,6 +654,18 @@ export class DioramaRenderer {
     this.canvas.dataset.clock = 'analog';
     this.canvas.dataset.clockTime = this.environment?.localTimeText ?? '00:00';
     this.canvas.dataset.speechBubbles = String(this.activeSpeechBubbles);
+    this.canvas.dataset.emoteBubbles = String(this.activeSpeechBubbles);
+    this.canvas.dataset.reactingCharacter = this.activeReaction?.characterId ?? 'none';
+    this.canvas.dataset.reaction = this.activeReaction?.gesture ?? 'none';
+    this.canvas.dataset.cameraFocus = this.focusState.active ? 'active' : 'none';
+    this.canvas.dataset.cameraFocusSource = this.focusState.source ?? 'none';
+    this.canvas.dataset.mobileTourPaused = String(this.camera.mode === 'tour' && this.focusState.active);
+    this.canvas.dataset.characterFrameRate = String(this.qualityProfile.characterFrameRate);
+    this.canvas.dataset.reactionTargets = this.reactionTargets
+      .map((target) => `${target.id}:${Math.round(target.x)},${Math.round(target.y)}`)
+      .join('|');
+    this.canvas.dataset.textureCache = String(this.spriteTextures.cacheSize);
+    this.canvas.dataset.inactiveTextures = String(this.spriteTextures.inactiveCacheSize);
   }
 
   private createCharacterNode(name: string): CharacterNode {
