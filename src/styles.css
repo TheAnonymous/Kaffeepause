@@ -196,6 +196,14 @@ h1 {
   line-height: 1.45;
 }
 
+.welcome .renderer-status {
+  min-height: 1.35em;
+  margin: -0.6rem auto 0.8rem;
+  color: #ecd5aa;
+  font-size: 0.73rem;
+  line-height: 1.35;
+}
+
 .attribution {
   position: absolute;
   z-index: 2;
@@ -231,7 +239,27 @@ button {
 
 #enter:hover { background: #f1bd72; transform: translate(-1px, -1px); box-shadow: 5px 5px 0 #8e4c3e; }
 #enter:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 #8e4c3e; }
+#enter:disabled {
+  cursor: wait;
+  opacity: 0.62;
+  transform: none;
+  box-shadow: 2px 2px 0 #6f4038;
+}
+
+.renderer-retry {
+  min-height: 2.6rem;
+  margin-left: 0.65rem;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid #e8bd7a;
+  color: #f7dfb2;
+  background: #4b303b;
+  box-shadow: 3px 3px 0 #251822;
+  font-size: 0.73rem;
+}
+
+.renderer-retry[hidden] { display: none; }
 #enter:focus-visible,
+.renderer-retry:focus-visible,
 .control:focus-visible,
 .venue-option:focus-visible { outline: 3px solid #fff2c2; outline-offset: 3px; }
 

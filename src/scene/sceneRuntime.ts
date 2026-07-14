@@ -1,14 +1,18 @@
 import { CafeCamera } from '../camera';
-import { CafeRenderer } from '../renderer';
 import { CafeSimulation } from '../simulation/cafeSimulation';
 import type { SceneSnapshot } from './types';
+
+export interface SceneRenderer {
+  setActive(active: boolean): void;
+  render(elapsed: number, snapshot: SceneSnapshot): void;
+}
 
 // Schlanke Laufzeit für das Diorama: Update, Kamera und Rendern bleiben in fester Reihenfolge.
 export class SceneRuntime {
   constructor(
     readonly simulation: CafeSimulation,
     readonly camera: CafeCamera,
-    readonly renderer: CafeRenderer,
+    readonly renderer: SceneRenderer,
   ) {}
 
   start(): void {

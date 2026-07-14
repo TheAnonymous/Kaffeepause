@@ -38,6 +38,11 @@ import type { VenueKind } from '../venue';
 import { APPEARANCE_LIBRARY_REPORT } from '../simulation/appearance';
 import { CAFE_LAYOUT_REPORT } from '../simulation/layout';
 import { SCENE_PROPORTION_REPORT, SCENE_PROPORTIONS } from '../scene/proportions';
+import {
+  RENDER_QUALITY_PROFILES,
+  type RenderQualityProfile,
+  type RenderQualityTier,
+} from '../scene/renderQuality';
 import { calculateDioramaLook, type DioramaLook } from './look';
 import { calculateDialogue, type DialogueLine } from './dialogue';
 import { SPEECH_BUBBLE_RESOLUTION, SpeechBubble } from './speechBubble';
@@ -62,6 +67,7 @@ const MINIATURE_SHADER = {
     vignette: { value: 0.22 },
     warmth: { value: 0.05 },
     time: { value: 0 },
+    simplifiedBlur: { value: 0 },
   },
   vertexShader: `
     varying vec2 vUv;
@@ -78,19 +84,27 @@ const MINIATURE_SHADER = {
     uniform float vignette;
     uniform float warmth;
     uniform float time;
+    uniform float simplifiedBlur;
     varying vec2 vUv;
 
     void main() {
       float distanceFromFocus = abs(vUv.y - focusBand);
       float miniatureBlur = smoothstep(0.18, 0.49, distanceFromFocus);
       vec2 offset = vec2(blurStrength * miniatureBlur, blurStrength * 0.62 * miniatureBlur);
-      vec4 color = texture2D(tDiffuse, vUv) * 0.32;
-      color += texture2D(tDiffuse, vUv + vec2(offset.x, 0.0)) * 0.12;
-      color += texture2D(tDiffuse, vUv - vec2(offset.x, 0.0)) * 0.12;
-      color += texture2D(tDiffuse, vUv + vec2(0.0, offset.y)) * 0.12;
-      color += texture2D(tDiffuse, vUv - vec2(0.0, offset.y)) * 0.12;
-      color += texture2D(tDiffuse, vUv + offset) * 0.10;
-      color += texture2D(tDiffuse, vUv - offset) * 0.10;
+      vec4 color;
+      if (simplifiedBlur > 0.5) {
+        color = texture2D(tDiffuse, vUv) * 0.76;
+        color += texture2D(tDiffuse, vUv + vec2(offset.x, 0.0)) * 0.12;
+        color += texture2D(tDiffuse, vUv - vec2(offset.x, 0.0)) * 0.12;
+      } else {
+        color = texture2D(tDiffuse, vUv) * 0.32;
+        color += texture2D(tDiffuse, vUv + vec2(offset.x, 0.0)) * 0.12;
+        color += texture2D(tDiffuse, vUv - vec2(offset.x, 0.0)) * 0.12;
+        color += texture2D(tDiffuse, vUv + vec2(0.0, offset.y)) * 0.12;
+        color += texture2D(tDiffuse, vUv - vec2(0.0, offset.y)) * 0.12;
+        color += texture2D(tDiffuse, vUv + offset) * 0.10;
+        color += texture2D(tDiffuse, vUv - offset) * 0.10;
+      }
       float edge = smoothstep(0.9, 0.22, distance(vUv, vec2(0.5)));
       color.rgb *= mix(1.0 - vignette, 1.0, edge);
       color.r += warmth * 0.018;
@@ -130,16 +144,22 @@ export class DioramaRenderer {
   private sceneWidth = WORLD_WIDTH;
   private doorOpen = 0;
   private activeSpeechBubbles = 0;
+  private qualityTier: RenderQualityTier;
+  private qualityProfile: RenderQualityProfile;
+  private renderCount = 0;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     private readonly camera: CafeCamera,
+    qualityTier: RenderQualityTier = 'master',
   ) {
+    this.qualityTier = qualityTier;
+    this.qualityProfile = RENDER_QUALITY_PROFILES[qualityTier];
     this.webgl = new WebGLRenderer({
       canvas,
       antialias: false,
       alpha: false,
-      preserveDrawingBuffer: true,
+      preserveDrawingBuffer: false,
       powerPreference: 'high-performance',
     });
     this.webgl.setPixelRatio(1);
@@ -182,6 +202,7 @@ export class DioramaRenderer {
     this.composer.addPass(renderPass);
     this.composer.addPass(this.bloom);
     this.composer.addPass(this.miniature);
+    this.applyQualityProfile();
 
     const checksPass = SCENE_PROPORTION_REPORT.valid && CAFE_LAYOUT_REPORT.valid
       && APPEARANCE_LIBRARY_REPORT.valid && DIORAMA_SCALE_REPORT.valid;
@@ -193,7 +214,7 @@ export class DioramaRenderer {
     canvas.dataset.characterDiversity = String(APPEARANCE_LIBRARY_REPORT.score);
     canvas.dataset.renderer = 'webgl-diorama';
     canvas.dataset.depthModel = 'physical-2.5d';
-    canvas.dataset.renderQuality = 'webgl-diorama-master';
+    canvas.dataset.renderQuality = `webgl-diorama-${qualityTier}`;
     canvas.dataset.masterResolution = '2304x1296';
     canvas.dataset.characterRasterHeight = String(DIORAMA.spriteHeight);
     canvas.dataset.characterDetail = `${DIORAMA.spriteWidth}x${DIORAMA.spriteHeight}-original-pixel-sprite`;
@@ -201,10 +222,19 @@ export class DioramaRenderer {
     canvas.dataset.optics = 'hd-2d-diorama';
     canvas.dataset.speechLanguage = 'procedural-pseudo-language';
     canvas.dataset.speechBubbleResolution = SPEECH_BUBBLE_RESOLUTION;
+    canvas.dataset.renderCount = '0';
   }
 
   setActive(active: boolean): void {
     this.active = active;
+  }
+
+  setQualityTier(tier: RenderQualityTier): void {
+    if (tier === this.qualityTier) return;
+    this.qualityTier = tier;
+    this.qualityProfile = RENDER_QUALITY_PROFILES[tier];
+    this.applyQualityProfile();
+    this.resize(this.reducedMotion);
   }
 
   setVenue(venue: VenueKind): void {
@@ -237,8 +267,8 @@ export class DioramaRenderer {
     this.sceneWidth = mobile
       ? Math.max(112, Math.min(210, Math.round(WORLD_HEIGHT * aspect)))
       : WORLD_WIDTH;
-    const width = this.sceneWidth * DIORAMA.renderScale;
-    const height = WORLD_HEIGHT * DIORAMA.renderScale;
+    const width = this.sceneWidth * this.qualityProfile.renderScale;
+    const height = WORLD_HEIGHT * this.qualityProfile.renderScale;
     this.webgl.setSize(width, height, false);
     this.composer.setSize(width, height);
     this.perspective.aspect = width / height;
@@ -246,7 +276,7 @@ export class DioramaRenderer {
     this.miniature.uniforms.resolution!.value.set(width, height);
     this.canvas.dataset.logicalWidth = String(width);
     this.canvas.dataset.sceneWidth = String(this.sceneWidth);
-    this.canvas.dataset.renderScale = String(DIORAMA.renderScale);
+    this.canvas.dataset.renderScale = String(this.qualityProfile.renderScale);
     this.canvas.dataset.particles = reducedMotion ? 'low' : 'full';
     this.camera.configure(this.sceneWidth, mobile, reducedMotion);
     this.canvas.dataset.cameraMode = this.camera.mode;
@@ -262,6 +292,8 @@ export class DioramaRenderer {
     this.updateWeather(time);
     this.updateEvent(snapshot, time);
     this.composer.render();
+    this.renderCount += 1;
+    this.canvas.dataset.renderCount = String(this.renderCount);
     this.updateDatasets(snapshot);
   }
 
@@ -292,12 +324,27 @@ export class DioramaRenderer {
     this.keyLight.intensity = 0.7 + this.look.daylight * 3.5;
     this.keyLight.position.x = this.look.fromRight ? 8 : -8;
     for (const light of this.venueSet.practicalLights) light.intensity = 11 + this.look.night * 22;
-    this.bloom.strength = this.look.bloom;
+    this.bloom.strength = this.look.bloom * this.qualityProfile.bloomStrength;
     this.miniature.uniforms.focusBand!.value = this.look.focusBand;
-    this.miniature.uniforms.blurStrength!.value = this.look.blur;
+    this.miniature.uniforms.blurStrength!.value = this.look.blur * this.qualityProfile.miniatureBlurStrength;
     this.miniature.uniforms.vignette!.value = 0.18 + this.look.night * 0.08;
     this.miniature.uniforms.warmth!.value = this.venue === 'arcade' ? -0.08 : 0.12 + this.look.night * 0.08;
     this.miniature.uniforms.time!.value = time;
+  }
+
+  private applyQualityProfile(): void {
+    const profile = this.qualityProfile;
+    this.bloom.enabled = profile.bloom !== 'off';
+    this.keyLight.shadow.map?.dispose();
+    this.keyLight.shadow.map = null;
+    this.keyLight.shadow.mapSize.set(profile.shadowMapSize, profile.shadowMapSize);
+    this.miniature.uniforms.simplifiedBlur!.value = profile.miniatureBlur === 'simplified' ? 1 : 0;
+    this.canvas.dataset.qualityTier = profile.tier;
+    this.canvas.dataset.renderScale = String(profile.renderScale);
+    this.canvas.dataset.renderQuality = `webgl-diorama-${profile.tier}`;
+    this.canvas.dataset.shadowMapSize = String(profile.shadowMapSize);
+    this.canvas.dataset.bloomPass = profile.bloom;
+    this.canvas.dataset.miniatureBlur = profile.miniatureBlur;
   }
 
   private updateCamera(): void {
