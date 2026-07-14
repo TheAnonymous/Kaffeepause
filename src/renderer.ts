@@ -1,7 +1,7 @@
 import { CafeCamera } from './camera';
 import { CafeSimulation } from './simulation/cafeSimulation';
 import { WORLD_HEIGHT, WORLD_WIDTH } from './simulation/layout';
-import type { Barista, CafeAccident, Guest } from './simulation/types';
+import type { Barista, CafeAccident, CafeMoment, Guest } from './simulation/types';
 import type { CafeEnvironmentSnapshot, DayPhase } from './environment/types';
 
 export const RENDER_SCALE = 2;
@@ -159,6 +159,9 @@ export class CafeRenderer {
     for (const guest of guests) this.drawGuest(guest);
 
     this.drawFurnitureFront();
+    const moment = this.simulation.activeMoment;
+    if (moment) this.drawMoment(moment);
+    this.drawCafeDetails(time);
     if (accident) this.drawAccident(accident);
     this.drawForeground(time);
     context.restore();
@@ -166,6 +169,7 @@ export class CafeRenderer {
     this.canvas.dataset.guestCount = String(this.simulation.guests.length);
     this.canvas.dataset.accident = accident?.kind ?? 'none';
     this.canvas.dataset.accidentPhase = accident?.phase ?? 'none';
+    this.canvas.dataset.moment = moment?.kind ?? 'none';
   }
 
   private drawRoom(time: number): void {
@@ -302,6 +306,8 @@ export class CafeRenderer {
       }
     }
 
+    this.drawOutsideLife(time);
+
     const wetness = clamp(((weather?.rain ?? 0) + (weather?.showers ?? 0)) / 4 + (weather?.kind === 'storm' ? 0.6 : 0));
     rect(context, mixColor('#5f6871', '#8295a2', wetness), 52, 93, 198, 1.5);
     rect(context, mixColor('#30394b', '#40596a', wetness), 52, 96, 198, 6);
@@ -391,6 +397,64 @@ export class CafeRenderer {
       rect(context, '#bdc4c5', x, y, HALF_PIXEL, 1 + (index % 3) * HALF_PIXEL);
       rect(context, '#53677e', x, y + 1.5 + (index % 3) * HALF_PIXEL, HALF_PIXEL, HALF_PIXEL);
       if (index % 4 === 0) rect(context, '#d9d3c5', x - HALF_PIXEL, y, HALF_PIXEL, HALF_PIXEL);
+    }
+  }
+
+  private drawOutsideLife(time: number): void {
+    const context = this.context;
+    const weather = this.environment?.weather;
+    const date = this.environment?.localTime ?? new Date(2026, 6, 14);
+    const month = date.getMonth();
+    const season = month === 11 || month <= 1 ? 'winter' : month <= 4 ? 'spring' : month <= 7 ? 'summer' : 'autumn';
+    this.canvas.dataset.season = season;
+
+    const activeTime = this.active && !this.reducedMotion ? time : 0;
+    const rain = weather?.kind === 'rain' || weather?.kind === 'storm';
+    const snow = weather?.kind === 'snow';
+    for (let index = 0; index < 3; index += 1) {
+      const direction = index % 2 === 0 ? 1 : -1;
+      const travel = ((activeTime * (2.2 + index * 0.42) * direction + index * 71) % 236 + 236) % 236;
+      const x = 49 + travel;
+      const ground = 96 + (index % 2) * 2;
+      const coat = index === 0 ? '#8e5d56' : index === 1 ? '#52706f' : '#7b6a49';
+      rect(context, '#222836', x - 2, ground - 11, 5, 10);
+      rect(context, coat, x - 2.5, ground - 10, 6, 7);
+      rect(context, '#d4a17d', x - 1.5, ground - 15, 4, 5);
+      rect(context, '#30252c', x - 2, ground, 2, 1);
+      rect(context, '#30252c', x + 1, ground, 2, 1);
+      if (rain || snow) {
+        rect(context, '#b6945a', x + 4, ground - 15, HALF_PIXEL, 14);
+        polygon(context, rain ? '#536f7d' : '#d9ddd5', [[x - 2, ground - 14], [x + 4, ground - 20], [x + 10, ground - 14]]);
+      }
+    }
+
+    const vehicleCycle = ((activeTime % 34) + 34) % 34;
+    if (vehicleCycle < 11) {
+      const x = 54 + vehicleCycle * 20;
+      rect(context, '#303943', x, 82, 33, 12);
+      rect(context, season === 'winter' ? '#8c5f52' : '#b86f52', x + 1, 83, 31, 8);
+      rect(context, '#d5d2b7', x + 4, 84, 8, 3);
+      rect(context, '#91adb4', x + 14, 84, 7, 3);
+      rect(context, '#91adb4', x + 23, 84, 6, 3);
+      rect(context, '#202631', x + 5, 92, 5, 2);
+      rect(context, '#202631', x + 24, 92, 5, 2);
+    }
+
+    if (season === 'autumn') {
+      for (let index = 0; index < 8; index += 1) {
+        const drift = this.reducedMotion ? 0 : activeTime * (1.1 + index * 0.06);
+        const x = 54 + ((index * 37 + drift) % 190);
+        const y = 46 + ((index * 17 + drift * 0.4) % 45);
+        rect(context, index % 2 ? '#c97b4e' : '#d3a350', x, y, 1.5, 1);
+      }
+    } else if (season === 'spring' || season === 'summer') {
+      for (let index = 0; index < 4; index += 1) {
+        const wing = this.reducedMotion ? 0 : Math.sin(activeTime * 5 + index) * HALF_PIXEL;
+        const x = 63 + ((index * 53 + activeTime * 3) % 178);
+        const y = 35 + (index % 2) * 10;
+        rect(context, '#2d3442', x - 2, y + wing, 2, HALF_PIXEL);
+        rect(context, '#2d3442', x + HALF_PIXEL, y - wing, 2, HALF_PIXEL);
+      }
     }
   }
 
@@ -818,6 +882,41 @@ export class CafeRenderer {
         rect(context, guest.palette.skin, pencilX - 1, bodyTop + 4, 3, 2);
         break;
       }
+      case 'journaling': {
+        const write = phase % 2 ? 1 : -1;
+        polygon(context, '#d6af76', [[x - 8, bodyTop + 5], [x + 8, bodyTop + 5], [x + 7, bodyTop + 11], [x - 7, bodyTop + 11]]);
+        rect(context, '#f3dfa7', x - 6, bodyTop + 6, 12, 4.5);
+        rect(context, '#8f5947', x - HALF_PIXEL, bodyTop + 5.5, 1, 5);
+        rect(context, '#8a674f', x - 4, bodyTop + 7, 4, HALF_PIXEL);
+        rect(context, '#8a674f', x + 1, bodyTop + 8.5, 3, HALF_PIXEL);
+        polygon(context, '#d9a653', [[x + write, bodyTop + 4], [x + 1 + write, bodyTop + 3], [x + 6 + write, bodyTop + 9], [x + 5 + write, bodyTop + 10]]);
+        rect(context, guest.palette.skin, x - 1 + write, bodyTop + 4, 3, 2);
+        break;
+      }
+      case 'knitting': {
+        const stitch = phase % 2 ? 2 : 0;
+        rect(context, '#b77869', x - 7, bodyTop + 7, 5, 5);
+        rect(context, '#e5b668', x - 5, bodyTop + 8, 2, 2);
+        rect(context, '#e5b668', x + 3, bodyTop + 8, 2, 2);
+        rect(context, '#d8c8b3', x - 4, bodyTop + 6 + stitch, 10, HALF_PIXEL);
+        rect(context, '#d8c8b3', x - 2, bodyTop + 4 - stitch, 8, HALF_PIXEL);
+        rect(context, guest.palette.skin, x - 5, bodyTop + 6 + stitch, 3, 2);
+        rect(context, guest.palette.skin, x + 4, bodyTop + 5 - stitch, 3, 2);
+        rect(context, '#d39158', x - 10, bodyTop + 10, 3, 1);
+        break;
+      }
+      case 'board-game': {
+        rect(context, '#c89258', x - 9, bodyTop + 5, 18, 7);
+        for (let row = 0; row < 2; row += 1) {
+          for (let column = 0; column < 4; column += 1) {
+            rect(context, (row + column) % 2 ? '#ead2a0' : '#81564a', x - 8 + column * 4, bodyTop + 6 + row * 3, 3.5, 2.5);
+          }
+        }
+        rect(context, '#7c9d92', x - 5 + (phase % 2) * 2, bodyTop + 6.5, 2, 2);
+        rect(context, '#b85f52', x + 3, bodyTop + 9, 2, 2);
+        rect(context, guest.palette.skin, x + facing * 4, bodyTop + 7, 3, 2);
+        break;
+      }
     }
   }
 
@@ -877,6 +976,18 @@ export class CafeRenderer {
         rect(context, '#9b6049', cupX + 1, workY - 5, 3, HALF_PIXEL);
         rect(context, '#f0dfbd', cupX + 4.5, workY - 4.5, 2, 2);
       }
+    } else if (barista.task === 'grinding') {
+      const crank = phase % 2 ? 2 : -2;
+      rect(context, '#4f746d', x + 2, workY - 5, 8, 3);
+      rect(context, '#c88f68', x + 9, workY - 4, 3, 2);
+      rect(context, '#2b2b30', x + 11, workY - 12, 6, 11);
+      rect(context, '#76726b', x + 12, workY - 11, 4, 4);
+      rect(context, '#c88c55', x + 16, workY - 10, 8, HALF_PIXEL);
+      rect(context, '#c88c55', x + 23 + crank, workY - 11.5, HALF_PIXEL, 4);
+      rect(context, '#d4b078', x + 20 + crank, workY - 12.5, 6, 1);
+      for (let index = 0; index < (this.reducedMotion ? 1 : 3); index += 1) {
+        rect(context, '#8d6248', x + 14 + index * 2, workY - 2 - ((phase + index) % 2), HALF_PIXEL, HALF_PIXEL);
+      }
     } else if (barista.task === 'restocking') {
       const lift = phase % 2 ? -2 : 0;
       rect(context, '#4f746d', x - 7, workY - 6 + lift, 7, 3);
@@ -890,6 +1001,15 @@ export class CafeRenderer {
       rect(context, '#c88f68', x + 10, workY - 4, 3, 2);
       rect(context, '#f0dfbd', x + 11 + polish, workY - 8, 6, 7);
       rect(context, '#b9d1c8', x + 9 + polish, workY - 4, 7, 3);
+    } else if (barista.task === 'tasting') {
+      const lift = phase % 3 === 1 ? -4 : 0;
+      rect(context, '#4f746d', x + 3, workY - 5 + lift * 0.5, 8, 3);
+      rect(context, '#c88f68', x + 10, workY - 4 + lift * 0.5, 3, 2);
+      rect(context, '#f0dfbd', x + 12, workY - 6 + lift, 5, 5);
+      rect(context, '#fff2d0', x + 13, workY - 5.5 + lift, 3, HALF_PIXEL);
+      rect(context, '#9b6049', x + 13, workY - 5 + lift, 3, HALF_PIXEL);
+      rect(context, '#f0dfbd', x + 16.5, workY - 4.5 + lift, 2, 2);
+      if (lift === 0) rect(context, '#e4d4bd', x + 14, workY - 9, HALF_PIXEL, 2);
     } else {
       const reach = phase % 2 ? 1 : 0;
       rect(context, '#4f746d', x + 4, workY - 5, 10 + reach, 3);
@@ -902,6 +1022,86 @@ export class CafeRenderer {
         rect(context, '#e7d8c4', x + 17, workY - 4 - steamRise, HALF_PIXEL, 3);
         rect(context, '#bdb5a9', x + 18, workY - 6 - steamRise, HALF_PIXEL, 2);
       }
+    }
+  }
+
+  private drawMoment(moment: Readonly<CafeMoment>): void {
+    const context = this.context;
+    const guests = moment.participantIds
+      .map((id) => this.simulation.guests.find((guest) => guest.id === id))
+      .filter((guest): guest is Guest => Boolean(guest));
+    if (guests.length === 0) return;
+
+    const centerX = guests.reduce((sum, guest) => sum + guest.position.x, 0) / guests.length;
+    const averageY = guests.reduce((sum, guest) => sum + guest.position.y, 0) / guests.length;
+    const tableY = averageY < 165 ? 139 : 169;
+    const pulse = this.reducedMotion ? 0 : Math.sin(moment.elapsed * 4) * HALF_PIXEL;
+
+    if (moment.kind === 'shared-cake') {
+      rect(context, '#765046', centerX - 9, tableY - 3, 18, 2);
+      rect(context, '#ead6aa', centerX - 7, tableY - 5, 14, 3);
+      rect(context, '#b56356', centerX - 4, tableY - 8, 8, 4);
+      rect(context, '#f2cb7d', centerX - 3, tableY - 9, 6, 1.5);
+      rect(context, '#fff0bd', centerX - HALF_PIXEL, tableY - 12 + pulse, 1, 3);
+      for (const guest of guests) {
+        const direction = guest.position.x < centerX ? 1 : -1;
+        rect(context, guest.palette.skin, guest.position.x + direction * 5, tableY - 7 + pulse, 3, 2);
+      }
+      return;
+    }
+
+    if (moment.kind === 'card-game') {
+      rect(context, '#405d58', centerX - 11, tableY - 5, 22, 6);
+      rect(context, '#92ad93', centerX - 10, tableY - 4.5, 20, HALF_PIXEL);
+      for (let index = 0; index < 4; index += 1) {
+        const x = centerX - 8 + index * 4.5;
+        rect(context, index % 2 ? '#d6b16e' : '#f0dfba', x, tableY - 4 + (index % 2) * HALF_PIXEL, 3, 4);
+        rect(context, '#8a5849', x + 1, tableY - 3, 1, 1);
+      }
+      const mover = guests[Math.floor(moment.elapsed * 1.6) % guests.length];
+      if (mover) rect(context, mover.palette.skin, mover.position.x + mover.facing * 5, tableY - 7 + pulse, 3, 2);
+      return;
+    }
+
+    const guest = guests[0];
+    if (!guest) return;
+    if (moment.kind === 'window-gaze') {
+      rect(context, '#d9cda3', guest.position.x - 7, tableY - 4, 14, 2);
+      rect(context, '#f0dfbd', guest.position.x - 3, tableY - 8, 6, 5);
+      rect(context, '#9b6049', guest.position.x - 2, tableY - 7, 4, HALF_PIXEL);
+      rect(context, '#f3dfa7', 67, 60, 1, 1 + pulse);
+      rect(context, '#f3dfa7', 71, 65, 1, 1);
+      return;
+    }
+
+    polygon(context, '#e7d2a7', [[guest.position.x - 10, tableY - 2], [guest.position.x + 8, tableY - 4], [guest.position.x + 10, tableY + 2], [guest.position.x - 8, tableY + 3]]);
+    rect(context, '#5d766f', guest.position.x - 5, tableY - 1, 7, HALF_PIXEL);
+    rect(context, '#bd7557', guest.position.x + 2, tableY - 2.5, 3, 2);
+    rect(context, '#f0cf7e', guest.position.x + 6, tableY - 10 + pulse, 1, 3);
+    rect(context, '#f0cf7e', guest.position.x + 6, tableY - 6, 3, 1);
+  }
+
+  private drawCafeDetails(time: number): void {
+    const context = this.context;
+    const month = (this.environment?.localTime ?? new Date(2026, 6, 14)).getMonth();
+    const seasonal = month === 11 || month <= 1 ? '#d9e4dc' : month <= 4 ? '#d99b8d' : month <= 7 ? '#e1bd72' : '#c87955';
+    const flicker = this.reducedMotion ? 0 : Math.sin(time * 2.2) * HALF_PIXEL;
+
+    for (const [x, y] of [[105, 168], [179, 168]] as const) {
+      rect(context, '#544149', x - 1, y - 7, 3, 5);
+      rect(context, seasonal, x - 2, y - 9 + flicker, 5, 3);
+      rect(context, '#f3d893', x - HALF_PIXEL, y - 12 + flicker, 1, 4);
+      rect(context, '#fff0bd', x - HALF_PIXEL, y - 12.5 + flicker, 1, 1);
+    }
+
+    rect(context, '#f0e0bd', 365, 108, 8, 5);
+    rect(context, '#bf7b52', 366, 109, 6, HALF_PIXEL);
+    rect(context, '#5f766d', 366, 111, 4, HALF_PIXEL);
+    rect(context, '#e2bc72', 353, 36, 2, 2);
+    rect(context, '#e2bc72', 351.5, 37, 5, HALF_PIXEL);
+    for (let index = 0; index < 5; index += 1) {
+      const x = 92 + index * 27;
+      rect(context, index % 2 ? '#d7ae6b' : '#c58d5b', x, 205.5, 1.5, HALF_PIXEL);
     }
   }
 

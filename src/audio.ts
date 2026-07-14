@@ -1,5 +1,5 @@
 import { SeededRandom } from './simulation/random';
-import type { AccidentKind } from './simulation/types';
+import type { AccidentKind, CafeMomentKind } from './simulation/types';
 import type { CafeEnvironmentSnapshot } from './environment/types';
 
 export type AudioState = 'idle' | 'playing' | 'muted' | 'unavailable';
@@ -121,6 +121,27 @@ export class CafeAudio {
 
     this.playEffectTone(145, 64, start, 0.34, 0.075, 'triangle');
     this.playEffectNoise(start, 0.16, 330, 0.9, 0.045);
+  }
+
+  playMoment(kind: CafeMomentKind): void {
+    const context = this.context;
+    if (!context || !this.master || this.muted || this.state !== 'playing') return;
+    const start = context.currentTime + 0.02;
+    if (kind === 'shared-cake') {
+      this.playEffectTone(1_380, 1_720, start, 0.12, 0.024, 'sine');
+      this.playEffectTone(1_660, 1_980, start + 0.05, 0.1, 0.019, 'sine');
+      return;
+    }
+    if (kind === 'card-game') {
+      this.playEffectNoise(start, 0.16, 1_300, 0.7, 0.012);
+      this.playEffectNoise(start + 0.18, 0.11, 1_050, 0.6, 0.009);
+      return;
+    }
+    if (kind === 'window-gaze') {
+      this.playEffectTone(730, 920, start, 0.4, 0.012, 'sine');
+      return;
+    }
+    this.playEffectTone(1_120, 1_520, start, 0.16, 0.015, 'triangle');
   }
 
   getState(): AudioState {

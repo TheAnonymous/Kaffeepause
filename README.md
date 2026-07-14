@@ -8,13 +8,16 @@ Ein autonomes Pixel-Art-Café für eine kleine Pause im Browser.
 
 ## Über das Projekt
 
-Kaffeepause zeigt ein gemütliches Café als bildschirmfüllendes Canvas-Diorama. Gerätezeit, Sonnenstand, Wetter und Tagesprofil verändern Außenwelt, Licht, Auslage, Geräuschkulisse und Belegung weich. Gäste kommen und gehen, bestellen, lesen, arbeiten, zeichnen, telefonieren, reden und trinken – vollständig selbstständig und ohne sichtbaren Schleifensprung.
+Kaffeepause zeigt ein gemütliches Café als bildschirmfüllendes Canvas-Diorama. Gerätezeit, Sonnenstand, Wetter und Tagesprofil verändern Außenwelt, Licht, Auslage, Geräuschkulisse und Belegung weich. Gäste kommen und gehen, bestellen, lesen, arbeiten, zeichnen, telefonieren, reden und trinken – vollständig selbstständig und ohne sichtbaren Schleifensprung. Kleine Alltagsmomente verbinden die Szene: Zwei Gäste teilen Kuchen, beginnen eine Kartenrunde, schauen dem Wetter zu oder beenden eine Skizze.
 
 - handgezeichnete Canvas-Pixelart ohne externe Assets
 - hochauflösendes 768 × 432-Pixel-Canvas mit echten Ein-Pixel-Details
 - bis zu acht Gäste mit lesbaren Tätigkeiten, Wetteraccessoires und einem animierten Barista
+- neun Gasttätigkeiten, darunter Tagebuchschreiben, Stricken und Brettspiel; Barista mahlt, verkostet und bedient
+- sanfte, deterministische Café-Momente mit eigenen Bild- und Klangdetails, die nicht mit Unfällen kollidieren
 - funktionierende Pixel-Wanduhr sowie lokaler Sonnenstand mit Dämmerung und Polarzuständen
 - klare, bewölkte, neblige, regnerische, verschneite und stürmische Außenwelten
+- Passant:innen, Busse, Regenschirme, Vögel und saisonale Außenwelt hinter dem Fenster
 - tageszeitabhängige Auslage, Stadtlichter, Sterne, Lichtstreifen und warme Innenbeleuchtung
 - deterministische Figuren-Zustandsautomaten und zentrale Platzreservierung
 - seltene, vollständig reversible Café-Unfälle mit Tablett, Kaffeetasse oder Regenschirm
@@ -49,4 +52,4 @@ npm run test:e2e
 
 Die Simulation verwendet stabile Szenenkoordinaten von 384 × 216. Gerendert wird auf einem intrinsischen 768 × 432-Pixel-Canvas mit Faktor 2 und ohne Weichzeichnung. Auf Smartphones bleibt die Szenenhöhe erhalten; die intrinsische Canvasbreite und der sichtbare Kameraausschnitt werden gemeinsam angepasst.
 
-Im Entwicklungsserver lassen sich visuelle Szenen mit `?time=HH:MM`, `?weather=clear|cloudy|fog|rain|snow|storm`, `?lat=<Breite>` und `?lon=<Länge>` kombinieren. Genau eine Unfallart kann zusätzlich beschleunigt werden, zum Beispiel mit `?accident=tray-drop`, `?accident=coffee-spill` oder `?accident=umbrella-pop`. Produktionsbuilds ignorieren sämtliche Testparameter.
+Im Entwicklungsserver lassen sich visuelle Szenen mit `?time=HH:MM`, `?weather=clear|cloudy|fog|rain|snow|storm`, `?lat=<Breite>` und `?lon=<Länge>` kombinieren. Genau eine Unfallart kann zusätzlich beschleunigt werden, zum Beispiel mit `?accident=tray-drop`, `?accident=coffee-spill` oder `?accident=umbrella-pop`; ebenso ein Alltagsmoment mit `?moment=shared-cake|card-game|window-gaze|sketch-reveal`. Produktionsbuilds ignorieren sämtliche Testparameter.

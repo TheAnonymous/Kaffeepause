@@ -13,7 +13,16 @@ export type GuestState =
   | 'walking-to-exit'
   | 'exiting';
 
-export type GuestActivity = 'reading' | 'typing' | 'talking' | 'drinking' | 'phone' | 'sketching';
+export type GuestActivity =
+  | 'reading'
+  | 'typing'
+  | 'talking'
+  | 'drinking'
+  | 'phone'
+  | 'sketching'
+  | 'journaling'
+  | 'knitting'
+  | 'board-game';
 
 export type GuestAccessory = 'umbrella' | 'coat' | 'scarf' | 'sunglasses';
 
@@ -43,7 +52,7 @@ export interface Guest {
   palette: GuestPalette;
 }
 
-export type BaristaTask = 'machine' | 'serving' | 'wiping' | 'restocking' | 'polishing';
+export type BaristaTask = 'machine' | 'serving' | 'wiping' | 'restocking' | 'polishing' | 'grinding' | 'tasting';
 
 export interface Barista {
   position: Point;
@@ -60,6 +69,18 @@ export interface SimulationStats {
   departures: number;
   elapsed: number;
   accidentsCompleted: number;
+  momentsCompleted: number;
+}
+
+export type CafeMomentKind = 'shared-cake' | 'card-game' | 'window-gaze' | 'sketch-reveal';
+
+export interface CafeMoment {
+  readonly id: number;
+  readonly kind: CafeMomentKind;
+  readonly startedAt: number;
+  readonly participantIds: readonly string[];
+  elapsed: number;
+  duration: number;
 }
 
 export type AccidentKind = 'tray-drop' | 'coffee-spill' | 'umbrella-pop';
