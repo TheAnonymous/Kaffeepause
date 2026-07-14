@@ -26,7 +26,7 @@ Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen
 - kollisionsbewusste Routen um Theke, Tische und andere laufende Gäste
 - schlanke Szenenlaufzeit mit unveränderlichen Snapshots zwischen Simulation und Canvas-Renderer
 - seltene, vollständig reversible Café-Unfälle mit Tablett, Kaffeetasse oder Regenschirm
-- adaptive Lo-fi-Musik, Regen, Wind und belegungsabhängige Café-Geräusche über Web Audio
+- adaptive Lo-fi-Musik, räumlicher Regen und Wind sowie seltene, belegungsabhängige Ortsgeräusche über Web Audio
 - pixelartige Ton- und Vollbildsteuerung, die sich nach 2,5 Sekunden Ruhe zurückzieht
 - langsame Kamerafahrt auf schmalen Smartphone-Displays
 - Reduced-Motion-Modus mit ruhiger Kamera, statischem Wetter und weniger Partikeln
