@@ -9,14 +9,16 @@ import type {
   CafeAccident,
   CafeMoment,
   CafeMomentKind,
+  CafeStoryKind,
   Guest,
   GuestActivity,
   GuestPalette,
   Point,
+  RegularId,
   SimulationStats,
 } from './types';
 
-const NAMES = ['Mara', 'Noor', 'Fritzi', 'Eli', 'Jun', 'Pia', 'Mika', 'Linn', 'Toni', 'Romy'] as const;
+const NAMES = ['Fritzi', 'Eli', 'Jun', 'Pia', 'Mika', 'Romy'] as const;
 const ACTIVITIES: readonly GuestActivity[] = [
   'reading', 'typing', 'talking', 'drinking', 'phone', 'sketching', 'journaling', 'knitting', 'board-game',
 ];
@@ -29,6 +31,20 @@ const PALETTES: readonly GuestPalette[] = [
   { skin: '#71483c', hair: '#191820', coat: '#6d5278', accent: '#c98668' },
 ];
 
+interface RegularProfile {
+  id: RegularId;
+  name: string;
+  palette: GuestPalette;
+  favoriteActivity: GuestActivity;
+}
+
+const REGULARS: readonly RegularProfile[] = [
+  { id: 'mara', name: 'Mara', palette: { skin: '#d8a071', hair: '#2d242b', coat: '#557b78', accent: '#e5b568' }, favoriteActivity: 'sketching' },
+  { id: 'noor', name: 'Noor', palette: { skin: '#8f5c48', hair: '#241c25', coat: '#a5544e', accent: '#e6c589' }, favoriteActivity: 'talking' },
+  { id: 'toni', name: 'Toni', palette: { skin: '#edc39a', hair: '#6d4938', coat: '#5c668c', accent: '#d98f5f' }, favoriteActivity: 'drinking' },
+  { id: 'linn', name: 'Linn', palette: { skin: '#b87957', hair: '#33272a', coat: '#6d5278', accent: '#77a095' }, favoriteActivity: 'knitting' },
+];
+
 export interface CafeSimulationOptions {
   seed?: number;
   initialGuests?: number;
@@ -37,6 +53,7 @@ export interface CafeSimulationOptions {
   durationScale?: number;
   accidents?: CafeAccidentOptions | false;
   moments?: CafeMomentOptions | false;
+  stories?: CafeStoryOptions | false;
 }
 
 export interface CafeAccidentOptions {
@@ -57,8 +74,19 @@ export interface CafeMomentOptions {
   durationScale?: number;
 }
 
+export interface CafeStoryOptions {
+  enabled?: boolean;
+  seed?: number;
+  minDelaySeconds?: number;
+  maxDelaySeconds?: number;
+  kinds?: readonly CafeStoryKind[];
+}
+
 const ACCIDENT_KINDS: readonly AccidentKind[] = ['tray-drop', 'coffee-spill', 'umbrella-pop'];
-const MOMENT_KINDS: readonly CafeMomentKind[] = ['shared-cake', 'card-game', 'window-gaze', 'sketch-reveal'];
+const MOMENT_KINDS: readonly CafeMomentKind[] = [
+  'shared-cake', 'card-game', 'window-gaze', 'sketch-reveal',
+];
+const STORY_KINDS: readonly CafeStoryKind[] = ['sketchbook', 'first-date', 'knit-gift'];
 const ACCIDENT_PHASE_DURATIONS: Readonly<Record<AccidentPhase, number>> = {
   startle: 0.9,
   chaos: 1.8,
@@ -69,6 +97,8 @@ const MOMENT_DURATIONS: Readonly<Record<CafeMomentKind, number>> = {
   'card-game': 16,
   'window-gaze': 10,
   'sketch-reveal': 11,
+  'first-date-toast': 11,
+  'knit-gift': 12,
 };
 
 interface GuestSnapshot {
@@ -83,6 +113,13 @@ interface GuestSnapshot {
   seatId?: string;
   destinationId?: string;
   reservedResources: readonly string[];
+}
+
+interface StoryMomentCandidate {
+  kind: CafeMomentKind;
+  story: CafeStoryKind;
+  step: 1 | 2;
+  participants: readonly Guest[];
 }
 
 interface BaristaSnapshot {
@@ -116,7 +153,15 @@ export class CafeSimulation {
     facing: 1,
   };
 
-  readonly stats: SimulationStats = { arrivals: 0, departures: 0, elapsed: 0, accidentsCompleted: 0, momentsCompleted: 0 };
+  readonly stats: SimulationStats = {
+    arrivals: 0,
+    departures: 0,
+    elapsed: 0,
+    accidentsCompleted: 0,
+    momentsCompleted: 0,
+    storyBeatsCompleted: 0,
+    storiesCompleted: 0,
+  };
 
   private readonly random: SeededRandom;
   private readonly initialGuests: number;
@@ -135,8 +180,14 @@ export class CafeSimulation {
   private readonly momentMaxDelay: number;
   private readonly momentKinds: readonly CafeMomentKind[];
   private readonly momentDurationScale: number;
+  private readonly storyRandom: SeededRandom;
+  private readonly storyEnabled: boolean;
+  private readonly storyMinDelay: number;
+  private readonly storyMaxDelay: number;
+  private readonly storyKinds: readonly CafeStoryKind[];
   private started = false;
   private nextGuestId = 1;
+  private nextRegularIndex = 0;
   private spawnClock = 0;
   private populationClock = 0;
   private desiredGuestCount: number;
@@ -150,6 +201,12 @@ export class CafeSimulation {
   private currentMoment?: CafeMoment;
   private lastMomentKind?: CafeMomentKind;
   private nextMomentId = 1;
+  private storyCountdown?: number;
+  private readonly storyProgress: Record<CafeStoryKind, number> = {
+    sketchbook: 0,
+    'first-date': 0,
+    'knit-gift': 0,
+  };
   private environment?: CafeEnvironmentSnapshot;
 
   constructor(options: CafeSimulationOptions = {}) {
@@ -175,6 +232,13 @@ export class CafeSimulation {
     this.momentMaxDelay = Math.max(this.momentMinDelay, momentOptions.maxDelaySeconds ?? 50);
     this.momentKinds = momentOptions.kinds?.length ? [...new Set(momentOptions.kinds)] : MOMENT_KINDS;
     this.momentDurationScale = Math.max(0.001, momentOptions.durationScale ?? 1);
+
+    const storyOptions = options.stories === false ? { enabled: false } : (options.stories ?? {});
+    this.storyEnabled = storyOptions.enabled !== false;
+    this.storyRandom = new SeededRandom(storyOptions.seed ?? ((options.seed ?? 0x4b41_4646) ^ 0x5707_2026));
+    this.storyMinDelay = Math.max(0, storyOptions.minDelaySeconds ?? 110);
+    this.storyMaxDelay = Math.max(this.storyMinDelay, storyOptions.maxDelaySeconds ?? 175);
+    this.storyKinds = storyOptions.kinds?.length ? [...new Set(storyOptions.kinds)] : STORY_KINDS;
   }
 
   start(): void {
@@ -186,6 +250,7 @@ export class CafeSimulation {
     for (let index = 0; index < initialCount; index += 1) this.addInitialGuest();
     if (this.accidentEnabled && this.accidentCountdown === undefined) this.scheduleNextAccident();
     if (this.momentEnabled && this.momentCountdown === undefined) this.scheduleNextMoment();
+    if (this.storyEnabled && this.storyCountdown === undefined) this.scheduleNextStory();
   }
 
   stop(): void {
@@ -202,6 +267,14 @@ export class CafeSimulation {
 
   get activeMoment(): Readonly<CafeMoment> | undefined {
     return this.currentMoment;
+  }
+
+  get activeRegulars(): readonly Guest[] {
+    return this.guests.filter((guest) => guest.regularId !== undefined);
+  }
+
+  getStoryStage(kind: CafeStoryKind): number {
+    return this.storyProgress[kind];
   }
 
   getSecondsUntilNextAccident(): number | undefined {
@@ -279,8 +352,8 @@ export class CafeSimulation {
     if (!seat) return;
     const guest = this.makeGuest('activity', seat);
     guest.seatId = seat.id;
-    guest.activity = this.random.pick(ACTIVITIES);
-    guest.stateDuration = this.duration(this.random.range(19, 34));
+    guest.activity = this.pickActivityFor(guest);
+    guest.stateDuration = this.duration(this.random.range(guest.regularId ? 42 : 19, guest.regularId ? 58 : 34));
     this.reservations.reserve(seat.id, guest.id);
     this.guests.push(guest);
     this.applyAccessory(guest);
@@ -290,11 +363,12 @@ export class CafeSimulation {
   private makeGuest(state: Guest['state'], position: Point): Guest {
     const numericId = this.nextGuestId;
     this.nextGuestId += 1;
+    const regular = this.pickRegular(numericId <= REGULARS.length);
     return {
       id: `guest-${numericId}`,
-      name: NAMES[(numericId - 1) % NAMES.length] as string,
+      name: regular?.name ?? NAMES[(numericId - 1) % NAMES.length] as string,
       state,
-      activity: this.random.pick(ACTIVITIES),
+      activity: regular?.favoriteActivity ?? this.random.pick(ACTIVITIES),
       position: copyPoint(position),
       target: copyPoint(position),
       facing: 1,
@@ -303,8 +377,31 @@ export class CafeSimulation {
       stateDuration: 0,
       animation: this.random.range(0, Math.PI * 2),
       activityRounds: 0,
-      palette: this.random.pick(PALETTES),
+      palette: regular?.palette ?? this.random.pick(PALETTES),
+      regularId: regular?.id,
     };
+  }
+
+  private pickRegular(force = false): RegularProfile | undefined {
+    const available = REGULARS.filter((profile) => !this.guests.some((guest) => guest.regularId === profile.id));
+    if (available.length === 0) return undefined;
+    const shouldIntroduce = force || this.random.next() < 0.78;
+    if (!shouldIntroduce) return undefined;
+
+    for (let offset = 0; offset < REGULARS.length; offset += 1) {
+      const index = (this.nextRegularIndex + offset) % REGULARS.length;
+      const profile = REGULARS[index];
+      if (!profile || !available.includes(profile)) continue;
+      this.nextRegularIndex = (index + 1) % REGULARS.length;
+      return profile;
+    }
+    return available[0];
+  }
+
+  private pickActivityFor(guest: Guest, excluding?: GuestActivity): GuestActivity {
+    const regular = REGULARS.find((profile) => profile.id === guest.regularId);
+    if (regular && regular.favoriteActivity !== excluding) return regular.favoriteActivity;
+    return this.random.pick(ACTIVITIES.filter((activity) => activity !== excluding));
   }
 
   private updatePopulation(delta: number): void {
@@ -332,6 +429,12 @@ export class CafeSimulation {
     this.momentCountdown = this.momentRandom.range(this.momentMinDelay, this.momentMaxDelay);
   }
 
+  private scheduleNextStory(retrySoon = false): void {
+    const minimum = retrySoon ? Math.min(42, this.storyMinDelay) : this.storyMinDelay;
+    const maximum = retrySoon ? Math.min(72, this.storyMaxDelay) : this.storyMaxDelay;
+    this.storyCountdown = this.storyRandom.range(minimum, Math.max(minimum, maximum));
+  }
+
   private updateMoment(delta: number): void {
     const moment = this.currentMoment;
     if (moment) {
@@ -340,8 +443,17 @@ export class CafeSimulation {
       this.stats.momentsCompleted += 1;
       this.lastMomentKind = moment.kind;
       this.currentMoment = undefined;
-      this.scheduleNextMoment();
+      if (moment.story) this.finishStoryBeat(moment);
+      if (this.momentEnabled) this.scheduleNextMoment();
       return;
+    }
+
+    if (this.storyEnabled && this.storyCountdown !== undefined) {
+      this.storyCountdown = Math.max(0, this.storyCountdown - delta);
+      if (this.storyCountdown === 0) {
+        if (this.beginStoryMoment()) return;
+        this.scheduleNextStory(true);
+      }
     }
 
     if (!this.momentEnabled || this.momentCountdown === undefined) return;
@@ -356,6 +468,8 @@ export class CafeSimulation {
     const eligible = this.momentKinds.filter((kind) => {
       if (kind === 'shared-cake' || kind === 'card-game') return seated.length >= 2;
       if (kind === 'window-gaze') return rainy && seated.length >= 1;
+      if (kind === 'first-date-toast') return this.findDatePair(seated).length === 2;
+      if (kind === 'knit-gift') return this.findKnittingPair(seated).length === 2;
       return seated.length >= 1;
     });
     if (eligible.length === 0) return false;
@@ -365,6 +479,47 @@ export class CafeSimulation {
 
     const participants = this.pickMomentParticipants(kind, seated);
     if (participants.length === 0) return false;
+    this.createMoment(kind, participants);
+    return true;
+  }
+
+  private beginStoryMoment(): boolean {
+    const seated = this.guests.filter((guest) => guest.state === 'activity');
+    const candidates: StoryMomentCandidate[] = [];
+    const mara = seated.find((guest) => guest.regularId === 'mara');
+    const sketchStage = this.storyProgress.sketchbook;
+    if (this.storyKinds.includes('sketchbook') && mara && sketchStage < 2) {
+      candidates.push({ kind: 'sketch-reveal', story: 'sketchbook', step: (sketchStage + 1) as 1 | 2, participants: [mara] });
+    }
+
+    const datePair = this.findDatePair(seated);
+    const dateStage = this.storyProgress['first-date'];
+    if (this.storyKinds.includes('first-date') && datePair.length === 2 && dateStage < 2) {
+      candidates.push({
+        kind: dateStage === 0 ? 'shared-cake' : 'first-date-toast',
+        story: 'first-date',
+        step: (dateStage + 1) as 1 | 2,
+        participants: datePair,
+      });
+    }
+
+    const knittingPair = this.findKnittingPair(seated);
+    if (this.storyKinds.includes('knit-gift') && knittingPair.length === 2 && this.storyProgress['knit-gift'] === 0) {
+      candidates.push({ kind: 'knit-gift', story: 'knit-gift', step: 1, participants: knittingPair });
+    }
+
+    const candidate = candidates.length ? this.storyRandom.pick(candidates) : undefined;
+    if (!candidate) return false;
+    this.createMoment(candidate.kind, candidate.participants, candidate.story, candidate.step);
+    return true;
+  }
+
+  private createMoment(
+    kind: CafeMomentKind,
+    participants: readonly Guest[],
+    story?: CafeStoryKind,
+    storyStep?: 1 | 2,
+  ): void {
     this.currentMoment = {
       id: this.nextMomentId,
       kind,
@@ -372,10 +527,28 @@ export class CafeSimulation {
       participantIds: participants.map((guest) => guest.id),
       elapsed: 0,
       duration: MOMENT_DURATIONS[kind] * this.momentDurationScale,
+      story,
+      storyStep,
     };
     this.nextMomentId += 1;
     this.momentCountdown = undefined;
-    return true;
+    if (story) this.storyCountdown = undefined;
+  }
+
+  private finishStoryBeat(moment: CafeMoment): void {
+    const story = moment.story;
+    const step = moment.storyStep;
+    if (!story || !step) return;
+    if (step > this.storyProgress[story]) {
+      this.storyProgress[story] = step;
+      this.stats.storyBeatsCompleted += 1;
+      if (step >= this.storyLastStep(story)) this.stats.storiesCompleted += 1;
+    }
+    this.scheduleNextStory();
+  }
+
+  private storyLastStep(story: CafeStoryKind): number {
+    return story === 'knit-gift' ? 1 : 2;
   }
 
   private pickMomentParticipants(kind: CafeMomentKind, seated: readonly Guest[]): Guest[] {
@@ -396,8 +569,22 @@ export class CafeSimulation {
       const byWindow = [...seated].sort((left, right) => left.position.y - right.position.y || left.position.x - right.position.x);
       return byWindow[0] ? [byWindow[0]] : [];
     }
+    if (kind === 'first-date-toast') return this.findDatePair(seated);
+    if (kind === 'knit-gift') return this.findKnittingPair(seated);
     const artist = seated.find((guest) => guest.activity === 'sketching') ?? this.momentRandom.pick(seated);
     return artist ? [artist] : [];
+  }
+
+  private findDatePair(seated: readonly Guest[]): Guest[] {
+    const noor = seated.find((guest) => guest.regularId === 'noor');
+    const toni = seated.find((guest) => guest.regularId === 'toni');
+    return noor && toni ? [noor, toni] : [];
+  }
+
+  private findKnittingPair(seated: readonly Guest[]): Guest[] {
+    const linn = seated.find((guest) => guest.regularId === 'linn');
+    const neighbour = seated.find((guest) => guest.id !== linn?.id);
+    return linn && neighbour ? [linn, neighbour] : [];
   }
 
   private updateAccident(delta: number): void {
@@ -613,8 +800,8 @@ export class CafeSimulation {
         if (this.moveToward(guest, delta)) {
           guest.state = 'activity';
           guest.stateTime = 0;
-          guest.stateDuration = this.duration(this.random.range(20, 38));
-          guest.activity = this.random.pick(ACTIVITIES);
+          guest.stateDuration = this.duration(this.random.range(guest.regularId ? 38 : 20, guest.regularId ? 56 : 38));
+          guest.activity = this.pickActivityFor(guest);
           guest.facing = guest.position.x < 150 ? 1 : -1;
         }
         break;
@@ -654,11 +841,14 @@ export class CafeSimulation {
   }
 
   private finishActivity(guest: Guest): void {
-    if (this.guests.length <= this.desiredGuestCount && guest.activityRounds < 1 && this.random.next() < 0.58) {
+    const regular = guest.regularId !== undefined;
+    const maxRounds = regular ? 3 : 1;
+    const stayChance = regular ? 0.84 : 0.58;
+    if (this.guests.length <= this.desiredGuestCount && guest.activityRounds < maxRounds && this.random.next() < stayChance) {
       guest.activityRounds += 1;
-      guest.activity = this.random.pick(ACTIVITIES.filter((activity) => activity !== guest.activity));
+      guest.activity = this.pickActivityFor(guest, guest.activity);
       guest.stateTime = 0;
-      guest.stateDuration = this.duration(this.random.range(12, 24));
+      guest.stateDuration = this.duration(this.random.range(regular ? 24 : 12, regular ? 38 : 24));
       return;
     }
 

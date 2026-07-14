@@ -174,6 +174,12 @@ export class CafeRenderer {
     this.canvas.dataset.accident = accident?.kind ?? 'none';
     this.canvas.dataset.accidentPhase = accident?.phase ?? 'none';
     this.canvas.dataset.moment = moment?.kind ?? 'none';
+    this.canvas.dataset.story = moment?.story ?? 'none';
+    this.canvas.dataset.storyStep = String(moment?.storyStep ?? 0);
+    this.canvas.dataset.regulars = this.simulation.activeRegulars
+      .map((guest) => guest.regularId ?? '')
+      .filter(Boolean)
+      .join(',');
   }
 
   private drawRoom(time: number): void {
@@ -870,6 +876,22 @@ export class CafeRenderer {
       rect(context, '#d5a269', x - facing * 7.5, bodyTop + 7, 2, 1);
     }
 
+    if (guest.regularId === 'mara') {
+      rect(context, '#b55f4e', x - 5.5, headTop - 2, 11, 2.5);
+      rect(context, '#e6b36a', x - 2, headTop - 3, 5, 1);
+      rect(context, '#7d4743', x - 6.5, headTop, 3, 2);
+    } else if (guest.regularId === 'noor') {
+      rect(context, '#e7bd72', x + facing * 4, headTop + 1, 2, 2);
+      rect(context, '#f3dc98', x + facing * 4.5, headTop + 1.5, HALF_PIXEL, HALF_PIXEL);
+    } else if (guest.regularId === 'toni') {
+      rect(context, '#d98f5f', x - 5.5, bodyTop, 11, 2);
+      rect(context, '#f0c778', x - facing * 5, bodyTop + 2, 2, 7);
+    } else if (guest.regularId === 'linn') {
+      rect(context, '#77a095', x - 5.5, bodyTop - 1, 11, 2.5);
+      rect(context, '#d8c06f', x - facing * 5, bodyTop + 4, 2, 8);
+      rect(context, '#b77869', x - facing * 8, bodyTop + 10, 4, 4);
+    }
+
     const handY = bodyTop + 7 + (phase % 2) * HALF_PIXEL;
     rect(context, guest.palette.skin, x + facing * 5, handY, 2, 2);
     rect(context, '#f0c6a0', x + facing * 5.5, handY, HALF_PIXEL, HALF_PIXEL);
@@ -1139,6 +1161,38 @@ export class CafeRenderer {
       rect(context, '#b56356', centerX - 4, tableY - 8, 8, 4);
       rect(context, '#f2cb7d', centerX - 3, tableY - 9, 6, 1.5);
       rect(context, '#fff0bd', centerX - HALF_PIXEL, tableY - 12 + pulse, 1, 3);
+      if (moment.story === 'first-date') {
+        rect(context, '#d9a45c', centerX - 11, tableY - 4, 3, HALF_PIXEL);
+        rect(context, '#d9a45c', centerX + 8, tableY - 4, 3, HALF_PIXEL);
+        rect(context, '#f5c978', centerX - 1, tableY - 14 + pulse, 2, 2);
+      }
+      for (const guest of guests) {
+        const direction = guest.position.x < centerX ? 1 : -1;
+        rect(context, guest.palette.skin, guest.position.x + direction * 5, tableY - 7 + pulse, 3, 2);
+      }
+      return;
+    }
+
+    if (moment.kind === 'first-date-toast') {
+      rect(context, '#765046', centerX - 10, tableY - 3, 20, 2);
+      for (const direction of [-1, 1] as const) {
+        const cupX = centerX + direction * 6 - 2;
+        rect(context, '#f0dfbd', cupX, tableY - 9 + pulse, 5, 5);
+        rect(context, '#fff2d0', cupX + 1, tableY - 8.5 + pulse, 3, HALF_PIXEL);
+        rect(context, '#9b6049', cupX + 1, tableY - 8 + pulse, 3, HALF_PIXEL);
+        rect(context, '#f0dfbd', cupX + (direction > 0 ? 4.5 : -1.5), tableY - 7.5 + pulse, 2, 2);
+      }
+      rect(context, '#f7dc94', centerX - HALF_PIXEL, tableY - 13 + pulse, 1, 2);
+      rect(context, '#f2bc70', centerX - 3, tableY - 15, 2, HALF_PIXEL);
+      rect(context, '#f2bc70', centerX + 2, tableY - 15, 2, HALF_PIXEL);
+      return;
+    }
+
+    if (moment.kind === 'knit-gift') {
+      rect(context, '#795046', centerX - 11, tableY - 3, 22, 2);
+      rect(context, '#77a095', centerX - 5, tableY - 9, 10, 5);
+      rect(context, '#d8c06f', centerX - 3, tableY - 11 + pulse, 6, 2);
+      rect(context, '#b77869', centerX - 8, tableY - 8, 3, 3);
       for (const guest of guests) {
         const direction = guest.position.x < centerX ? 1 : -1;
         rect(context, guest.palette.skin, guest.position.x + direction * 5, tableY - 7 + pulse, 3, 2);
@@ -1171,8 +1225,13 @@ export class CafeRenderer {
     }
 
     polygon(context, '#e7d2a7', [[guest.position.x - 10, tableY - 2], [guest.position.x + 8, tableY - 4], [guest.position.x + 10, tableY + 2], [guest.position.x - 8, tableY + 3]]);
-    rect(context, '#5d766f', guest.position.x - 5, tableY - 1, 7, HALF_PIXEL);
-    rect(context, '#bd7557', guest.position.x + 2, tableY - 2.5, 3, 2);
+    rect(context, moment.story === 'sketchbook' ? '#b55f4e' : '#5d766f', guest.position.x - 5, tableY - 1, 7, HALF_PIXEL);
+    rect(context, moment.story === 'sketchbook' ? '#e6c07e' : '#bd7557', guest.position.x + 2, tableY - 2.5, 3, 2);
+    if (moment.story === 'sketchbook' && moment.storyStep === 2) {
+      rect(context, '#f1ddb0', guest.position.x - 8, tableY - 7, 10, 6);
+      rect(context, '#8a5a4c', guest.position.x - 7, tableY - 6, 8, HALF_PIXEL);
+      rect(context, '#5f8077', guest.position.x - 5, tableY - 4, 5, HALF_PIXEL);
+    }
     rect(context, '#f0cf7e', guest.position.x + 6, tableY - 10 + pulse, 1, 3);
     rect(context, '#f0cf7e', guest.position.x + 6, tableY - 6, 3, 1);
   }
@@ -1212,6 +1271,15 @@ export class CafeRenderer {
     rect(context, '#5b785d', 370, 96, 5, 5);
     rect(context, '#d1a066', 365, 105, 7, 3);
     rect(context, '#7c5145', 366, 108, 5, HALF_PIXEL);
+    if (this.simulation.getStoryStage('sketchbook') >= 2) {
+      rect(context, '#3d3037', 219, 112, 18, 17);
+      rect(context, '#bd835d', 220, 113, 16, 15);
+      rect(context, '#f0d9a8', 222, 115, 12, 11);
+      rect(context, '#8d5b4a', 223, 116, 10, HALF_PIXEL);
+      rect(context, '#5d7d76', 225, 119, 7, HALF_PIXEL);
+      rect(context, '#d5a667', 229, 121, 3, 2);
+      rect(context, '#e4c47d', 226, 124, 7, HALF_PIXEL);
+    }
     for (const [x, y] of [[48, 197], [239, 202], [249, 193]] as const) {
       rect(context, '#805345', x, y, 6, 5);
       rect(context, '#b77a53', x + 1, y - 1, 4, 2);

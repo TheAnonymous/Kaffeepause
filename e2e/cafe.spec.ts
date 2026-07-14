@@ -159,6 +159,24 @@ for (const scenario of [
   });
 }
 
+for (const scenario of [
+  { kind: 'sketchbook', message: /Mara schlägt ihr abgewetztes Skizzenbuch/i, regular: 'mara' },
+  { kind: 'first-date', message: /Noor und Toni teilen sich zaghaft/i, regular: 'noor,toni' },
+  { kind: 'knit-gift', message: /Linn legt jemandem gegenüber/i, regular: 'linn' },
+] as const) {
+  test(`zeigt die Stammgast-Geschichte ${scenario.kind}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 810 });
+    await page.goto(`/?story=${scenario.kind}&time=20:30&weather=rain`);
+    await page.getByTestId('enter').click();
+
+    const canvas = page.locator('#cafe');
+    await expect(canvas).toHaveAttribute('data-story', scenario.kind, { timeout: 5_000 });
+    await expect(canvas).toHaveAttribute('data-story-step', '1');
+    await expect(canvas).toHaveAttribute('data-regulars', new RegExp(scenario.regular));
+    await expect(page.locator('#status')).toHaveText(scenario.message);
+  });
+}
+
 test('zeigt einen beschleunigten Unfall auch bei reduzierter Bewegung', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/?accident=coffee-spill&time=12:30&weather=rain');

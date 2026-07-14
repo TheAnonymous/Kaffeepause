@@ -2,7 +2,7 @@ import { CafeAudio } from './audio';
 import { CafeCamera } from './camera';
 import { CafeRenderer } from './renderer';
 import { CafeSimulation, type CafeSimulationOptions } from './simulation/cafeSimulation';
-import type { AccidentKind, CafeMomentKind } from './simulation/types';
+import type { AccidentKind, CafeMoment, CafeMomentKind, CafeStoryKind } from './simulation/types';
 import { CafeEnvironmentController, parseEnvironmentOverrides } from './environment/cafeEnvironmentController';
 import type { CafeEnvironmentSnapshot } from './environment/types';
 
@@ -19,7 +19,29 @@ const MOMENT_MESSAGES: Readonly<Record<CafeMomentKind, string>> = {
   'card-game': 'An einem Tisch beginnt eine kleine Kartenrunde.',
   'window-gaze': 'Ein Gast hält inne und schaut dem Wetter draußen zu.',
   'sketch-reveal': 'Eine neue Skizze bekommt ihren letzten kleinen Strich.',
+  'first-date-toast': 'Zwei Tassen stoßen ganz vorsichtig auf einen gelungenen Abend an.',
+  'knit-gift': 'Ein kleines gestricktes Geschenk wechselt über den Tisch.',
 };
+
+const STORY_MESSAGES: Readonly<Record<CafeStoryKind, readonly [string, string]>> = {
+  sketchbook: [
+    'Mara schlägt ihr abgewetztes Skizzenbuch auf und arbeitet an einer neuen Zeichnung.',
+    'Mara hängt ihre fertige kleine Skizze neben dem Fenster auf.',
+  ],
+  'first-date': [
+    'Noor und Toni teilen sich zaghaft ein Stück Kuchen und bleiben noch ein wenig sitzen.',
+    'Noor und Toni stoßen leise an – aus dem ersten Treffen ist ein guter Abend geworden.',
+  ],
+  'knit-gift': [
+    'Linn legt jemandem gegenüber ein kleines selbstgestricktes Geschenk hin.',
+    'Linn legt jemandem gegenüber ein kleines selbstgestricktes Geschenk hin.',
+  ],
+};
+
+function momentMessage(moment: Readonly<CafeMoment>): string {
+  if (!moment.story || !moment.storyStep) return MOMENT_MESSAGES[moment.kind];
+  return STORY_MESSAGES[moment.story][moment.storyStep - 1] ?? MOMENT_MESSAGES[moment.kind];
+}
 
 function requiredElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -54,6 +76,18 @@ function simulationOptions(): CafeSimulationOptions {
       maxDelaySeconds: 0.35,
       kinds: [requestedMoment as CafeMomentKind],
       durationScale: 0.45,
+    };
+  }
+  const requestedStory = parameters.get('story');
+  const storyKinds: readonly CafeStoryKind[] = ['sketchbook', 'first-date', 'knit-gift'];
+  if (storyKinds.includes(requestedStory as CafeStoryKind)) {
+    options.initialGuests = Math.max(options.initialGuests ?? 0, 4);
+    options.moments = false;
+    options.stories = {
+      seed: 0x5707_2026,
+      minDelaySeconds: 0.35,
+      maxDelaySeconds: 0.35,
+      kinds: [requestedStory as CafeStoryKind],
     };
   }
   return options;
@@ -222,7 +256,7 @@ export class KaffeepauseApp {
       const moment = this.simulation.activeMoment;
       if (moment && moment.id !== this.lastAnnouncedMomentId) {
         this.lastAnnouncedMomentId = moment.id;
-        this.status.textContent = MOMENT_MESSAGES[moment.kind];
+        this.status.textContent = momentMessage(moment);
         this.audio.playMoment(moment.kind);
       }
     }
