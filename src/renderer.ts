@@ -180,6 +180,7 @@ export class CafeRenderer {
       .map((guest) => guest.regularId ?? '')
       .filter(Boolean)
       .join(',');
+    this.canvas.dataset.navigation = 'collision-aware';
   }
 
   private drawRoom(time: number): void {
@@ -822,8 +823,16 @@ export class CafeRenderer {
     const variant = guestVariant(guest);
     const phase = this.reducedMotion ? 0 : Math.floor(guest.animation * 2) % 4;
 
-    rect(context, '#2d2229', x - 7, footY + 1, 14, 2.5);
-    rect(context, '#49313a', x - 5, footY + 1, 10, HALF_PIXEL);
+    const shadowWidth = walking ? 18 : 14;
+    const shadowOffset = walking ? -facing * 2 : 0;
+    polygon(context, '#211a23', [
+      [x - shadowWidth / 2 + shadowOffset, footY + 2],
+      [x + shadowWidth / 2 + shadowOffset, footY + 2],
+      [x + shadowWidth / 2 - 3 + shadowOffset, footY + 4],
+      [x - shadowWidth / 2 + 3 + shadowOffset, footY + 4],
+    ]);
+    rect(context, '#2d2229', x - 7 + shadowOffset * HALF_PIXEL, footY + 1, 14, 2.5);
+    rect(context, '#49313a', x - 5 + shadowOffset * HALF_PIXEL, footY + 1, 10, HALF_PIXEL);
     if (!seated) {
       const stride = this.reducedMotion ? 0 : Math.round(Math.sin(guest.animation)) * 2;
       rect(context, '#211d25', x - 4 + stride, footY - 5.5, 3.5, 7);

@@ -5,6 +5,37 @@ export const WORLD_HEIGHT = 216;
 
 export interface Place extends Point { id: string }
 
+export interface CollisionRect {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// Große Möbel werden auch von der Simulation genutzt. Die Sitzplätze liegen
+// bewusst direkt an den Kanten, damit Gäste an Stühlen und Bänken ankommen können.
+export const CAFE_COLLIDERS: readonly CollisionRect[] = [
+  { id: 'door', x: 3, y: 36, width: 43, height: 146 },
+  { id: 'window-bench', x: 58, y: 134, width: 109, height: 8 },
+  { id: 'window-table-left', x: 87, y: 166, width: 37, height: 10 },
+  { id: 'window-table-right', x: 161, y: 166, width: 37, height: 10 },
+  { id: 'counter', x: 276, y: 116, width: 108, height: 97 },
+  { id: 'display-case', x: 282, y: 89, width: 32, height: 27 },
+  { id: 'plant-stand', x: 254, y: 87, width: 12, height: 45 },
+];
+
+export const GUEST_RADIUS = 4.25;
+
+export function pointHitsCafeCollider(point: Point, radius = GUEST_RADIUS): boolean {
+  return CAFE_COLLIDERS.some((collider) => (
+    point.x + radius > collider.x
+    && point.x - radius < collider.x + collider.width
+    && point.y + radius > collider.y
+    && point.y - radius < collider.y + collider.height
+  ));
+}
+
 export const ENTRANCE: Point = { x: 24, y: 188 };
 export const OUTSIDE: Point = { x: -12, y: 188 };
 

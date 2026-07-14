@@ -21,6 +21,7 @@ Kaffeepause zeigt ein gemütliches Café als bildschirmfüllendes Canvas-Diorama
 - Passant:innen, Busse, Regenschirme, Vögel und saisonale Außenwelt hinter dem Fenster
 - tageszeitabhängige Auslage, Stadtlichter, Sterne, Lichtstreifen und warme Innenbeleuchtung
 - deterministische Figuren-Zustandsautomaten und zentrale Platzreservierung
+- kollisionsbewusste Routen um Theke, Tische und andere laufende Gäste
 - seltene, vollständig reversible Café-Unfälle mit Tablett, Kaffeetasse oder Regenschirm
 - adaptive Lo-fi-Musik, Regen, Wind und belegungsabhängige Café-Geräusche über Web Audio
 - pixelartige Ton- und Vollbildsteuerung, die sich nach 2,5 Sekunden Ruhe zurückzieht

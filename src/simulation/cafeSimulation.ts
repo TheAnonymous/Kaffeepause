@@ -1,4 +1,15 @@
-import { BARISTA_PLACES, ENTRANCE, OUTSIDE, QUEUE_PLACES, SEATS, WAIT_PLACES, WORLD_WIDTH, type Place } from './layout';
+import {
+  BARISTA_PLACES,
+  ENTRANCE,
+  GUEST_RADIUS,
+  OUTSIDE,
+  QUEUE_PLACES,
+  SEATS,
+  WAIT_PLACES,
+  WORLD_WIDTH,
+  pointHitsCafeCollider,
+  type Place,
+} from './layout';
 import { SeededRandom } from './random';
 import { ReservationManager } from './reservations';
 import type { CafeEnvironmentSnapshot } from '../environment/types';
@@ -105,6 +116,7 @@ interface GuestSnapshot {
   state: Guest['state'];
   activity: GuestActivity;
   target: Point;
+  waypoints?: Point[];
   facing: Guest['facing'];
   stateTime: number;
   stateDuration: number;
@@ -136,8 +148,31 @@ function copyPoint(point: Point): Point {
   return { x: point.x, y: point.y };
 }
 
+function copyPoints(points?: readonly Point[]): Point[] | undefined {
+  return points?.map(copyPoint);
+}
+
 function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+const NAVIGATION_STEP = 12;
+const NAVIGATION_MIN_X = 12;
+const NAVIGATION_MAX_X = 264;
+const NAVIGATION_MIN_Y = 140;
+const NAVIGATION_MAX_Y = 200;
+
+function segmentIsClear(start: Point, end: Point): boolean {
+  const steps = Math.max(1, Math.ceil(distance(start, end) / 2));
+  for (let index = 1; index <= steps; index += 1) {
+    const progress = index / steps;
+    const point = {
+      x: start.x + (end.x - start.x) * progress,
+      y: start.y + (end.y - start.y) * progress,
+    };
+    if (pointHitsCafeCollider(point)) return false;
+  }
+  return true;
 }
 
 export class CafeSimulation {
@@ -301,7 +336,7 @@ export class CafeSimulation {
     if (!queuePlace) return undefined;
 
     const guest = this.makeGuest('entering', OUTSIDE);
-    guest.target = copyPoint(ENTRANCE);
+    this.setGuestTarget(guest, ENTRANCE);
     guest.destinationId = queuePlace.id;
     this.reservations.reserve(queuePlace.id, guest.id);
     this.guests.push(guest);
@@ -673,6 +708,7 @@ export class CafeSimulation {
       state: guest.state,
       activity: guest.activity,
       target: copyPoint(guest.target),
+      waypoints: copyPoints(guest.waypoints),
       facing: guest.facing,
       stateTime: guest.stateTime,
       stateDuration: guest.stateDuration,
@@ -720,8 +756,12 @@ export class CafeSimulation {
     const remaining = Math.hypot(dx, dy);
     if (remaining <= 0.15) return;
     const step = Math.min(remaining, guest.speed * delta);
-    guest.position.x += (dx / remaining) * step;
-    guest.position.y += (dy / remaining) * step;
+    const candidate = {
+      x: guest.position.x + (dx / remaining) * step,
+      y: guest.position.y + (dy / remaining) * step,
+    };
+    if (!this.canOccupy(guest, candidate)) return;
+    guest.position = candidate;
     if (Math.abs(dx) > 0.2) guest.facing = dx < 0 ? -1 : 1;
   }
 
@@ -742,6 +782,7 @@ export class CafeSimulation {
     guest.state = snapshot.state;
     guest.activity = snapshot.activity;
     guest.target = copyPoint(snapshot.target);
+    guest.waypoints = copyPoints(snapshot.waypoints);
     guest.facing = snapshot.facing;
     guest.stateTime = snapshot.stateTime;
     guest.stateDuration = snapshot.stateDuration;
@@ -836,7 +877,7 @@ export class CafeSimulation {
     guest.stateTime = 0;
     guest.stateDuration = this.duration(this.random.range(4.5, 7.5));
     guest.destinationId = waitingPlace.id;
-    guest.target = copyPoint(waitingPlace);
+    this.setGuestTarget(guest, waitingPlace);
     guest.facing = 1;
   }
 
@@ -871,7 +912,7 @@ export class CafeSimulation {
     if (!closer || !this.reservations.reserve(closer.id, guest.id)) return;
     if (guest.destinationId) this.reservations.release(guest.destinationId, guest.id);
     guest.destinationId = closer.id;
-    guest.target = copyPoint(closer);
+    this.setGuestTarget(guest, closer);
   }
 
   private updateBarista(delta: number): void {
@@ -897,26 +938,142 @@ export class CafeSimulation {
     barista.taskDuration = this.random.range(6, 11);
   }
 
+  private setGuestTarget(guest: Guest, target: Point): void {
+    guest.target = copyPoint(target);
+    guest.waypoints = this.planRoute(guest.position, guest.target);
+  }
+
+  private planRoute(start: Point, target: Point): Point[] {
+    if (segmentIsClear(start, target)) return [];
+
+    const columns = Math.floor((NAVIGATION_MAX_X - NAVIGATION_MIN_X) / NAVIGATION_STEP) + 1;
+    const rows = Math.floor((NAVIGATION_MAX_Y - NAVIGATION_MIN_Y) / NAVIGATION_STEP) + 1;
+    const pointFor = (column: number, row: number): Point => ({
+      x: NAVIGATION_MIN_X + column * NAVIGATION_STEP,
+      y: NAVIGATION_MIN_Y + row * NAVIGATION_STEP,
+    });
+    const keyFor = (column: number, row: number): string => `${column}:${row}`;
+    const parseKey = (key: string): readonly [number, number] => key.split(':').map(Number) as [number, number];
+    const nearestVisibleNode = (origin: Point): string | undefined => {
+      const candidates: Array<{ key: string; point: Point; distance: number }> = [];
+      for (let row = 0; row < rows; row += 1) {
+        for (let column = 0; column < columns; column += 1) {
+          const point = pointFor(column, row);
+          if (pointHitsCafeCollider(point) || !segmentIsClear(origin, point)) continue;
+          candidates.push({ key: keyFor(column, row), point, distance: distance(origin, point) });
+        }
+      }
+      candidates.sort((left, right) => left.distance - right.distance);
+      return candidates[0]?.key;
+    };
+
+    const startKey = nearestVisibleNode(start);
+    const endKey = nearestVisibleNode(target);
+    if (!startKey || !endKey) return [];
+
+    const queue = [startKey];
+    const visited = new Set(queue);
+    const previous = new Map<string, string>();
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current || current === endKey) break;
+      const [column, row] = parseKey(current);
+      for (const [offsetX, offsetY] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nextColumn = column + offsetX;
+        const nextRow = row + offsetY;
+        if (nextColumn < 0 || nextColumn >= columns || nextRow < 0 || nextRow >= rows) continue;
+        const nextKey = keyFor(nextColumn, nextRow);
+        const nextPoint = pointFor(nextColumn, nextRow);
+        if (visited.has(nextKey) || pointHitsCafeCollider(nextPoint) || !segmentIsClear(pointFor(column, row), nextPoint)) continue;
+        visited.add(nextKey);
+        previous.set(nextKey, current);
+        queue.push(nextKey);
+      }
+    }
+    if (!visited.has(endKey)) return [];
+
+    const pathKeys = [endKey];
+    while (pathKeys[0] !== startKey) {
+      const predecessor = previous.get(pathKeys[0] ?? '');
+      if (!predecessor) return [];
+      pathKeys.unshift(predecessor);
+    }
+    return pathKeys
+      .map((key) => {
+        const [column, row] = parseKey(key);
+        return pointFor(column, row);
+      })
+      .filter((point) => distance(point, start) > 0.2 && distance(point, target) > 0.2);
+  }
+
+  private canOccupy(guest: Guest, candidate: Point): boolean {
+    if (pointHitsCafeCollider(candidate)) return false;
+    // Draußen vor der Tür dürfen sich Gäste kurz überblenden; sonst könnte eine
+    // eintretende Person den Ausgang dauerhaft versperren.
+    if (guest.state === 'exiting' || candidate.x <= 0) return true;
+    return !this.guests.some((other) => (
+      other !== guest
+      && other.state !== 'exiting'
+      && distance(candidate, other.position) < (other.state === 'activity' ? GUEST_RADIUS * 1.05 : GUEST_RADIUS * 1.72)
+    ));
+  }
+
   private transition(guest: Guest, state: Guest['state'], target: Point): void {
     guest.state = state;
     guest.stateTime = 0;
     guest.stateDuration = 0;
-    guest.target = copyPoint(target);
+    this.setGuestTarget(guest, target);
   }
 
   private moveToward(guest: Guest, delta: number): boolean {
-    const dx = guest.target.x - guest.position.x;
-    const dy = guest.target.y - guest.position.y;
+    const waypoint = guest.waypoints?.[0];
+    const target = waypoint ?? guest.target;
+    const dx = target.x - guest.position.x;
+    const dy = target.y - guest.position.y;
     const remaining = Math.hypot(dx, dy);
     if (remaining <= 0.15) {
-      guest.position = copyPoint(guest.target);
+      guest.position = copyPoint(target);
+      if (waypoint) {
+        guest.waypoints?.shift();
+        return false;
+      }
       return true;
     }
     const step = Math.min(remaining, guest.speed * delta);
-    guest.position.x += (dx / remaining) * step;
-    guest.position.y += (dy / remaining) * step;
+    const candidate = {
+      x: guest.position.x + (dx / remaining) * step,
+      y: guest.position.y + (dy / remaining) * step,
+    };
+    if (!this.canOccupy(guest, candidate)) {
+      if (pointHitsCafeCollider(candidate)) {
+        const reroute = this.planRoute(guest.position, guest.target);
+        if (reroute.length > 0) {
+          guest.waypoints = reroute;
+          return false;
+        }
+      }
+      const sideways = Math.min(2.5, step);
+      const direction = Number.parseInt(guest.id.replace(/\D/g, ''), 10) % 2 === 0 ? 1 : -1;
+      for (const sign of [direction, -direction]) {
+        const detour = {
+          x: guest.position.x + (-dy / remaining) * sideways * sign,
+          y: guest.position.y + (dx / remaining) * sideways * sign,
+        };
+        if (!this.canOccupy(guest, detour)) continue;
+        guest.position = detour;
+        return false;
+      }
+      return false;
+    }
+    guest.position = candidate;
     if (Math.abs(dx) > 0.2) guest.facing = dx < 0 ? -1 : 1;
-    return step >= remaining;
+    if (step < remaining) return false;
+    guest.position = copyPoint(target);
+    if (waypoint) {
+      guest.waypoints?.shift();
+      return false;
+    }
+    return true;
   }
 
   private findAvailable(places: readonly Place[]): Place | undefined {

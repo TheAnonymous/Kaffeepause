@@ -44,6 +44,7 @@ export interface Guest {
   activity: GuestActivity;
   position: Point;
   target: Point;
+  waypoints?: Point[];
   facing: -1 | 1;
   speed: number;
   stateTime: number;
