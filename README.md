@@ -4,17 +4,16 @@ Ein autonomes Pixel-Art-Diorama für eine kleine Pause im Browser.
 
 **[Ort auswählen →](https://theanonymous.github.io/Kaffeepause/)**
 
-![Das Pixel-Art-Café Kaffeepause bei klarem Mittagslicht](docs/kaffeepause-preview.png)
-
 ## Über das Projekt
 
 Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen-Restaurant oder eine ruhige Arcade-Halle. Alle drei Varianten teilen sich die autonome, kollisionsbewusste Gäste-Simulation, erhalten aber jeweils eigene Einrichtung, Palette, Theke, Lichtdetails und zurückhaltende Klangfarbe. Gerätezeit, Sonnenstand, Wetter und Tagesprofil verändern Außenwelt, Licht, Auslage, Geräuschkulisse und Belegung weich. Gäste kommen und gehen, bestellen, lesen, arbeiten, zeichnen, telefonieren, reden und trinken – vollständig selbstständig und ohne sichtbaren Schleifensprung. Wiederkehrende Stammgäste bringen ruhige Geschichten mit: Mara füllt und hängt eine Skizze auf, Noor und Toni verbringen einen ersten Abend miteinander, Linn verschenkt etwas Selbstgestricktes. Dazwischen verbinden kleine Alltagsmomente die Szene.
 
-- handgezeichnete Canvas-Pixelart ohne externe Assets
+- vollständig prozedurale WebGL-Dioramen ohne fremde Spiel- oder Grafikassets
 - Auswahl zwischen Café, Ramen-Restaurant und Arcade-Halle vor dem Eintritt; keine nachträgliche Menühürde
-- echte 2304 × 1296-HD-Masterfläche (6×) mit bis zu 192 Rasterpixel hohen Figuren
-- hochauflösende Gesichter, Haarsträhnen, Stoffnähte, Hände, Schuhdetails und gerichtetes Konturlicht
-- separater HD-2D-Kompositionspass für Bloom, Farblicht und sanfte Tiefenunschärfe
+- echte 2304 × 1296-HD-Masterfläche (6×) mit 144 × 208 Pixel großen Original-Figurentexturen
+- perspektivische 2,5D-Kamera, physische Raumkörper, Möbel, Fenster, Tür, Bodenkontakt und echte Tiefenverdeckung
+- hochauflösende Gesichter, Haare, Stoffnähte, Hände, Schuhe, Accessoires und tätigkeitsgebundene Requisiten
+- separate HD-2D-Kompositionskette für Bloom, Farblicht, Miniatur-Fokus und Vignette
 - zwölf deterministische Figuren-Silhouetten mit fünf Körperformen, vier Gesichtsformen, acht Frisuren, sechs Outfit-Schnitten, unterschiedlichen Größen, Hauttönen und persönlichen Details
 - bis zu acht Gäste mit lesbaren Tätigkeiten, Wetteraccessoires und einer detaillierten animierten Bedienung
 - eine echte Eingangstür, die sich für ankommende und gehende Gäste am Simulations-Eingang öffnet und ruhig wieder schließt
@@ -24,14 +23,14 @@ Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen
 - vier visuell wiedererkennbare Stammgäste mit seltenen, zusammenhängenden Mini-Geschichten
 - funktionierende Pixel-Wanduhr sowie lokaler Sonnenstand mit Dämmerung und Polarzuständen
 - klare, bewölkte, neblige, regnerische, verschneite und stürmische Außenwelten
-- Passant:innen, Busse, Regenschirme, Vögel und saisonale Außenwelt hinter dem Fenster
-- tageszeitabhängige Auslage, Stadtlichter, Sterne, gerichtetes Fensterlicht, nasse Reflexionen und warme Innenbeleuchtung
+- räumliche Stadtsilhouette, Wetterpartikel und Stadtlichter hinter einer echten Glasscheibe
+- tageszeitabhängiges, gerichtetes Sonnenlicht, Nebel, nasse Lichtstimmung und warme praktische Innenbeleuchtung
 - mehrschichtige Vordergrundrequisiten, ortsspezifische Lichtspuren auf dem Boden und ruhige Innenreflexionen im Fensterglas
 - leuchtende HD-2D-Diorama-Inszenierung mit Lichtblüten, Tiefendunst, Fokuszone und sanfter Vignette
 - deterministische Figuren-Zustandsautomaten und zentrale Platzreservierung
 - kollisionsbewusste Routen um Theke, Tische und andere laufende Gäste
 - zentrales Proportionsmodell mit automatischen Prüfungen für Figuren, Tische, Theke, Tür, Tiefenstaffelung und freie Laufwege
-- schlanke Szenenlaufzeit mit unveränderlichen Snapshots zwischen Simulation und Canvas-Renderer
+- schlanke Szenenlaufzeit mit unveränderlichen Snapshots zwischen Simulation und WebGL-Renderer
 - seltene, vollständig reversible Café-Unfälle mit Tablett, Kaffeetasse oder Regenschirm
 - adaptive Lo-fi-Musik, räumlicher Regen und Wind sowie seltene, belegungsabhängige Ortsgeräusche über Web Audio
 - pixelartige Ton- und Vollbildsteuerung, die sich nach 2,5 Sekunden Ruhe zurückzieht
@@ -62,8 +61,8 @@ npm run build
 npm run test:e2e
 ```
 
-Die Simulation verwendet stabile Szenenkoordinaten von 384 × 216. Gerendert wird auf einer intrinsischen 2304 × 1296-HD-Masterfläche mit Faktor 6. Figuren nutzen das feinere Sechstelpixel-Raster für Gesichter, Kleidung und Lichtkanten; ein separater Kompositionspass ergänzt Bloom und Tiefenstaffelung, ohne die Spritekonturen aufzuweichen. Auf Smartphones bleibt die Szenenhöhe erhalten; die intrinsische Canvasbreite und der sichtbare Kameraausschnitt werden gemeinsam angepasst.
+Die Simulation verwendet weiterhin stabile Szenenkoordinaten von 384 × 216. Der neue Renderer übersetzt sie in einen 16 × 8,8 × 7,2 Einheiten großen Raumkörper und rendert ihn auf einer intrinsischen 2304 × 1296-HD-Masterfläche. Figuren bleiben hochauflösende Pixelkunst, stehen aber als Billboards zwischen echten 3D-Möbeln. Dadurch entstehen perspektivisch korrekte Verdeckungen, Bodenschatten und eine Miniatur-Fokuszone. Auf Smartphones wandert dieselbe Perspektivkamera durch das Diorama.
 
-Tragende Maße liegen zentral in `src/scene/proportions.ts`. Die Prüfung vergleicht keine isolierten Zahlen, sondern Beziehungen wie Tischkante zu Sitzfigur, Thekenkante zu Personal, Tür zu Körperbreite, hintere zu vorderer Möbelebene sowie sichtbare Möbel zu Kollisionen und Laufzielen. Der Canvas veröffentlicht das Ergebnis zusätzlich über `data-proportion-check` und `data-layout-score`.
+Tragende Simulationsmaße liegen in `src/scene/proportions.ts`, die physische Maßkette des Dioramas in `src/diorama/types.ts`. Die automatische Prüfung vergleicht Beziehungen wie Tisch zu Figur, Theke zu Personal, Tür zu Körperhöhe, Sitz- zu Stehhöhe, Texturauflösung und freie Laufwege. Der Canvas veröffentlicht die Ergebnisse zusätzlich über `data-proportion-check`, `data-diorama-scale-check` und `data-layout-score`.
 
 Im Entwicklungsserver lassen sich visuelle Szenen mit `?time=HH:MM`, `?weather=clear|cloudy|fog|rain|snow|storm`, `?lat=<Breite>` und `?lon=<Länge>` kombinieren. Genau eine Unfallart kann zusätzlich beschleunigt werden, zum Beispiel mit `?accident=tray-drop`, `?accident=coffee-spill` oder `?accident=umbrella-pop`; ebenso ein Alltagsmoment mit `?moment=shared-cake|card-game|window-gaze|sketch-reveal` oder eine Stammgast-Geschichte mit `?story=sketchbook|first-date|knit-gift`. Produktionsbuilds ignorieren sämtliche Testparameter.

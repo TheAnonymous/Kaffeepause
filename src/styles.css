@@ -32,8 +32,8 @@ body[data-entered="true"][data-ui-idle="true"] {
   display: block;
   width: 100vw;
   height: 100dvh;
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
+  /* The WebGL room stays smooth; individual character textures retain nearest-neighbour pixels. */
+  image-rendering: auto;
   background: #1c1925;
 }
 

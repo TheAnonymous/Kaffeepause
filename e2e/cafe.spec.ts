@@ -15,10 +15,13 @@ test('betritt das Café, füllt den Viewport und schaltet den Ton', async ({ pag
   await expect(canvas).toHaveAttribute('data-logical-width', '2304');
   await expect(canvas).toHaveAttribute('data-scene-width', '384');
   await expect(canvas).toHaveAttribute('data-render-scale', '6');
-  await expect(canvas).toHaveAttribute('data-character-detail', 'hd-sixth-pixel');
-  await expect(canvas).toHaveAttribute('data-render-quality', 'hd2d-master');
+  await expect(canvas).toHaveAttribute('data-character-detail', '144x208-original-pixel-sprite');
+  await expect(canvas).toHaveAttribute('data-render-quality', 'webgl-diorama-master');
   await expect(canvas).toHaveAttribute('data-master-resolution', '2304x1296');
-  await expect(canvas).toHaveAttribute('data-character-raster-height', '192');
+  await expect(canvas).toHaveAttribute('data-character-raster-height', '208');
+  await expect(canvas).toHaveAttribute('data-renderer', 'webgl-diorama');
+  await expect(canvas).toHaveAttribute('data-depth-model', 'physical-2.5d');
+  await expect(canvas).toHaveAttribute('data-diorama-scale-check', 'pass');
   await expect(canvas).toHaveAttribute('data-navigation', 'collision-aware');
   await expect(canvas).toHaveAttribute('data-proportion-check', 'pass');
   await expect(canvas).toHaveAttribute('data-layout-score', '100');

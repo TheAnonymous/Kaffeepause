@@ -330,6 +330,7 @@ export class KaffeepauseApp {
     if (this.idleTimer !== undefined) window.clearTimeout(this.idleTimer);
     this.environment.stop();
     this.runtime.stop();
+    this.renderer.dispose();
     void this.audio.destroy();
   };
 
