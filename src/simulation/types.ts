@@ -26,6 +26,25 @@ export type GuestActivity =
 
 export type GuestAccessory = 'umbrella' | 'coat' | 'scarf' | 'sunglasses';
 
+export type GuestBodyShape = 'slim' | 'soft' | 'broad' | 'compact' | 'angular';
+export type GuestFaceShape = 'round' | 'oval' | 'square' | 'narrow';
+export type GuestHairStyle = 'crop' | 'bob' | 'curls' | 'bun' | 'long' | 'undercut' | 'ponytail' | 'waves';
+export type GuestOutfitStyle = 'cardigan' | 'hoodie' | 'jacket' | 'sweater' | 'overalls' | 'dress';
+export type GuestPersonalDetail = 'none' | 'glasses' | 'freckles' | 'earring' | 'beard' | 'hairclip' | 'mole';
+export type GuestMaturity = 'young' | 'adult' | 'older';
+
+export interface GuestAppearance {
+  body: GuestBodyShape;
+  face: GuestFaceShape;
+  hair: GuestHairStyle;
+  outfit: GuestOutfitStyle;
+  detail: GuestPersonalDetail;
+  maturity: GuestMaturity;
+  heightOffset: number;
+  widthOffset: number;
+  pattern: number;
+}
+
 export type RegularId = 'mara' | 'noor' | 'toni' | 'linn' | 'sora' | 'kai';
 
 export type CafeStoryKind = 'sketchbook' | 'first-date' | 'knit-gift' | 'arcade-rivals';
@@ -35,6 +54,8 @@ export interface GuestPalette {
   hair: string;
   coat: string;
   accent: string;
+  trousers: string;
+  shoes: string;
 }
 
 export interface Guest {
@@ -55,6 +76,7 @@ export interface Guest {
   destinationId?: string;
   accessory?: GuestAccessory;
   palette: GuestPalette;
+  appearance: GuestAppearance;
   regularId?: RegularId;
 }
 

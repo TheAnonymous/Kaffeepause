@@ -12,6 +12,7 @@ import {
 } from './layout';
 import { SeededRandom } from './random';
 import { ReservationManager } from './reservations';
+import { appearanceForGuestNumber, REGULAR_APPEARANCES } from './appearance';
 import type { CafeEnvironmentSnapshot } from '../environment/types';
 import type { VenueKind } from '../venue';
 import type {
@@ -24,6 +25,7 @@ import type {
   CafeStoryKind,
   Guest,
   GuestActivity,
+  GuestAppearance,
   GuestPalette,
   Point,
   RegularId,
@@ -31,33 +33,40 @@ import type {
 } from './types';
 import type { SceneSnapshot } from '../scene/types';
 
-const NAMES = ['Fritzi', 'Eli', 'Jun', 'Pia', 'Mika', 'Romy'] as const;
+const NAMES = ['Fritzi', 'Eli', 'Jun', 'Pia', 'Mika', 'Romy', 'Ari', 'Bo', 'Cleo', 'Dani', 'Emi', 'Flo'] as const;
 const ACTIVITIES: readonly GuestActivity[] = [
   'reading', 'typing', 'talking', 'drinking', 'phone', 'sketching', 'journaling', 'knitting', 'board-game',
 ];
 const PALETTES: readonly GuestPalette[] = [
-  { skin: '#d8a071', hair: '#3a252b', coat: '#557b78', accent: '#e5b568' },
-  { skin: '#8f5c48', hair: '#241c25', coat: '#a5544e', accent: '#e6c589' },
-  { skin: '#edc39a', hair: '#6d4938', coat: '#5c668c', accent: '#d98f5f' },
-  { skin: '#b87957', hair: '#33272a', coat: '#8a684f', accent: '#77a095' },
-  { skin: '#e1aa7f', hair: '#b16a46', coat: '#677348', accent: '#e2bc72' },
-  { skin: '#71483c', hair: '#191820', coat: '#6d5278', accent: '#c98668' },
+  { skin: '#d8a071', hair: '#3a252b', coat: '#557b78', accent: '#e5b568', trousers: '#343b46', shoes: '#171820' },
+  { skin: '#8f5c48', hair: '#241c25', coat: '#a5544e', accent: '#e6c589', trousers: '#41343d', shoes: '#201b21' },
+  { skin: '#edc39a', hair: '#6d4938', coat: '#5c668c', accent: '#d98f5f', trousers: '#343a55', shoes: '#26202a' },
+  { skin: '#b87957', hair: '#33272a', coat: '#8a684f', accent: '#77a095', trousers: '#4e3f38', shoes: '#2d2427' },
+  { skin: '#e1aa7f', hair: '#b16a46', coat: '#677348', accent: '#e2bc72', trousers: '#3d4937', shoes: '#25241f' },
+  { skin: '#71483c', hair: '#191820', coat: '#6d5278', accent: '#c98668', trousers: '#403446', shoes: '#11151c' },
+  { skin: '#f0c8a4', hair: '#d3a073', coat: '#8a5367', accent: '#7db0a1', trousers: '#4b4054', shoes: '#2b252c' },
+  { skin: '#a66f55', hair: '#51413b', coat: '#486c83', accent: '#d49a62', trousers: '#293a4a', shoes: '#171b22' },
+  { skin: '#c98d68', hair: '#202a2f', coat: '#9a7045', accent: '#c46b70', trousers: '#47423a', shoes: '#25211f' },
+  { skin: '#6f4438', hair: '#734d34', coat: '#4f7c68', accent: '#d4b566', trousers: '#2d403a', shoes: '#171d1c' },
+  { skin: '#e7b58f', hair: '#765667', coat: '#79628f', accent: '#d59b72', trousers: '#433b57', shoes: '#211d29' },
+  { skin: '#996047', hair: '#c7b7a2', coat: '#546d63', accent: '#bd765d', trousers: '#38433f', shoes: '#1d2221' },
 ];
 
 interface RegularProfile {
   id: RegularId;
   name: string;
   palette: GuestPalette;
+  appearance: GuestAppearance;
   favoriteActivity: GuestActivity;
 }
 
 const REGULARS: readonly RegularProfile[] = [
-  { id: 'mara', name: 'Mara', palette: { skin: '#d8a071', hair: '#2d242b', coat: '#557b78', accent: '#e5b568' }, favoriteActivity: 'sketching' },
-  { id: 'noor', name: 'Noor', palette: { skin: '#8f5c48', hair: '#241c25', coat: '#a5544e', accent: '#e6c589' }, favoriteActivity: 'talking' },
-  { id: 'toni', name: 'Toni', palette: { skin: '#edc39a', hair: '#6d4938', coat: '#5c668c', accent: '#d98f5f' }, favoriteActivity: 'drinking' },
-  { id: 'linn', name: 'Linn', palette: { skin: '#b87957', hair: '#33272a', coat: '#6d5278', accent: '#77a095' }, favoriteActivity: 'knitting' },
-  { id: 'sora', name: 'Sora', palette: { skin: '#d9a27e', hair: '#27314b', coat: '#4f6f8c', accent: '#e65f9c' }, favoriteActivity: 'phone' },
-  { id: 'kai', name: 'Kai', palette: { skin: '#9e684f', hair: '#28202a', coat: '#76594d', accent: '#91c19b' }, favoriteActivity: 'journaling' },
+  { id: 'mara', name: 'Mara', palette: { skin: '#d8a071', hair: '#2d242b', coat: '#557b78', accent: '#e5b568', trousers: '#343b46', shoes: '#171820' }, appearance: REGULAR_APPEARANCES.mara, favoriteActivity: 'sketching' },
+  { id: 'noor', name: 'Noor', palette: { skin: '#8f5c48', hair: '#241c25', coat: '#a5544e', accent: '#e6c589', trousers: '#41343d', shoes: '#201b21' }, appearance: REGULAR_APPEARANCES.noor, favoriteActivity: 'talking' },
+  { id: 'toni', name: 'Toni', palette: { skin: '#edc39a', hair: '#6d4938', coat: '#5c668c', accent: '#d98f5f', trousers: '#343a55', shoes: '#26202a' }, appearance: REGULAR_APPEARANCES.toni, favoriteActivity: 'drinking' },
+  { id: 'linn', name: 'Linn', palette: { skin: '#b87957', hair: '#33272a', coat: '#6d5278', accent: '#77a095', trousers: '#4e3f38', shoes: '#2d2427' }, appearance: REGULAR_APPEARANCES.linn, favoriteActivity: 'knitting' },
+  { id: 'sora', name: 'Sora', palette: { skin: '#d9a27e', hair: '#27314b', coat: '#4f6f8c', accent: '#e65f9c', trousers: '#293a4a', shoes: '#171b22' }, appearance: REGULAR_APPEARANCES.sora, favoriteActivity: 'phone' },
+  { id: 'kai', name: 'Kai', palette: { skin: '#9e684f', hair: '#28202a', coat: '#76594d', accent: '#91c19b', trousers: '#47423a', shoes: '#25211f' }, appearance: REGULAR_APPEARANCES.kai, favoriteActivity: 'journaling' },
 ];
 
 export interface CafeSimulationOptions {
@@ -174,6 +183,7 @@ function copyGuest(guest: Guest): Guest {
     target: frozenPoint(guest.target),
     waypoints: guest.waypoints ? Object.freeze(guest.waypoints.map(frozenPoint)) as Point[] : undefined,
     palette: Object.freeze({ ...guest.palette }) as GuestPalette,
+    appearance: Object.freeze({ ...guest.appearance }) as GuestAppearance,
   }) as Guest;
 }
 
@@ -485,7 +495,8 @@ export class CafeSimulation {
       stateDuration: 0,
       animation: this.random.range(0, Math.PI * 2),
       activityRounds: 0,
-      palette: regular?.palette ?? this.random.pick(PALETTES),
+      palette: regular?.palette ?? PALETTES[(numericId - 1) % PALETTES.length] as GuestPalette,
+      appearance: regular?.appearance ?? appearanceForGuestNumber(numericId),
       regularId: regular?.id,
     };
   }

@@ -12,6 +12,7 @@ import { calculateVenueActivityState, VenueActivityRenderer } from './scene/venu
 import { VenueOpticsRenderer, windowReflectionLean } from './scene/venueOpticsRenderer';
 import { VenueRenderer } from './scene/venueRenderer';
 import { SCENE_PROPORTIONS, SCENE_PROPORTION_REPORT } from './scene/proportions';
+import { APPEARANCE_LIBRARY_REPORT, geometryForGuest } from './simulation/appearance';
 
 // Drei physische Pixel pro Szenenpixel lassen kleine Licht-, Holz- und Stoffdetails
 // klarer wirken, ohne den bewusst groben Pixel-Art-Charakter zu verlieren.
@@ -64,8 +65,7 @@ function polygon(context: CanvasRenderingContext2D, color: string, points: reado
 }
 
 function guestVariant(guest: Guest): number {
-  const numericId = Number.parseInt(guest.id.replace(/\D/g, ''), 10);
-  return Number.isFinite(numericId) ? numericId % 6 : 0;
+  return guest.appearance.pattern;
 }
 
 function clamp(value: number, min = 0, max = 1): number {
@@ -113,10 +113,12 @@ export class CafeRenderer {
     if (!context) throw new Error('Canvas 2D wird von diesem Browser nicht unterstützt.');
     this.context = context;
     this.context.imageSmoothingEnabled = false;
-    const proportionsValid = SCENE_PROPORTION_REPORT.valid && CAFE_LAYOUT_REPORT.valid;
+    const proportionsValid = SCENE_PROPORTION_REPORT.valid && CAFE_LAYOUT_REPORT.valid && APPEARANCE_LIBRARY_REPORT.valid;
     this.canvas.dataset.proportionCheck = proportionsValid ? 'pass' : 'warning';
     this.canvas.dataset.layoutScore = String(Math.min(SCENE_PROPORTION_REPORT.score, CAFE_LAYOUT_REPORT.score));
     this.canvas.dataset.scaleModel = `${SCENE_PROPORTIONS.character.standingHeight}px-adult`;
+    this.canvas.dataset.characterVariation = `${APPEARANCE_LIBRARY_REPORT.uniqueSilhouettes}-silhouettes`;
+    this.canvas.dataset.characterDiversity = String(APPEARANCE_LIBRARY_REPORT.score);
   }
 
   setActive(active: boolean): void {
@@ -1326,9 +1328,8 @@ export class CafeRenderer {
     const walking = guest.state.includes('walking') || guest.state === 'entering' || guest.state === 'exiting';
     const bob = this.reducedMotion || !walking ? 0 : Math.round(Math.sin(guest.animation) * 2) * HALF_PIXEL;
     const footY = snap(guest.position.y + bob);
-    const bodyTop = footY - (seated
-      ? SCENE_PROPORTIONS.character.seatedBodyHeight
-      : SCENE_PROPORTIONS.character.standingBodyHeight);
+    const geometry = geometryForGuest(guest.appearance, seated);
+    const bodyTop = footY - geometry.bodyHeight;
     const facing = guest.facing;
     const variant = guestVariant(guest);
     const phase = this.reducedMotion ? 0 : Math.floor(guest.animation * 2) % 4;
@@ -1345,57 +1346,55 @@ export class CafeRenderer {
     rect(context, '#49313a', x - 5 + shadowOffset * HALF_PIXEL, footY + 1, 10, HALF_PIXEL);
     if (!seated) {
       const stride = this.reducedMotion ? 0 : Math.round(Math.sin(guest.animation)) * 2;
-      rect(context, '#211d25', x - 4 + stride, footY - 5.5, 3.5, 7);
-      rect(context, '#211d25', x + 1 - stride, footY - 5.5, 3.5, 7);
-      rect(context, guest.palette.accent, x - 3.5 + stride, footY - 5, 2.5, HALF_PIXEL);
-      rect(context, guest.palette.accent, x + 1.5 - stride, footY - 5, 2.5, HALF_PIXEL);
-      rect(context, '#171820', x - 4.5 + stride, footY, 4.5, 1.5);
-      rect(context, '#171820', x + 1 - stride, footY, 4.5, 1.5);
+      rect(context, guest.palette.trousers, x - geometry.legWidth - HALF_PIXEL + stride, footY - 5.5, geometry.legWidth, 7);
+      rect(context, guest.palette.trousers, x + HALF_PIXEL - stride, footY - 5.5, geometry.legWidth, 7);
+      rect(context, guest.palette.accent, x - geometry.legWidth + stride, footY - 5, geometry.legWidth - 1, HALF_PIXEL);
+      rect(context, guest.palette.accent, x + 1 - stride, footY - 5, geometry.legWidth - 1, HALF_PIXEL);
+      rect(context, guest.palette.shoes, x - geometry.legWidth - 1 + stride, footY, geometry.legWidth + 1, 1.5);
+      rect(context, guest.palette.shoes, x + HALF_PIXEL - stride, footY, geometry.legWidth + 1, 1.5);
     }
 
-    rect(context, COLORS.ink, x - SCENE_PROPORTIONS.character.bodyWidth / 2, bodyTop - 1, SCENE_PROPORTIONS.character.bodyWidth, seated ? 13 : 16.5);
+    rect(context, COLORS.ink, x - geometry.bodyWidth / 2, bodyTop - 1, geometry.bodyWidth, seated ? 13 : 16.5);
     polygon(context, guest.palette.coat, seated
-      ? [[x - 5.5, bodyTop], [x + 5.5, bodyTop], [x + 6, bodyTop + 11.5], [x - 6, bodyTop + 11.5]]
-      : [[x - 5.5, bodyTop], [x + 5.5, bodyTop], [x + 6, bodyTop + 15.5], [x - 6, bodyTop + 15.5]]);
+      ? [[x - geometry.shoulderHalf, bodyTop], [x + geometry.shoulderHalf, bodyTop], [x + geometry.hemHalf, bodyTop + 11.5], [x - geometry.hemHalf, bodyTop + 11.5]]
+      : [[x - geometry.shoulderHalf, bodyTop], [x + geometry.shoulderHalf, bodyTop], [x + geometry.hemHalf, bodyTop + 15.5], [x - geometry.hemHalf, bodyTop + 15.5]]);
     // Sitzende Figuren bekommen nur kurze Revers und Knöpfe. Lange, vertikale
     // Kontraststreifen lesen sich neben der Tischkante irrtümlich als Arme.
-    rect(context, guest.palette.accent, x + (facing > 0 ? 3.5 : -5.5), bodyTop + 4, 2, seated ? 2.5 : 10);
+    rect(context, guest.palette.accent, x + (facing > 0 ? geometry.shoulderHalf - 2 : -geometry.shoulderHalf), bodyTop + 4, 2, seated ? 2.5 : 10);
     rect(context, '#e7bb75', x - HALF_PIXEL, bodyTop + 1, 1, seated ? 3 : 13);
     rect(context, '#2c232a', x, bodyTop + 1, HALF_PIXEL, seated ? 3 : 13);
     rect(context, '#fff0bd', x - HALF_PIXEL, bodyTop + 2, HALF_PIXEL, HALF_PIXEL);
-    rect(context, '#392933', x - 5, bodyTop + (seated ? 10 : 14), 10, 1.5);
+    rect(context, '#392933', x - geometry.hemHalf + 1, bodyTop + (seated ? 10 : 14), geometry.hemHalf * 2 - 2, 1.5);
 
-    const headTop = bodyTop - SCENE_PROPORTIONS.character.headHeight;
-    rect(context, COLORS.ink, x - 5.5, headTop, 11, SCENE_PROPORTIONS.character.headHeight);
-    rect(context, guest.palette.skin, x - 4.5, headTop + 1, 9, 8);
+    const headTop = bodyTop - geometry.headHeight;
+    const headHalf = geometry.headWidth / 2;
+    rect(context, COLORS.ink, x - headHalf, headTop, geometry.headWidth, geometry.headHeight);
+    rect(context, guest.palette.skin, x - headHalf + 1, headTop + 1, geometry.headWidth - 2, geometry.headHeight - 2);
     rect(context, '#f0c6a0', x + facing * 2, headTop + 2, 2, 1.5);
     rect(context, '#9b654f', x + facing * 4, headTop + 5, HALF_PIXEL, 1);
     rect(context, '#35252a', x + facing * 2, headTop + 3.5, 1, HALF_PIXEL);
     rect(context, '#8c4e47', x + facing * 2.5, headTop + 6.5, 1, HALF_PIXEL);
-    rect(context, guest.palette.hair, x - 5.5, headTop - HALF_PIXEL, 11, 4);
-    rect(context, '#1d1920', x - 4.5, headTop - HALF_PIXEL, 8, HALF_PIXEL);
-    rect(context, guest.palette.hair, x - (facing > 0 ? 5.5 : 4.5), headTop + 2, facing > 0 ? 3 : 2, 6);
-    rect(context, '#c88965', x + facing * 4.5, headTop + 4, 1.5, 2.5);
+    rect(context, guest.palette.hair, x - headHalf, headTop - HALF_PIXEL, geometry.headWidth, 4);
+    rect(context, '#1d1920', x - headHalf + 1, headTop - HALF_PIXEL, Math.max(5, geometry.headWidth - 3), HALF_PIXEL);
+    rect(context, guest.palette.hair, x - (facing > 0 ? headHalf : headHalf - 1), headTop + 2, facing > 0 ? 3 : 2, Math.max(5, geometry.headHeight - 4));
+    rect(context, '#c88965', x + facing * (headHalf - 1), headTop + 4, 1.5, 2.5);
 
-    if (variant === 0) {
-      rect(context, '#24242b', x + facing * HALF_PIXEL, headTop + 3, 3, 1.5);
-      rect(context, '#9eb0ad', x + facing, headTop + 3.5, 1, HALF_PIXEL);
-    } else if (variant === 1) {
-      rect(context, guest.palette.accent, x - 5.5, headTop - 2, 11, 3);
-      rect(context, '#e9bb72', x - 4, headTop - 2.5, 8, HALF_PIXEL);
-      rect(context, guest.palette.accent, x - 1, headTop - 3.5, 2, 1.5);
-    } else if (variant === 2) {
-      rect(context, guest.palette.hair, x - facing * 5, headTop, 3.5, 8);
-      rect(context, '#1d1920', x - facing * 6, headTop - 1, 4, 4);
-    } else if (variant === 3) {
-      rect(context, guest.palette.accent, x - 5.5, bodyTop, 11, 2);
-      rect(context, '#f0c978', x - facing * 5, bodyTop + 1, 2, seated ? 2.5 : 7);
-    } else if (variant === 4) {
-      rect(context, '#efc76f', x + facing * 5.5, headTop + 6, 1, 1.5);
-    } else if (!seated) {
-      rect(context, '#a66a4e', x - facing * 8, bodyTop + 8, 3, 8);
-      rect(context, '#d5a269', x - facing * 7.5, bodyTop + 7, 2, 1);
-    }
+    this.characters.drawGuestFineDetails({
+      context,
+      guest,
+      x,
+      headTop,
+      bodyTop,
+      footY,
+      facing,
+      seated,
+      variant,
+      bodyWidth: geometry.bodyWidth,
+      headWidth: geometry.headWidth,
+      headHeight: geometry.headHeight,
+      venue: this.venue,
+      pixel: CHARACTER_PIXEL,
+    });
 
     if (guest.regularId === 'mara') {
       rect(context, '#b55f4e', x - 5.5, headTop - 2, 11, 2.5);
@@ -1423,26 +1422,13 @@ export class CafeRenderer {
       rect(context, '#6b493f', x + facing * 4, bodyTop + 7, 2.5, 1.5);
     }
 
-    this.characters.drawGuestFineDetails({
-      context,
-      guest,
-      x,
-      headTop,
-      bodyTop,
-      footY,
-      facing,
-      seated,
-      variant,
-      venue: this.venue,
-      pixel: CHARACTER_PIXEL,
-    });
-
     if (seated) {
-      this.drawSeatedArm(guest, x, bodyTop, facing);
+      this.drawSeatedArm(guest, x, bodyTop, facing, geometry.bodyWidth);
     } else {
       const handY = bodyTop + 7 + (phase % 2) * HALF_PIXEL;
-      rect(context, guest.palette.skin, x + facing * 5, handY, 2, 2);
-      rect(context, '#f0c6a0', x + facing * 5.5, handY, HALF_PIXEL, HALF_PIXEL);
+      const handX = x + facing * (geometry.bodyWidth / 2 - 1);
+      rect(context, guest.palette.skin, handX, handY, 2, 2);
+      rect(context, '#f0c6a0', handX + facing * HALF_PIXEL, handY, HALF_PIXEL, HALF_PIXEL);
     }
 
     if (guest.state === 'ordering') {
@@ -1597,11 +1583,12 @@ export class CafeRenderer {
     }
   }
 
-  private drawSeatedArm(guest: Guest, x: number, bodyTop: number, facing: 1 | -1): void {
+  private drawSeatedArm(guest: Guest, x: number, bodyTop: number, facing: 1 | -1, bodyWidth: number): void {
     const context = this.context;
     const shoulderY = bodyTop + 4;
-    const sleeveX = facing > 0 ? x + 4 : x - 7;
-    const handX = facing > 0 ? x + 6.5 : x - 8.5;
+    const bodyHalf = bodyWidth / 2;
+    const sleeveX = facing > 0 ? x + bodyHalf - 2.5 : x - bodyHalf - HALF_PIXEL;
+    const handX = facing > 0 ? sleeveX + 2.5 : sleeveX - 1.5;
     rect(context, COLORS.ink, sleeveX, shoulderY - HALF_PIXEL, 3, 3);
     rect(context, guest.palette.coat, sleeveX + HALF_PIXEL, shoulderY, 2.5, 2.5);
     rect(context, guest.palette.accent, sleeveX + (facing > 0 ? 1.5 : HALF_PIXEL), shoulderY + HALF_PIXEL, HALF_PIXEL, 1.5);

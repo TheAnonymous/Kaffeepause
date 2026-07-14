@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { doorTargetForGuests } from '../src/scene/doorRenderer';
+import { appearanceForGuestNumber } from '../src/simulation/appearance';
 import type { Guest } from '../src/simulation/types';
 
 function guest(id: string, overrides: Partial<Guest>): Guest {
@@ -16,7 +17,8 @@ function guest(id: string, overrides: Partial<Guest>): Guest {
     stateDuration: 20,
     animation: 0,
     activityRounds: 0,
-    palette: { skin: '#f0c6a0', hair: '#34252a', coat: '#5f766f', accent: '#e5bb72' },
+    palette: { skin: '#f0c6a0', hair: '#34252a', coat: '#5f766f', accent: '#e5bb72', trousers: '#343b46', shoes: '#171820' },
+    appearance: appearanceForGuestNumber(1),
     ...overrides,
   };
 }
