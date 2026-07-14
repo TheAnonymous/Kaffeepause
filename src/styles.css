@@ -17,7 +17,48 @@ body,
   overflow: hidden;
 }
 
-body { background: #17131e; }
+body {
+  --venue-frame: #d4955b;
+  --venue-eyebrow: #d7b786;
+  --venue-selected-border: #efbd70;
+  --venue-selected-bg: #563841;
+  --venue-selected-shadow: #8e4c3e;
+  --venue-button-border: #f4c77c;
+  --venue-button-bg: #e7a65e;
+  --venue-button-hover: #f1bd72;
+  --venue-button-shadow: #8e4c3e;
+  --venue-button-ink: #2a1820;
+  --venue-status: #ecd5aa;
+  background: #17131e;
+}
+
+body[data-venue="ramen"] {
+  --venue-frame: #e0604f;
+  --venue-eyebrow: #ff9b70;
+  --venue-selected-border: #ff7455;
+  --venue-selected-bg: #632f35;
+  --venue-selected-shadow: #a63e38;
+  --venue-button-border: #ff9c67;
+  --venue-button-bg: #e45f46;
+  --venue-button-hover: #f47755;
+  --venue-button-shadow: #9f352f;
+  --venue-button-ink: #25151a;
+  --venue-status: #ffb783;
+}
+
+body[data-venue="arcade"] {
+  --venue-frame: #5cdae0;
+  --venue-eyebrow: #83f2ee;
+  --venue-selected-border: #66e9ed;
+  --venue-selected-bg: #293c61;
+  --venue-selected-shadow: #b642a1;
+  --venue-button-border: #7df5f1;
+  --venue-button-bg: #54dce2;
+  --venue-button-hover: #82f2ed;
+  --venue-button-shadow: #b642a1;
+  --venue-button-ink: #101b31;
+  --venue-status: #8bf3ef;
+}
 
 body[data-entered="true"][data-ui-idle="true"] {
   cursor: none;
@@ -42,7 +83,7 @@ body[data-entered="true"][data-ui-idle="true"] {
   inset: 0;
   z-index: 1;
   pointer-events: none;
-  box-shadow: inset 0 0 11vmin rgba(7, 5, 12, 0.56);
+  box-shadow: inset 0 0 11vmin rgba(7, 5, 12, 0.30);
 }
 
 .welcome {
@@ -75,7 +116,7 @@ body[data-entered="true"][data-ui-idle="true"] {
   width: min(34rem, 100%);
   padding: clamp(1.7rem, 5vw, 3.2rem);
   text-align: center;
-  border: 2px solid #d4955b;
+  border: 2px solid var(--venue-frame);
   outline: 1px solid rgba(255, 222, 158, 0.24);
   outline-offset: 5px;
   background: rgba(37, 25, 35, 0.92);
@@ -85,7 +126,7 @@ body[data-entered="true"][data-ui-idle="true"] {
 .welcome__eyebrow {
   display: block;
   margin-bottom: 0.8rem;
-  color: #d7b786;
+  color: var(--venue-eyebrow);
   font-size: 0.68rem;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -144,10 +185,10 @@ h1 {
 }
 
 .venue-option.is-selected {
-  border-color: #efbd70;
+  border-color: var(--venue-selected-border);
   color: #fff0c3;
-  background: #563841;
-  box-shadow: inset 2px 2px 0 rgba(255, 226, 170, 0.16), inset -3px -3px 0 rgba(28, 17, 28, 0.45), 2px 2px 0 #8e4c3e;
+  background: var(--venue-selected-bg);
+  box-shadow: inset 2px 2px 0 rgba(255, 226, 170, 0.16), inset -3px -3px 0 rgba(28, 17, 28, 0.45), 2px 2px 0 var(--venue-selected-shadow);
 }
 
 .venue-option__mark {
@@ -159,7 +200,7 @@ h1 {
 
 .venue-option[data-venue-choice="ramen"] .venue-option__mark { color: #e07062; }
 .venue-option[data-venue-choice="arcade"] .venue-option__mark { color: #8ecac4; }
-.venue-option.is-selected .venue-option__mark { color: #fff0a8; }
+.venue-option.is-selected .venue-option__mark { color: var(--venue-selected-border); }
 
 .venue-option strong,
 .venue-option small {
@@ -199,7 +240,7 @@ h1 {
 .welcome .renderer-status {
   min-height: 1.35em;
   margin: -0.6rem auto 0.8rem;
-  color: #ecd5aa;
+  color: var(--venue-status);
   font-size: 0.73rem;
   line-height: 1.35;
 }
@@ -228,17 +269,17 @@ button {
 #enter {
   min-height: 3rem;
   padding: 0.8rem 1.3rem;
-  border: 2px solid #f4c77c;
-  color: #2a1820;
-  background: #e7a65e;
-  box-shadow: 4px 4px 0 #8e4c3e;
+  border: 2px solid var(--venue-button-border);
+  color: var(--venue-button-ink);
+  background: var(--venue-button-bg);
+  box-shadow: 4px 4px 0 var(--venue-button-shadow);
   font-size: 0.82rem;
   letter-spacing: 0.045em;
   transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
 }
 
-#enter:hover { background: #f1bd72; transform: translate(-1px, -1px); box-shadow: 5px 5px 0 #8e4c3e; }
-#enter:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 #8e4c3e; }
+#enter:hover { background: var(--venue-button-hover); transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--venue-button-shadow); }
+#enter:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--venue-button-shadow); }
 #enter:disabled {
   cursor: wait;
   opacity: 0.62;

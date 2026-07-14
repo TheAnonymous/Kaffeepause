@@ -41,6 +41,10 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
   await expect(canvas).toHaveAttribute('data-scale-model', '32px-adult');
   await expect(canvas).toHaveAttribute('data-character-variation', '12-silhouettes');
   await expect(canvas).toHaveAttribute('data-character-diversity', '100');
+  await expect(canvas).toHaveAttribute('data-exposure', '1.10');
+  await expect(canvas).toHaveAttribute('data-character-emissive', '0.04');
+  await expect(canvas).toHaveAttribute('data-shadow-lift', '0.03');
+  await expect(canvas).toHaveAttribute('data-saturation', '1.08');
   expect(await canvas.evaluate((element) => {
     const target = element as HTMLCanvasElement;
     return { width: target.width, height: target.height };
@@ -86,8 +90,8 @@ test('betritt das Café auf fallback und schaltet den Ton', async ({ page }) => 
 });
 
 for (const venue of [
-  { kind: 'ramen', label: 'Ramen', entry: 'Ramen-Restaurant betreten', canvas: /Ramen-Restaurant/i },
-  { kind: 'arcade', label: 'Arcade', entry: 'Arcade-Halle betreten', canvas: /Arcade-Halle/i },
+  { kind: 'ramen', label: 'Ramen', entry: 'Ramen-Restaurant betreten', canvas: /Ramen-Restaurant/i, frame: 'rgb(224, 96, 79)' },
+  { kind: 'arcade', label: 'Arcade', entry: 'Arcade-Halle betreten', canvas: /Arcade-Halle/i, frame: 'rgb(92, 218, 224)' },
 ] as const) {
   test(`wechselt vor dem Eintritt in die ${venue.kind}-Szene`, async ({ page }) => {
     await openCafe(page, '/?time=20:30&weather=rain');
@@ -98,6 +102,7 @@ for (const venue of [
     await expect(canvas).toHaveAttribute('data-venue', venue.kind);
     await expect(canvas).toHaveAccessibleName(venue.canvas);
     await expect(page.getByRole('button', { name: venue.entry })).toBeVisible();
+    await expect(page.locator('.welcome__card')).toHaveCSS('border-color', venue.frame);
 
     await page.getByRole('button', { name: venue.entry }).click();
     await expect(page.locator('body')).toHaveAttribute('data-entered', 'true');
@@ -522,3 +527,43 @@ test('zeigt Wetter und Uhr bei Reduced Motion statisch vollständig an', async (
   await expect(canvas).toHaveAttribute('data-clock-time', '20:30');
   await expect(page.locator('body')).toHaveAttribute('data-reduced-motion', 'true');
 });
+
+for (const scene of [
+  { name: 'cafe-midday-clear', venue: 'cafe', time: '12:30', weather: 'clear' },
+  { name: 'cafe-night-rain', venue: 'cafe', time: '22:00', weather: 'rain' },
+  { name: 'ramen-dusk-rain', venue: 'ramen', time: '20:30', weather: 'rain' },
+  { name: 'arcade-night-clear', venue: 'arcade', time: '22:00', weather: 'clear' },
+] as const) {
+  test(`hält die visuelle Baseline ${scene.name} figurenlesbar`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 810 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.addInitScript(() => {
+      let hidden = false;
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+      (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama = () => {
+        hidden = true;
+        document.dispatchEvent(new Event('visibilitychange'));
+      };
+    });
+    await openCafe(page, `/?time=${scene.time}&weather=${scene.weather}`);
+    if (scene.venue !== 'cafe') await page.getByRole('radio', { name: new RegExp(scene.venue, 'i') }).click();
+    await page.getByTestId('enter').evaluate((button) => {
+      button.addEventListener('click', () => {
+        window.dispatchEvent(new Event('resize'));
+        (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama?.();
+      }, { once: true });
+    });
+    await page.getByTestId('enter').click();
+
+    const canvas = page.locator('#cafe');
+    await expect(canvas).toHaveAttribute('data-render-loop', 'paused');
+    await expect(canvas).toHaveAttribute('data-guest-count', /[1-8]/);
+    await expect(page.locator('body')).toHaveAttribute('data-reduced-motion', 'true');
+    await page.getByTestId('welcome').evaluate((element) => { element.style.display = 'none'; });
+    await page.getByTestId('controls').evaluate((element) => { (element as HTMLElement).hidden = true; });
+    await expect(page.locator('#app')).toHaveScreenshot(`${scene.name}.png`, {
+      animations: 'disabled',
+      maxDiffPixelRatio: 0.02,
+    });
+  });
+}

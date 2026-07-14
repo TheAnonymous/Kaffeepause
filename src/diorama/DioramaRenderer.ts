@@ -66,6 +66,8 @@ const MINIATURE_SHADER = {
     blurStrength: { value: 0.0016 },
     vignette: { value: 0.22 },
     warmth: { value: 0.05 },
+    saturation: { value: 1.08 },
+    shadowLift: { value: 0.03 },
     time: { value: 0 },
     simplifiedBlur: { value: 0 },
   },
@@ -83,6 +85,8 @@ const MINIATURE_SHADER = {
     uniform float blurStrength;
     uniform float vignette;
     uniform float warmth;
+    uniform float saturation;
+    uniform float shadowLift;
     uniform float time;
     uniform float simplifiedBlur;
     varying vec2 vUv;
@@ -105,6 +109,11 @@ const MINIATURE_SHADER = {
         color += texture2D(tDiffuse, vUv + offset) * 0.10;
         color += texture2D(tDiffuse, vUv - offset) * 0.10;
       }
+      float luminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+      color.rgb = mix(vec3(luminance), color.rgb, saturation);
+      float saturatedLuminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+      float shadowWeight = 1.0 - smoothstep(0.08, 0.58, saturatedLuminance);
+      color.rgb += vec3(shadowLift * shadowWeight);
       float edge = smoothstep(0.9, 0.22, distance(vUv, vec2(0.5)));
       color.rgb *= mix(1.0 - vignette, 1.0, edge);
       color.r += warmth * 0.018;
@@ -246,6 +255,7 @@ export class DioramaRenderer {
       for (const node of this.guestNodes.values()) node.textureName = '';
       this.baristaNode.textureName = '';
     }
+    this.look = calculateDioramaLook(this.venue, this.environment);
     this.canvas.dataset.venue = venue;
   }
 
@@ -314,21 +324,32 @@ export class DioramaRenderer {
     this.scene.background = this.look.sky;
     if (this.scene.fog instanceof FogExp2) {
       this.scene.fog.color.copy(this.look.sky);
-      this.scene.fog.density = 0.008 + this.look.fog * 0.055;
+      this.scene.fog.density = 0.006 + this.look.fog * 0.038;
     }
     this.webgl.toneMappingExposure = this.look.exposure;
     this.hemisphere.color.copy(this.look.ambient);
     this.hemisphere.groundColor.copy(new Color(this.venueSet.theme.floor));
-    this.hemisphere.intensity = 0.78 + this.look.daylight * 0.72;
+    this.hemisphere.intensity = this.look.ambientIntensity;
     this.keyLight.color.copy(this.look.sun);
-    this.keyLight.intensity = 0.7 + this.look.daylight * 3.5;
+    this.keyLight.intensity = this.look.keyIntensity;
     this.keyLight.position.x = this.look.fromRight ? 8 : -8;
-    for (const light of this.venueSet.practicalLights) light.intensity = 11 + this.look.night * 22;
+    for (const light of this.venueSet.practicalLights) light.intensity = this.look.practicalIntensity;
+    for (const pool of this.venueSet.lightPools) pool.material.opacity = this.look.lightPoolOpacity;
+    this.venueSet.floorMaterial.roughness = 0.55 - this.look.wetness * 0.2;
+    this.venueSet.floorMaterial.metalness = 0.08 + this.look.wetness * 0.14;
+    for (const material of this.venueSet.exteriorMaterials) {
+      material.emissive.copy(material.color);
+      material.emissiveIntensity = 0.02 + this.look.night * 0.08;
+    }
+    this.baristaNode.plane.material.emissiveIntensity = this.look.characterEmissive;
+    for (const node of this.guestNodes.values()) node.plane.material.emissiveIntensity = this.look.characterEmissive;
     this.bloom.strength = this.look.bloom * this.qualityProfile.bloomStrength;
     this.miniature.uniforms.focusBand!.value = this.look.focusBand;
     this.miniature.uniforms.blurStrength!.value = this.look.blur * this.qualityProfile.miniatureBlurStrength;
-    this.miniature.uniforms.vignette!.value = 0.18 + this.look.night * 0.08;
+    this.miniature.uniforms.vignette!.value = this.look.vignette;
     this.miniature.uniforms.warmth!.value = this.venue === 'arcade' ? -0.08 : 0.12 + this.look.night * 0.08;
+    this.miniature.uniforms.saturation!.value = this.look.saturation;
+    this.miniature.uniforms.shadowLift!.value = this.look.shadowLift;
     this.miniature.uniforms.time!.value = time;
   }
 
@@ -431,6 +452,7 @@ export class DioramaRenderer {
   private applySprite(node: CharacterNode, texture: Texture, seated: boolean, facing: -1 | 1): void {
     if (node.textureName !== texture.name) {
       node.plane.material.map = texture;
+      node.plane.material.emissiveMap = texture;
       node.plane.material.needsUpdate = true;
       node.textureName = texture.name;
     }
@@ -499,6 +521,10 @@ export class DioramaRenderer {
     this.canvas.dataset.door = this.doorOpen > 0.03 ? 'opening' : 'closed';
     this.canvas.dataset.doorOpen = this.doorOpen.toFixed(2);
     this.canvas.dataset.bloom = this.look.bloom.toFixed(2);
+    this.canvas.dataset.exposure = this.look.exposure.toFixed(2);
+    this.canvas.dataset.characterEmissive = this.look.characterEmissive.toFixed(2);
+    this.canvas.dataset.shadowLift = this.look.shadowLift.toFixed(2);
+    this.canvas.dataset.saturation = this.look.saturation.toFixed(2);
     this.canvas.dataset.clock = 'analog';
     this.canvas.dataset.clockTime = this.environment?.localTimeText ?? '00:00';
     this.canvas.dataset.speechBubbles = String(this.activeSpeechBubbles);
@@ -510,6 +536,7 @@ export class DioramaRenderer {
     const geometry = new PlaneGeometry(1, 1);
     const material = new MeshStandardMaterial({
       color: '#ffffff', transparent: true, alphaTest: 0.04, depthWrite: true,
+      emissive: '#ffffff', emissiveIntensity: this.look.characterEmissive,
       roughness: 0.82, metalness: 0, side: DoubleSide,
     });
     const plane = new Mesh(geometry, material);

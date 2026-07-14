@@ -1,4 +1,13 @@
-import type { ColorRepresentation, Group, Object3D, SpotLight } from 'three';
+import type {
+  CircleGeometry,
+  ColorRepresentation,
+  Group,
+  Mesh,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  Object3D,
+  SpotLight,
+} from 'three';
 import type { Point } from '../simulation/types';
 import type { VenueKind } from '../venue';
 
@@ -94,6 +103,9 @@ export interface DioramaSet {
   readonly root: Group;
   readonly doorPivot: Group;
   readonly practicalLights: readonly SpotLight[];
+  readonly floorMaterial: MeshStandardMaterial;
+  readonly exteriorMaterials: readonly MeshStandardMaterial[];
+  readonly lightPools: readonly Mesh<CircleGeometry, MeshBasicMaterial>[];
   readonly animatedProps: readonly AnimatedProp[];
   readonly theme: DioramaTheme;
   dispose(): void;

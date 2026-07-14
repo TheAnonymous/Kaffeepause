@@ -10,6 +10,14 @@ export interface DioramaLook {
   readonly fog: number;
   readonly precipitation: number;
   readonly exposure: number;
+  readonly ambientIntensity: number;
+  readonly keyIntensity: number;
+  readonly practicalIntensity: number;
+  readonly characterEmissive: number;
+  readonly shadowLift: number;
+  readonly saturation: number;
+  readonly vignette: number;
+  readonly lightPoolOpacity: number;
   readonly bloom: number;
   readonly focusBand: number;
   readonly blur: number;
@@ -26,6 +34,12 @@ const DAYLIGHT: Readonly<Record<DayPhase, number>> = {
 const SKY: Readonly<Record<DayPhase, string>> = {
   night: '#11182b', dawn: '#7f5265', morning: '#8eb5c6', midday: '#6fa9ca',
   afternoon: '#8ca7ac', dusk: '#9f5963', evening: '#3d3853',
+};
+
+const SATURATION: Readonly<Record<VenueKind, number>> = {
+  cafe: 1.08,
+  ramen: 1.12,
+  arcade: 1.18,
 };
 
 function clamp(value: number, min = 0, max = 1): number {
@@ -65,8 +79,16 @@ export function calculateDioramaLook(
     wetness: clamp(rain * 0.9 + snow * 0.22),
     fog,
     precipitation: clamp(rain + snow * 0.7),
-    exposure: 0.82 + daylight * 0.22 + (venue === 'arcade' ? 0.06 : 0),
-    bloom: clamp(0.2 + night * 0.42 + (venue === 'arcade' ? 0.25 : 0), 0.2, 0.82),
+    exposure: 1 + daylight * 0.1 + (venue === 'arcade' ? 0.04 : 0),
+    ambientIntensity: 1.05 + daylight * 0.35,
+    keyIntensity: 1.15 + daylight * 3,
+    practicalIntensity: 18 + night * 24,
+    characterEmissive: Math.min(0.31, 0.04 + night * 0.24 + (venue === 'arcade' ? 0.03 : 0)),
+    shadowLift: 0.03 + night * 0.1,
+    saturation: SATURATION[venue] + night * 0.04,
+    vignette: 0.08 + night * 0.04,
+    lightPoolOpacity: 0.06 + night * 0.18,
+    bloom: clamp(0.2 + night * 0.42 + (venue === 'arcade' ? 0.25 : 0), 0.2, 0.78),
     focusBand: 0.57,
     blur: 0.0016 + fog * 0.0012,
     sky,
@@ -75,4 +97,3 @@ export function calculateDioramaLook(
     fromRight: (environment?.solar.azimuth ?? 220) >= 180,
   };
 }
-

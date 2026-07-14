@@ -1,9 +1,12 @@
 import {
+  AdditiveBlending,
   BoxGeometry,
+  CircleGeometry,
   CylinderGeometry,
   DoubleSide,
   Group,
   Mesh,
+  MeshBasicMaterial,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
@@ -20,6 +23,17 @@ interface BuildContext {
   readonly geometries: Set<BufferGeometry>;
   readonly materials: Set<Material>;
   readonly theme: DioramaTheme;
+}
+
+interface ShellParts {
+  readonly doorPivot: Group;
+  readonly floorMaterial: MeshStandardMaterial;
+  readonly exteriorMaterials: readonly MeshStandardMaterial[];
+}
+
+interface PendantParts {
+  readonly light: SpotLight;
+  readonly pool: Mesh<CircleGeometry, MeshBasicMaterial>;
 }
 
 interface BoxOptions {
@@ -101,17 +115,34 @@ function addPendant(
   x: number,
   z: number,
   color: ColorRepresentation,
-): SpotLight {
+): PendantParts {
   box(context, root, [0.06, 2.05, 0.06], [x, 7.65, z], { color: context.theme.ink, castShadow: false });
   const shade = cylinder(context, root, 0.28, 0.26, [x, 6.55, z], context.theme.woodLight, 8);
   shade.rotation.x = Math.PI;
   glowPanel(context, root, [0.35, 0.06, 0.35], [x, 6.39, z], color);
-  const light = new SpotLight(color, 20, 10, Math.PI / 6.5, 0.64, 1.25);
+  const light = new SpotLight(color, 20, 11, Math.PI / 4.5, 0.72, 1.15);
   light.position.set(x, 6.34, z);
   light.target.position.set(x, 0, z + 0.4);
   light.castShadow = false;
   root.add(light, light.target);
-  return light;
+  const poolGeometry = new CircleGeometry(1, 32);
+  const poolMaterial = new MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    side: DoubleSide,
+    blending: AdditiveBlending,
+  });
+  context.geometries.add(poolGeometry);
+  context.materials.add(poolMaterial);
+  const pool = new Mesh(poolGeometry, poolMaterial);
+  pool.position.set(x, 0.115, z + 0.4);
+  pool.rotation.x = -Math.PI / 2;
+  pool.scale.set(2.05, 1.35, 1);
+  pool.renderOrder = 1;
+  root.add(pool);
+  return { light, pool };
 }
 
 function addTable(context: BuildContext, root: Group, x: number, z: number, width = 2.15): void {
@@ -145,12 +176,12 @@ function addPlant(context: BuildContext, root: Group, x: number, y: number, z: n
   }
 }
 
-function buildShell(context: BuildContext, root: Group): Group {
+function buildShell(context: BuildContext, root: Group): ShellParts {
   // A thick base and side walls make the scene read as a handcrafted display box.
   box(context, root, [DIORAMA.width + 0.8, 0.32, DIORAMA.depth + 0.8], [0, -0.23, 0], {
     color: context.theme.ink, roughness: 0.88,
   });
-  box(context, root, [DIORAMA.width, 0.16, DIORAMA.depth], [0, 0, 0], {
+  const floor = box(context, root, [DIORAMA.width, 0.16, DIORAMA.depth], [0, 0, 0], {
     color: context.theme.floor, roughness: 0.55, metalness: 0.08,
   });
   for (let index = -7; index <= 7; index += 1) {
@@ -171,14 +202,17 @@ function buildShell(context: BuildContext, root: Group): Group {
   const outside = new Group();
   outside.position.z = -3.72;
   root.add(outside);
-  box(context, outside, [9.3, 6.9, 0.08], [-0.65, 4.25, 0], { color: '#668aa4', castShadow: false });
+  const exteriorMaterials: MeshStandardMaterial[] = [];
+  const city = box(context, outside, [9.3, 6.9, 0.08], [-0.65, 4.25, 0], { color: '#668aa4', castShadow: false });
+  exteriorMaterials.push(city.material);
   const skyline = ['#273448', '#354157', '#1e2b42', '#3a4557'];
   for (let index = 0; index < 15; index += 1) {
     const width = 0.5 + (index % 3) * 0.18;
     const height = 1.3 + ((index * 7) % 5) * 0.48;
-    box(context, outside, [width, height, 0.12], [-5 + index * 0.7, 1.1 + height / 2, 0.06], {
+    const building = box(context, outside, [width, height, 0.12], [-5 + index * 0.7, 1.1 + height / 2, 0.06], {
       color: skyline[index % skyline.length], castShadow: false,
     });
+    exteriorMaterials.push(building.material);
     if (index % 2 === 0) glowPanel(context, outside, [0.12, 0.16, 0.03], [-5 + index * 0.7, 1.2 + height * 0.7, 0.14], '#e6bd75');
   }
   // Subtle transparent pane catches reflections while the city remains in real depth.
@@ -206,7 +240,7 @@ function buildShell(context: BuildContext, root: Group): Group {
   box(context, doorPivot, [1.08, 2.65, 0.08], [0.7, 2.28, 0.11], { color: context.theme.wallDark, roughness: 0.3 });
   glowPanel(context, doorPivot, [0.12, 0.12, 0.15], [1.26, 1.83, 0.18], context.theme.glow);
   box(context, root, [1.65, 0.2, 0.34], [-6.48, 3.94, -3.2], { color: context.theme.woodLight });
-  return doorPivot;
+  return { doorPivot, floorMaterial: floor.material, exteriorMaterials };
 }
 
 function buildCafe(context: BuildContext, root: Group, animated: AnimatedProp[]): void {
@@ -289,20 +323,25 @@ export function buildVenue(venue: VenueKind): DioramaSet {
   const theme = DIORAMA_THEMES[venue];
   const context: BuildContext = { geometries, materials, theme };
   const animatedProps: AnimatedProp[] = [];
-  const doorPivot = buildShell(context, root);
+  const shell = buildShell(context, root);
 
   if (venue === 'cafe') buildCafe(context, root, animatedProps);
   else if (venue === 'ramen') buildRamen(context, root, animatedProps);
   else buildArcade(context, root, animatedProps);
 
-  const practicalLights = venue === 'arcade'
+  const pendants = venue === 'arcade'
     ? [addPendant(context, root, -3.1, 0.1, theme.neon), addPendant(context, root, 0.2, 0.1, theme.accent), addPendant(context, root, 4.65, -1, theme.neon)]
-    : [addPendant(context, root, -3.6, 0.5, theme.glow), addPendant(context, root, -0.4, 0.5, theme.glow), addPendant(context, root, 4.9, -1.25, theme.glow)];
+    : venue === 'ramen'
+      ? [addPendant(context, root, -3.6, 0.5, theme.neon), addPendant(context, root, -0.4, 0.5, theme.neon), addPendant(context, root, 4.9, -1.25, theme.neon)]
+      : [addPendant(context, root, -3.6, 0.5, theme.glow), addPendant(context, root, -0.4, 0.5, theme.glow), addPendant(context, root, 4.9, -1.25, theme.glow)];
 
   return {
     root,
-    doorPivot,
-    practicalLights,
+    doorPivot: shell.doorPivot,
+    practicalLights: pendants.map((pendant) => pendant.light),
+    floorMaterial: shell.floorMaterial,
+    exteriorMaterials: shell.exteriorMaterials,
+    lightPools: pendants.map((pendant) => pendant.pool),
     animatedProps,
     theme,
     dispose(): void {
