@@ -30,6 +30,10 @@ export function opticsForVenue(venue: VenueKind): VenueOptics {
   return { glow: '#efba70', sign: '#9c654f', reflection: '#dba265', foreground: '#4a3439' };
 }
 
+export function windowReflectionLean(fromRight: boolean): -1 | 1 {
+  return fromRight ? -1 : 1;
+}
+
 // Scharfe, sparsame Pixel-Lichtflächen geben den Orten Tiefe, ohne einen weichen Filter über die Szene zu legen.
 export class VenueOpticsRenderer {
   constructor(private readonly rect: Rect, private readonly polygon: Polygon, private readonly pixel: number) {}
@@ -59,9 +63,12 @@ export class VenueOpticsRenderer {
     // Spiegelungen der Innenbeleuchtung bleiben als wenige harte Striche im Glas lesbar.
     context.save();
     context.globalAlpha = 0.045 + lighting.night * 0.095 + lighting.wetness * 0.035;
+    const lean = windowReflectionLean(lighting.fromRight);
     for (const x of [72, 139, 207]) {
-      this.polygon(context, optics.glow, [[x - 4, 27], [x + 4, 27], [x + 31, 99], [x + 25, 99]]);
-      this.rect(context, '#fff2bf', x + 1, 33, this.pixel, 18);
+      const lowerX = x + lean * 29;
+      this.polygon(context, optics.glow, [[x - 4, 27], [x + 4, 27], [lowerX + 4, 99], [lowerX - 4, 99]]);
+      const highlightBottom = x + lean * 7;
+      this.polygon(context, '#fff2bf', [[x + 1, 33], [x + 1 + this.pixel, 33], [highlightBottom + this.pixel, 51], [highlightBottom, 51]]);
     }
     context.restore();
   }
@@ -105,6 +112,7 @@ export class VenueOpticsRenderer {
       this.rect(context, '#416150', 7 + sway, 181, 5, 13);
       this.rect(context, '#6f9069', 2 + sway, 184, 8, 6);
       this.rect(context, '#88a978', 11 + sway, 178, 7, 8);
+      this.polygon(context, '#211b23', [[236, 209], [264, 209], [269, 212], [234, 212]]);
       this.rect(context, '#322831', 238, 196, 25, 15);
       this.rect(context, '#7d544a', 240, 194, 21, 5);
       this.rect(context, '#bc825c', 243, 195, 15, this.pixel);
@@ -116,6 +124,7 @@ export class VenueOpticsRenderer {
       this.rect(context, '#713440', 3, 180, 13, 27);
       this.rect(context, '#ca5149', 4, 181, 11, this.pixel);
       for (let y = 187; y < 204; y += 6) this.rect(context, '#e8aa61', 7, y + sway, 5, this.pixel);
+      this.polygon(context, '#211724', [[236, 209], [264, 209], [269, 212], [234, 212]]);
       this.rect(context, '#392432', 238, 197, 26, 14);
       this.rect(context, optics.foreground, 240, 195, 22, 5);
       this.rect(context, '#ecae63', 243, 196, 16, this.pixel);
@@ -127,6 +136,7 @@ export class VenueOpticsRenderer {
     this.rect(context, '#5bcbd0', 5, 184, 12, 9);
     this.rect(context, '#c55ba5', 7, 195 + sway, 8, this.pixel);
     this.rect(context, '#f1dc8b', 9, 186, 4, this.pixel);
+    this.polygon(context, '#09101a', [[236, 209], [266, 209], [271, 212], [233, 212]]);
     this.rect(context, '#101827', 238, 193, 27, 18);
     this.rect(context, optics.foreground, 240, 191, 23, 6);
     this.rect(context, '#5ccbd0', 243, 192, 17, this.pixel);

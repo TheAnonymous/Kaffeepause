@@ -8,7 +8,7 @@ import { CharacterRenderer } from './scene/characterRenderer';
 import { DoorRenderer, type DoorVisualState } from './scene/doorRenderer';
 import { calculateSceneLighting, LightingRenderer, type SceneLighting } from './scene/lightingRenderer';
 import { calculateVenueActivityState, VenueActivityRenderer } from './scene/venueActivityRenderer';
-import { VenueOpticsRenderer } from './scene/venueOpticsRenderer';
+import { VenueOpticsRenderer, windowReflectionLean } from './scene/venueOpticsRenderer';
 import { VenueRenderer } from './scene/venueRenderer';
 
 // Drei physische Pixel pro Szenenpixel lassen kleine Licht-, Holz- und Stoffdetails
@@ -310,23 +310,57 @@ export class CafeRenderer {
     const shimmer = this.reducedMotion ? 0 : Math.sin(time * 1.4) * HALF_PIXEL;
 
     if (this.venue === 'ramen') {
-      rect(context, '#282632', 53, 171, 176, 37);
-      for (let y = 174; y < 205; y += 10) {
-        for (let x = 59; x < 223; x += 28) {
-          rect(context, '#9b8060', x, y, 24, 7);
-          rect(context, '#d1af78', x + 1, y + 1, 22, HALF_PIXEL);
-          rect(context, '#4d3b42', x, y + 7, 24, 1);
+      polygon(context, '#282632', [[57, 170], [225, 170], [238, 208], [44, 208]]);
+      context.save();
+      context.beginPath();
+      context.moveTo(57, 170);
+      context.lineTo(225, 170);
+      context.lineTo(238, 208);
+      context.lineTo(44, 208);
+      context.closePath();
+      context.clip();
+      for (let row = 0; row < 4; row += 1) {
+        const y = 173 + row * 9;
+        const depth = (y - 170) / 38;
+        const left = 57 - depth * 13;
+        const right = 225 + depth * 13;
+        const tileWidth = (right - left) / 6;
+        const tileHeight = 5 + row * 0.65;
+        for (let column = 0; column < 6; column += 1) {
+          const x = left + column * tileWidth;
+          polygon(context, '#9b8060', [[x + 1, y], [x + tileWidth - 1, y], [x + tileWidth + 1, y + tileHeight], [x - 1, y + tileHeight]]);
+          rect(context, '#d1af78', x + 1, y + 1, Math.max(3, tileWidth - 2), HALF_PIXEL);
+          rect(context, '#4d3b42', x, y + tileHeight, tileWidth, HALF_PIXEL);
         }
       }
-      rect(context, '#c25a4d', 72, 202, 132, 2);
-      for (let x = 78; x < 199; x += 16) rect(context, '#efbd73', x, 202 + shimmer, 5, HALF_PIXEL);
+      context.restore();
+      polygon(context, '#c25a4d', [[54, 201], [228, 201], [230, 203], [52, 203]]);
+      for (let x = 72; x < 211; x += 18) rect(context, '#efbd73', x, 201.5 + shimmer, 5, HALF_PIXEL);
       return;
     }
 
     if (this.venue === 'arcade') {
-      rect(context, '#121a2a', 50, 169, 182, 39);
-      for (let x = 55; x < 230; x += 14) rect(context, '#2f5270', x, 170, HALF_PIXEL, 36);
-      for (let y = 176; y < 206; y += 10) rect(context, y % 20 === 6 ? '#a4519f' : '#397a91', 52, y, 178, HALF_PIXEL);
+      polygon(context, '#121a2a', [[56, 169], [226, 169], [240, 208], [42, 208]]);
+      context.save();
+      context.beginPath();
+      context.moveTo(56, 169);
+      context.lineTo(226, 169);
+      context.lineTo(240, 208);
+      context.lineTo(42, 208);
+      context.closePath();
+      context.clip();
+      for (let index = 0; index < 10; index += 1) {
+        const topX = 58 + index * 18;
+        const bottomX = 43 + index * 22;
+        polygon(context, '#2f5270', [[topX, 170], [topX + HALF_PIXEL, 170], [bottomX + HALF_PIXEL, 208], [bottomX, 208]]);
+      }
+      for (const y of [176, 184, 193, 203]) {
+        const depth = (y - 169) / 39;
+        const left = 56 - depth * 14;
+        const right = 226 + depth * 14;
+        rect(context, y % 2 === 0 ? '#a4519f' : '#397a91', left, y, right - left, HALF_PIXEL);
+      }
+      context.restore();
       for (let index = 0; index < 8; index += 1) {
         const x = 62 + index * 20;
         const color = index % 2 ? '#da5e9f' : '#61c9cf';
@@ -504,9 +538,14 @@ export class CafeRenderer {
     // Dünne Fensterreflexe machen die große Glasfläche weniger flach, ohne das Wetter zu verdecken.
     context.save();
     context.globalAlpha = environment?.dayPhase === 'night' ? 0.08 : 0.16;
+    const reflectionLean = windowReflectionLean(lighting.fromRight);
     for (const offset of [0, 61, 124]) {
-      polygon(context, '#ffe5ad', [[59 + offset, 27], [69 + offset, 27], [119 + offset, 99], [109 + offset, 99]]);
-      polygon(context, '#fff6d7', [[61 + offset, 28], [64 + offset, 28], [114 + offset, 99], [111 + offset, 99]]);
+      const top = reflectionLean > 0 ? 59 + offset : 109 + offset;
+      const bottom = reflectionLean > 0 ? 109 + offset : 59 + offset;
+      const innerTop = reflectionLean > 0 ? 61 + offset : 116 + offset;
+      const innerBottom = reflectionLean > 0 ? 111 + offset : 61 + offset;
+      polygon(context, '#ffe5ad', [[top, 27], [top + 10, 27], [bottom + 10, 99], [bottom, 99]]);
+      polygon(context, '#fff6d7', [[innerTop, 28], [innerTop + 3, 28], [innerBottom + 3, 99], [innerBottom, 99]]);
     }
     context.restore();
     context.restore();
