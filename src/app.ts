@@ -1,12 +1,20 @@
 import { CafeAudio } from './audio';
 import { CafeCamera } from './camera';
-import { CafeRenderer } from './renderer';
 import { CafeSimulation, type CafeSimulationOptions } from './simulation/cafeSimulation';
 import type { AccidentKind, CafeMoment, CafeMomentKind, CafeStoryKind } from './simulation/types';
 import { CafeEnvironmentController, parseEnvironmentOverrides } from './environment/cafeEnvironmentController';
 import type { CafeEnvironmentSnapshot } from './environment/types';
 import { DEFAULT_VENUE, isVenueKind, VENUES, type VenueKind } from './venue';
-import { SceneRuntime } from './scene/sceneRuntime';
+import {
+  loadRendererLifecycle,
+  type RendererLifecycle,
+  type RendererState,
+} from './scene/rendererLifecycle';
+import {
+  parseRenderQualityOverride,
+  RenderQualityGovernor,
+  type RenderQualityTier,
+} from './scene/renderQuality';
 
 const UI_IDLE_DELAY = 2_500;
 
@@ -69,6 +77,7 @@ function simulationOptions(): CafeSimulationOptions {
   if (kinds.includes(requested as AccidentKind)) {
     const kind = requested as AccidentKind;
     options.initialGuests = kind === 'umbrella-pop' ? 3 : 4;
+    if (kind === 'umbrella-pop') options.durationScale = 0.1;
     options.accidents = {
       seed: 0xe2e_2026,
       minDelaySeconds: kind === 'umbrella-pop' ? 1.5 : 0.35,
@@ -112,6 +121,8 @@ export class KaffeepauseApp {
   private readonly welcome = requiredElement<HTMLElement>('[data-testid="welcome"]');
   private readonly enterButton = requiredElement<HTMLButtonElement>('[data-testid="enter"]');
   private readonly venueButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-venue-choice]')];
+  private readonly rendererStatus = requiredElement<HTMLElement>('[data-renderer-status]');
+  private readonly retryButton = requiredElement<HTMLButtonElement>('[data-testid="renderer-retry"]');
   private readonly venueEyebrow = requiredElement<HTMLElement>('[data-venue-eyebrow]');
   private readonly venueDescription = requiredElement<HTMLElement>('[data-venue-description]');
   private readonly controls = requiredElement<HTMLElement>('[data-testid="controls"]');
@@ -123,14 +134,22 @@ export class KaffeepauseApp {
   private readonly simulation = new CafeSimulation(simulationOptions());
   private readonly camera = new CafeCamera();
   private readonly audio = new CafeAudio();
-  private readonly renderer = new CafeRenderer(this.canvas, this.camera);
-  private readonly runtime = new SceneRuntime(this.simulation, this.camera, this.renderer);
   private readonly environment = new CafeEnvironmentController({
     overrides: parseEnvironmentOverrides(window.location.search, import.meta.env.DEV),
     onNotice: (message) => { this.status.textContent = message; },
   });
+  private readonly forcedQualityTier = parseRenderQualityOverride(window.location.search, import.meta.env.DEV);
+  private readonly qualityGovernor = this.forcedQualityTier
+    ? undefined
+    : new RenderQualityGovernor('master');
+  private qualityTier: RenderQualityTier = this.forcedQualityTier ?? 'master';
+  private lifecycle?: RendererLifecycle;
+  private rendererState: RendererState = 'loading';
+  private rendererGeneration = 0;
+  private environmentUnsubscribe?: () => void;
   private entered = false;
-  private frame = 0;
+  private frame?: number;
+  private preparationFrame?: number;
   private lastFrame = performance.now();
   private elapsed = 0;
   private idleTimer?: number;
@@ -139,13 +158,17 @@ export class KaffeepauseApp {
   private selectedVenue: VenueKind = DEFAULT_VENUE;
 
   start(): void {
+    this.setRendererState('loading');
     this.updateMotionPreference();
+    this.environmentUnsubscribe = this.environment.subscribe((snapshot) => this.applyEnvironment(snapshot));
     this.environment.start();
-    this.applyEnvironment(this.environment.update());
     this.selectVenue(this.selectedVenue);
-    this.runtime.render(0);
     this.enterButton.addEventListener('click', this.enterCafe);
-    for (const button of this.venueButtons) button.addEventListener('click', this.venueSelected);
+    this.retryButton.addEventListener('click', this.retryRenderer);
+    for (const button of this.venueButtons) {
+      button.addEventListener('click', this.venueSelected);
+      button.addEventListener('keydown', this.venueKeyPressed);
+    }
     this.soundButton.addEventListener('click', this.toggleSound);
     this.fullscreenButton.addEventListener('click', this.toggleFullscreen);
     window.addEventListener('resize', this.resize);
@@ -161,19 +184,22 @@ export class KaffeepauseApp {
     window.addEventListener('pagehide', this.destroy, { once: true });
     document.body.dataset.uiIdle = 'false';
     this.updateFullscreenState();
-    this.frame = requestAnimationFrame(this.tick);
+    this.scheduleRendererPreparation();
   }
 
   private readonly enterCafe = (): void => {
-    if (this.entered) return;
+    if (this.entered || !this.lifecycle || this.rendererState !== 'ready') return;
     this.entered = true;
-    this.runtime.start();
+    this.lifecycle.start();
     this.welcome.classList.add('is-hidden');
     this.controls.hidden = false;
     document.body.dataset.entered = 'true';
     this.setUiIdle(false);
     this.scheduleIdle();
     this.status.textContent = VENUES[this.selectedVenue].statusMessage;
+    this.canvas.dataset.renderLoop = document.hidden ? 'paused' : 'running';
+    this.lastFrame = performance.now();
+    this.startFrameLoop();
     void this.audio.start().then((state) => {
       this.soundButton.dataset.audioState = state;
       if (state === 'unavailable') {
@@ -190,6 +216,25 @@ export class KaffeepauseApp {
     this.selectVenue(target.dataset.venueChoice);
   };
 
+  private readonly venueKeyPressed = (event: KeyboardEvent): void => {
+    if (this.entered) return;
+    const keys = ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End'];
+    if (!keys.includes(event.key)) return;
+    event.preventDefault();
+    const current = this.venueButtons.findIndex((button) => button === event.currentTarget);
+    if (current < 0) return;
+    const last = this.venueButtons.length - 1;
+    let next = current;
+    if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = last;
+    else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = current === last ? 0 : current + 1;
+    else next = current === 0 ? last : current - 1;
+    const button = this.venueButtons[next];
+    if (!button || !isVenueKind(button.dataset.venueChoice)) return;
+    this.selectVenue(button.dataset.venueChoice);
+    button.focus();
+  };
+
   private selectVenue(venue: VenueKind): void {
     this.selectedVenue = venue;
     const definition = VENUES[venue];
@@ -198,14 +243,88 @@ export class KaffeepauseApp {
     this.enterButton.textContent = definition.enterLabel;
     this.canvas.setAttribute('aria-label', definition.canvasLabel);
     this.simulation.setVenue(venue);
-    this.renderer.setVenue(venue);
+    this.lifecycle?.setVenue(venue);
     this.audio.setVenue(venue);
     document.body.dataset.venue = venue;
     for (const button of this.venueButtons) {
       const selected = button.dataset.venueChoice === venue;
       button.classList.toggle('is-selected', selected);
       button.setAttribute('aria-checked', String(selected));
+      button.tabIndex = selected ? 0 : -1;
     }
+    this.renderStaticFrame();
+  }
+
+  private scheduleRendererPreparation(): void {
+    const generation = ++this.rendererGeneration;
+    this.setRendererState('loading');
+    this.preparationFrame = requestAnimationFrame(() => {
+      this.preparationFrame = undefined;
+      const prepare = (): void => { void this.prepareRenderer(generation); };
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(prepare, { timeout: 750 });
+      } else {
+        window.setTimeout(prepare, 0);
+      }
+    });
+  }
+
+  private async prepareRenderer(generation: number): Promise<void> {
+    let candidate: RendererLifecycle | undefined;
+    try {
+      candidate = await loadRendererLifecycle({
+        canvas: this.canvas,
+        camera: this.camera,
+        simulation: this.simulation,
+        qualityTier: this.qualityTier,
+      });
+      if (generation !== this.rendererGeneration) {
+        candidate.dispose();
+        return;
+      }
+      candidate.setVenue(this.selectedVenue);
+      candidate.setEnvironment(this.environment.getSnapshot());
+      candidate.resize(this.motionQuery.matches);
+      candidate.renderOnce(this.elapsed);
+      this.lifecycle = candidate;
+      this.canvas.dataset.renderLoop = 'single-frame';
+      this.setRendererState('ready');
+    } catch {
+      candidate?.dispose();
+      if (generation !== this.rendererGeneration) return;
+      this.lifecycle = undefined;
+      this.canvas.dataset.renderLoop = 'stopped';
+      this.setRendererState('failed');
+    }
+  }
+
+  private readonly retryRenderer = (): void => {
+    if (this.rendererState !== 'failed') return;
+    this.scheduleRendererPreparation();
+  };
+
+  private setRendererState(state: RendererState): void {
+    this.rendererState = state;
+    this.canvas.dataset.rendererState = state;
+    this.canvas.dataset.qualityTier = this.qualityTier;
+    this.canvas.dataset.masterResolution = '2304x1296';
+    if (state === 'loading') {
+      this.enterButton.disabled = true;
+      this.enterButton.setAttribute('aria-busy', 'true');
+      this.retryButton.hidden = true;
+      this.rendererStatus.textContent = 'Das Diorama wird vorbereitet …';
+      return;
+    }
+    this.enterButton.removeAttribute('aria-busy');
+    if (state === 'ready') {
+      this.enterButton.disabled = false;
+      this.retryButton.hidden = true;
+      this.rendererStatus.textContent = 'Das Diorama ist bereit.';
+      return;
+    }
+    this.enterButton.disabled = true;
+    this.retryButton.hidden = false;
+    this.rendererStatus.textContent = 'Das Diorama konnte nicht geladen werden. Du kannst es noch einmal versuchen.';
   }
 
   private readonly toggleFullscreen = async (): Promise<void> => {
@@ -285,58 +404,98 @@ export class KaffeepauseApp {
   };
 
   private readonly tick = (now: number): void => {
-    const delta = Math.min(0.1, Math.max(0, (now - this.lastFrame) / 1000));
+    this.frame = undefined;
+    if (!this.entered || document.hidden || !this.lifecycle) return;
+    const frameDurationMs = Math.max(0, now - this.lastFrame);
+    const delta = Math.min(0.1, frameDurationMs / 1000);
     this.lastFrame = now;
-    this.applyEnvironment(this.environment.update());
-    let scene = this.runtime.snapshot();
-    if (this.entered) {
-      this.elapsed += delta;
-      scene = this.runtime.update(delta);
-      const accident = scene.accident;
-      if (accident && accident.id !== this.lastAnnouncedAccidentId) {
-        this.lastAnnouncedAccidentId = accident.id;
-        this.status.textContent = ACCIDENT_MESSAGES[accident.kind];
-        this.audio.playAccident(accident.kind);
-      }
-      const moment = scene.moment;
-      if (moment && moment.id !== this.lastAnnouncedMomentId) {
-        this.lastAnnouncedMomentId = moment.id;
-        this.status.textContent = momentMessage(moment);
-        this.audio.playMoment(moment.kind);
-      }
+    this.applyEnvironment(this.environment.update(), false);
+    this.elapsed += delta;
+    const scene = this.lifecycle.update(delta);
+    const accident = scene.accident;
+    if (accident && accident.id !== this.lastAnnouncedAccidentId) {
+      this.lastAnnouncedAccidentId = accident.id;
+      this.status.textContent = ACCIDENT_MESSAGES[accident.kind];
+      this.audio.playAccident(accident.kind);
     }
-    this.runtime.render(this.elapsed, scene);
-    this.frame = requestAnimationFrame(this.tick);
+    const moment = scene.moment;
+    if (moment && moment.id !== this.lastAnnouncedMomentId) {
+      this.lastAnnouncedMomentId = moment.id;
+      this.status.textContent = momentMessage(moment);
+      this.audio.playMoment(moment.kind);
+    }
+    this.lifecycle.renderOnce(this.elapsed, scene);
+
+    const reducedTier = this.qualityGovernor?.observeVisibleFrame(frameDurationMs);
+    if (reducedTier) {
+      this.qualityTier = reducedTier;
+      this.lifecycle.setQualityTier(reducedTier);
+      this.lifecycle.renderOnce(this.elapsed, scene);
+    }
+    this.startFrameLoop();
   };
 
+  private startFrameLoop(): void {
+    if (this.frame !== undefined || !this.entered || document.hidden || !this.lifecycle) return;
+    this.canvas.dataset.renderLoop = 'running';
+    this.frame = requestAnimationFrame(this.tick);
+  }
+
+  private stopFrameLoop(): void {
+    if (this.frame !== undefined) cancelAnimationFrame(this.frame);
+    this.frame = undefined;
+  }
+
+  private renderStaticFrame(): void {
+    if (!this.lifecycle || this.rendererState !== 'ready' || this.entered || document.hidden) return;
+    this.lifecycle.renderOnce(this.elapsed);
+    this.canvas.dataset.renderLoop = 'single-frame';
+  }
+
   private readonly resize = (): void => {
-    this.renderer.resize(this.motionQuery.matches);
-    this.runtime.render(this.elapsed);
+    if (!this.lifecycle || document.hidden) return;
+    this.lifecycle.resize(this.motionQuery.matches);
+    this.lifecycle.renderOnce(this.elapsed);
+    if (!this.entered) this.canvas.dataset.renderLoop = 'single-frame';
   };
 
   private readonly updateMotionPreference = (): void => {
     document.body.dataset.reducedMotion = String(this.motionQuery.matches);
-    this.renderer.resize(this.motionQuery.matches);
+    if (!this.lifecycle || document.hidden) return;
+    this.lifecycle.resize(this.motionQuery.matches);
+    this.lifecycle.renderOnce(this.elapsed);
+    if (!this.entered) this.canvas.dataset.renderLoop = 'single-frame';
   };
 
   private readonly visibilityChanged = (): void => {
     this.audio.fadeForVisibility(document.hidden);
     this.environment.visibilityChanged(document.hidden);
     this.lastFrame = performance.now();
+    if (!this.entered || !this.lifecycle) return;
+    if (document.hidden) {
+      this.stopFrameLoop();
+      this.lifecycle.stop();
+      this.canvas.dataset.renderLoop = 'paused';
+      return;
+    }
+    this.lifecycle.start();
+    this.startFrameLoop();
   };
 
   private readonly destroy = (): void => {
-    cancelAnimationFrame(this.frame);
+    this.rendererGeneration += 1;
+    this.stopFrameLoop();
+    if (this.preparationFrame !== undefined) cancelAnimationFrame(this.preparationFrame);
     if (this.idleTimer !== undefined) window.clearTimeout(this.idleTimer);
+    this.environmentUnsubscribe?.();
     this.environment.stop();
-    this.runtime.stop();
-    this.renderer.dispose();
+    this.lifecycle?.dispose();
     void this.audio.destroy();
   };
 
-  private applyEnvironment(snapshot: CafeEnvironmentSnapshot): void {
+  private applyEnvironment(snapshot: CafeEnvironmentSnapshot, renderWhenIdle = true): void {
     this.simulation.setEnvironment(snapshot);
-    this.renderer.setEnvironment(snapshot);
+    this.lifecycle?.setEnvironment(snapshot);
     this.audio.setAtmosphere(snapshot, this.simulation.guests.length);
     const datasets = [document.body.dataset, this.canvas.dataset];
     for (const dataset of datasets) {
@@ -347,5 +506,6 @@ export class KaffeepauseApp {
       dataset.locationState = snapshot.locationState;
       dataset.crowdTarget = String(snapshot.targetCrowd);
     }
+    if (renderWhenIdle) this.renderStaticFrame();
   }
 }

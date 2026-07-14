@@ -10,10 +10,10 @@ const localBrowser = process.env.PLAYWRIGHT_EXECUTABLE_PATH
 
 export default defineConfig({
   testDir: './e2e',
-  fullyParallel: true,
-  // Die 6×-Masterfläche belegt pro Browserseite deutlich mehr Grafikspeicher.
-  // Zwei Worker prüfen weiterhin parallel, ohne den CI-GPU-Prozess zu überfahren.
-  workers: 2,
+  fullyParallel: false,
+  // WebGL-Szenarien teilen sich in CI einen GPU-Prozess. Ein Worker hält die
+  // Renderziele reproduzierbar und verhindert konkurrierende Kontextverluste.
+  workers: 1,
   retries: 0,
   reporter: 'line',
   use: {

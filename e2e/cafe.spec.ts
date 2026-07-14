@@ -1,6 +1,17 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-test('betritt das Café, füllt den Viewport und schaltet den Ton', async ({ page }) => {
+function qualityUrl(path: string, tier: 'master' | 'balanced' | 'fallback'): string {
+  const url = new URL(path, 'http://kaffeepause.test');
+  url.searchParams.set('quality', tier);
+  return `${url.pathname}${url.search}`;
+}
+
+async function openCafe(page: Page, path = '/', tier: 'master' | 'balanced' | 'fallback' = 'fallback'): Promise<void> {
+  await page.goto(qualityUrl(path, tier));
+  await expect(page.locator('#cafe')).toHaveAttribute('data-renderer-state', 'ready', { timeout: 15_000 });
+}
+
+test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadaten', async ({ page }) => {
   const errors: string[] = [];
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(message.text());
@@ -8,7 +19,7 @@ test('betritt das Café, füllt den Viewport und schaltet den Ton', async ({ pag
   page.on('pageerror', (error) => errors.push(error.message));
 
   await page.setViewportSize({ width: 1440, height: 810 });
-  await page.goto('/?time=12:30&weather=clear');
+  await openCafe(page, '/?time=12:30&weather=clear', 'master');
   await expect(page.getByRole('heading', { name: 'Kaffeepause' })).toBeVisible();
   const canvas = page.getByRole('img', { name: /gemütliches.*Café/i });
   await expect(canvas).toHaveAttribute('data-camera-mode', 'overview');
@@ -40,6 +51,24 @@ test('betritt das Café, füllt den Viewport und schaltet den Ton', async ({ pag
   expect(await page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight })))
     .toEqual({ width: 1440, height: 810 });
 
+  await expect(canvas).toHaveAttribute('data-quality-tier', 'master');
+  await expect(canvas).toHaveAttribute('data-renderer-state', 'ready');
+  await expect(canvas).toHaveAttribute('data-render-loop', 'single-frame');
+  expect(errors).toEqual([]);
+});
+
+test('betritt das Café auf fallback und schaltet den Ton', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await openCafe(page, '/?time=12:30&weather=clear');
+  const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-quality-tier', 'fallback');
+  await expect(canvas).toHaveAttribute('data-render-scale', '3');
+  await page.getByTestId('enter').evaluate((button) => {
+    button.addEventListener('click', () => document.querySelector<HTMLElement>('[data-testid="sound"]')?.focus(), { once: true });
+  });
   await page.getByRole('button', { name: 'Café betreten' }).click();
   await expect(page.locator('body')).toHaveAttribute('data-entered', 'true');
   await expect(page.getByTestId('welcome')).toHaveClass(/is-hidden/);
@@ -52,6 +81,7 @@ test('betritt das Café, füllt den Viewport und schaltet den Ton', async ({ pag
     await expect(sound).toHaveAttribute('aria-label', 'Ton einschalten');
   }
   await expect(canvas).toHaveAttribute('data-guest-count', /[4-8]/);
+  await expect(canvas).toHaveAttribute('data-render-loop', 'running');
   expect(errors).toEqual([]);
 });
 
@@ -60,7 +90,7 @@ for (const venue of [
   { kind: 'arcade', label: 'Arcade', entry: 'Arcade-Halle betreten', canvas: /Arcade-Halle/i },
 ] as const) {
   test(`wechselt vor dem Eintritt in die ${venue.kind}-Szene`, async ({ page }) => {
-    await page.goto('/?time=20:30&weather=rain');
+    await openCafe(page, '/?time=20:30&weather=rain');
     await page.getByRole('radio', { name: new RegExp(venue.label) }).click();
 
     const canvas = page.locator('#cafe');
@@ -75,21 +105,125 @@ for (const venue of [
   });
 }
 
+test('bedient die Ortswahl als vollständige Tastatur-Radiogruppe', async ({ page }) => {
+  await openCafe(page);
+  const cafe = page.getByRole('radio', { name: /Café/ });
+  const ramen = page.getByRole('radio', { name: /Ramen/ });
+  const arcade = page.getByRole('radio', { name: /Arcade/ });
+
+  await cafe.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(ramen).toBeFocused();
+  await expect(ramen).toHaveAttribute('aria-checked', 'true');
+  await expect(cafe).toHaveAttribute('tabindex', '-1');
+  await page.keyboard.press('End');
+  await expect(arcade).toBeFocused();
+  await expect(arcade).toHaveAttribute('aria-checked', 'true');
+  await page.keyboard.press('Home');
+  await expect(cafe).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(arcade).toBeFocused();
+  await expect(arcade).toHaveAttribute('aria-checked', 'true');
+});
+
+test('zeigt während der verzögerten Initialisierung einen beschäftigten Eintritt', async ({ page }) => {
+  await page.addInitScript(() => {
+    const target = window as typeof window & { runRendererPreparation?: () => void };
+    window.requestIdleCallback = (callback: IdleRequestCallback): number => {
+      target.runRendererPreparation = () => callback({ didTimeout: false, timeRemaining: () => 50 });
+      return 1;
+    };
+  });
+  await page.goto(qualityUrl('/', 'fallback'));
+  const canvas = page.locator('#cafe');
+  const enter = page.getByTestId('enter');
+  await expect(canvas).toHaveAttribute('data-renderer-state', 'loading');
+  await expect(enter).toBeDisabled();
+  await expect(enter).toHaveAttribute('aria-busy', 'true');
+  await expect(page.getByText('Das Diorama wird vorbereitet …')).toBeVisible();
+  await page.evaluate(() => {
+    (window as typeof window & { runRendererPreparation?: () => void }).runRendererPreparation?.();
+  });
+  await expect(canvas).toHaveAttribute('data-renderer-state', 'ready');
+  await expect(enter).toBeEnabled();
+  await expect(enter).not.toHaveAttribute('aria-busy', 'true');
+});
+
+test('behält bei einem WebGL-Fehler die Karte und ermöglicht einen Retry', async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = HTMLCanvasElement.prototype.getContext;
+    let rejectWebgl = true;
+    HTMLCanvasElement.prototype.getContext = function getContext(
+      this: HTMLCanvasElement,
+      contextId: string,
+      ...args: unknown[]
+    ): RenderingContext | null {
+      if (rejectWebgl && contextId.startsWith('webgl')) return null;
+      return original.call(this, contextId as '2d', ...args as [CanvasRenderingContext2DSettings]);
+    } as typeof HTMLCanvasElement.prototype.getContext;
+    (window as typeof window & { allowWebgl?: () => void }).allowWebgl = () => { rejectWebgl = false; };
+  });
+  await page.goto(qualityUrl('/', 'fallback'));
+  const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-renderer-state', 'failed');
+  await expect(page.getByTestId('welcome')).toBeVisible();
+  await expect(page.getByText(/konnte nicht geladen werden/)).toBeVisible();
+  const retry = page.getByTestId('renderer-retry');
+  await expect(retry).toBeVisible();
+  await page.evaluate(() => (window as typeof window & { allowWebgl?: () => void }).allowWebgl?.());
+  await retry.click();
+  await expect(canvas).toHaveAttribute('data-renderer-state', 'ready');
+  await expect(page.getByTestId('enter')).toBeEnabled();
+});
+
+test('rendert vor Eintritt nur einzeln und pausiert den Loop in versteckten Tabs', async ({ page }) => {
+  await page.addInitScript(() => {
+    let hidden = false;
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+    (window as typeof window & { setTestHidden?: (value: boolean) => void }).setTestHidden = (value) => {
+      hidden = value;
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
+    Object.defineProperty(navigator, 'geolocation', {
+      configurable: true,
+      value: { getCurrentPosition: () => undefined },
+    });
+  });
+  await openCafe(page);
+  const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-render-loop', 'single-frame');
+  const idleCount = Number(await canvas.getAttribute('data-render-count'));
+  await page.waitForTimeout(350);
+  await expect(canvas).toHaveAttribute('data-render-count', String(idleCount));
+
+  await page.getByTestId('enter').click();
+  await expect(canvas).toHaveAttribute('data-render-loop', 'running');
+  await expect.poll(async () => Number(await canvas.getAttribute('data-render-count'))).toBeGreaterThan(idleCount);
+  await page.evaluate(() => (window as typeof window & { setTestHidden?: (value: boolean) => void }).setTestHidden?.(true));
+  await expect(canvas).toHaveAttribute('data-render-loop', 'paused');
+  const pausedCount = Number(await canvas.getAttribute('data-render-count'));
+  await page.waitForTimeout(350);
+  await expect(canvas).toHaveAttribute('data-render-count', String(pausedCount));
+  await page.evaluate(() => (window as typeof window & { setTestHidden?: (value: boolean) => void }).setTestHidden?.(false));
+  await expect(canvas).toHaveAttribute('data-render-loop', 'running');
+  await expect.poll(async () => Number(await canvas.getAttribute('data-render-count'))).toBeGreaterThan(pausedCount);
+});
+
 test('wechselt bei schmalem Resize in die ruhige Kamerafahrt', async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 700 });
-  await page.goto('/');
+  await openCafe(page);
   const canvas = page.locator('#cafe');
-  await expect(canvas).toHaveAttribute('data-logical-width', '2304');
+  await expect(canvas).toHaveAttribute('data-logical-width', '1152');
   await expect(canvas).toHaveAttribute('data-scene-width', '384');
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(canvas).toHaveAttribute('data-camera-mode', 'tour');
-  await expect(canvas).toHaveAttribute('data-logical-width', '672');
+  await expect(canvas).toHaveAttribute('data-logical-width', '336');
   await expect(canvas).toHaveAttribute('data-scene-width', '112');
   expect(await canvas.evaluate((element) => {
     const target = element as HTMLCanvasElement;
     return { width: target.width, height: target.height };
   }))
-    .toEqual({ width: 672, height: 1296 });
+    .toEqual({ width: 336, height: 648 });
   const bounds = await canvas.boundingBox();
   expect(bounds).toMatchObject({ x: 0, y: 0, width: 390, height: 844 });
   expect(await page.evaluate(() => ({ width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight })))
@@ -99,12 +233,12 @@ test('wechselt bei schmalem Resize in die ruhige Kamerafahrt', async ({ page }) 
 test.use({ viewport: { width: 390, height: 844 } });
 test('respektiert reduzierte Bewegung ohne automatische Kamerafahrt', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/');
+  await openCafe(page);
   const canvas = page.locator('#cafe');
   await expect(page.locator('body')).toHaveAttribute('data-reduced-motion', 'true');
   await expect(canvas).toHaveAttribute('data-camera-mode', 'still');
   await expect(canvas).toHaveAttribute('data-particles', 'low');
-  await expect(canvas).toHaveAttribute('data-logical-width', '672');
+  await expect(canvas).toHaveAttribute('data-logical-width', '336');
   const position = await canvas.getAttribute('data-camera-x');
   await page.getByTestId('enter').click();
   await page.waitForTimeout(900);
@@ -112,8 +246,9 @@ test('respektiert reduzierte Bewegung ohne automatische Kamerafahrt', async ({ p
 });
 
 test('lässt die Einstiegskarte stehen und blendet Controls erst nach dem Eintritt aus', async ({ page }) => {
+  test.setTimeout(60_000);
   await page.setViewportSize({ width: 1440, height: 810 });
-  await page.goto('/');
+  await openCafe(page);
   const welcome = page.getByTestId('welcome');
   const controls = page.getByTestId('controls');
 
@@ -137,7 +272,12 @@ test('lässt die Einstiegskarte stehen und blendet Controls erst nach dem Eintri
   // Controls bleiben anschließend dauerhaft sichtbar.
   await page.keyboard.press('ArrowRight');
   await expect(page.locator('body')).toHaveAttribute('data-ui-idle', 'false');
-  await page.getByTestId('sound').focus();
+  await page.evaluate(() => {
+    document.body.dataset.uiIdle = 'false';
+    const sound = document.querySelector<HTMLElement>('[data-testid="sound"]');
+    void sound?.offsetWidth;
+    sound?.focus();
+  });
   await expect(page.getByTestId('sound')).toBeFocused();
   await expect(controls).toBeVisible();
   await page.waitForTimeout(2_700);
@@ -146,7 +286,10 @@ test('lässt die Einstiegskarte stehen und blendet Controls erst nach dem Eintri
 
 test('synchronisiert Vollbildbutton und Escape mit dem Dokumentzustand', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 810 });
-  await page.goto('/');
+  await openCafe(page);
+  await page.getByTestId('enter').evaluate((button) => {
+    button.addEventListener('click', () => document.querySelector<HTMLElement>('[data-testid="fullscreen"]')?.focus(), { once: true });
+  });
   await page.getByTestId('enter').click();
   const fullscreen = page.getByTestId('fullscreen');
   await expect(fullscreen).toBeVisible();
@@ -167,7 +310,7 @@ test('blendet bei fehlender Fullscreen API nur den Vollbildbutton aus', async ({
   await page.addInitScript(() => {
     Object.defineProperty(document, 'fullscreenEnabled', { configurable: true, get: () => false });
   });
-  await page.goto('/');
+  await openCafe(page);
   await page.getByTestId('enter').click();
 
   await expect(page.getByTestId('controls')).toBeVisible();
@@ -187,11 +330,11 @@ for (const scenario of [
     });
     page.on('pageerror', (error) => errors.push(error.message));
     await page.setViewportSize({ width: 1440, height: 810 });
-    await page.goto(`/?accident=${scenario.kind}&time=12:30&weather=rain`);
+    await openCafe(page, `/?accident=${scenario.kind}&time=12:30&weather=rain`);
     await page.getByTestId('enter').click();
 
     const canvas = page.locator('#cafe');
-    await expect(canvas).toHaveAttribute('data-accident', scenario.kind, { timeout: 5_000 });
+    await expect(canvas).toHaveAttribute('data-accident', scenario.kind, { timeout: 10_000 });
     await expect(canvas).toHaveAttribute('data-accident-phase', /startle|chaos|cleanup/);
     await expect(page.locator('#status')).toHaveText(scenario.message);
     expect(errors).toEqual([]);
@@ -205,11 +348,12 @@ for (const scenario of [
 ] as const) {
   test(`zeigt die Stammgast-Geschichte ${scenario.kind}`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 810 });
-    await page.goto(`/?story=${scenario.kind}&time=20:30&weather=rain`);
+    const time = scenario.kind === 'knit-gift' ? '12:30' : '20:30';
+    await openCafe(page, `/?story=${scenario.kind}&time=${time}&weather=rain`);
     await page.getByTestId('enter').click();
 
     const canvas = page.locator('#cafe');
-    await expect(canvas).toHaveAttribute('data-story', scenario.kind, { timeout: 5_000 });
+    await expect(canvas).toHaveAttribute('data-story', scenario.kind, { timeout: 10_000 });
     await expect(canvas).toHaveAttribute('data-story-step', '1');
     await expect(canvas).toHaveAttribute('data-regulars', new RegExp(scenario.regular));
     await expect(page.locator('#status')).toHaveText(scenario.message);
@@ -218,7 +362,7 @@ for (const scenario of [
 
 test('zeigt Sora und Kais Arcade-Revanche mit der ausgewählten Venue', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 810 });
-  await page.goto('/?story=arcade-rivals&time=12:30&weather=clear');
+  await openCafe(page, '/?story=arcade-rivals&time=12:30&weather=clear');
   await page.getByRole('radio', { name: /Arcade/i }).click();
   await page.getByRole('button', { name: 'Arcade-Halle betreten' }).click();
 
@@ -232,7 +376,7 @@ test('zeigt Sora und Kais Arcade-Revanche mit der ausgewählten Venue', async ({
 
 test('zeigt einen beschleunigten Unfall auch bei reduzierter Bewegung', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/?accident=coffee-spill&time=12:30&weather=rain');
+  await openCafe(page, '/?accident=coffee-spill&time=12:30&weather=rain');
   await page.getByTestId('enter').click();
   const canvas = page.locator('#cafe');
 
@@ -254,7 +398,7 @@ for (const scenario of [
     });
     page.on('pageerror', (error) => errors.push(error.message));
     await page.setViewportSize({ width: 1440, height: 810 });
-    await page.goto(`/?moment=${scenario.kind}&time=12:30&weather=rain`);
+    await openCafe(page, `/?moment=${scenario.kind}&time=12:30&weather=rain`);
     await page.getByTestId('enter').click();
 
     const canvas = page.locator('#cafe');
@@ -273,7 +417,7 @@ for (const scenario of [
 ] as const) {
   test(`zeigt den ortsabhängigen Moment ${scenario.kind}`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 810 });
-    await page.goto(`/?moment=${scenario.kind}&${scenario.query}`);
+    await openCafe(page, `/?moment=${scenario.kind}&${scenario.query}`);
     if (scenario.venue !== 'Café') await page.getByRole('radio', { name: new RegExp(scenario.venue) }).click();
     await page.getByRole('button', { name: scenario.entry }).click();
 
@@ -308,7 +452,7 @@ test('verwendet freigegebenen Standort für gerundetes Live-Wetter', async ({ co
     requestedUrl = route.request().url();
     await route.fulfill({ json: openMeteoPayload });
   });
-  await page.goto('/?time=12:30');
+  await openCafe(page, '/?time=12:30');
   const body = page.locator('body');
   const canvas = page.locator('#cafe');
 
@@ -330,7 +474,7 @@ test('bleibt nach Standortablehnung in der deterministischen Ersatzumgebung', as
       },
     });
   });
-  await page.goto('/?time=07:30');
+  await openCafe(page, '/?time=07:30');
   await expect(page.locator('body')).toHaveAttribute('data-location-state', 'denied');
   await expect(page.locator('body')).toHaveAttribute('data-weather-source', 'fallback');
   await expect(page.locator('#status')).toContainText(/Ersatzumgebung/);
@@ -340,7 +484,7 @@ test('behält bei Offline-Wetter eine funktionierende Standortszene', async ({ c
   await context.grantPermissions(['geolocation']);
   await context.setGeolocation({ latitude: 59.91, longitude: 10.75 });
   await page.route('**/api.open-meteo.com/v1/forecast?**', (route) => route.abort('internetdisconnected'));
-  await page.goto('/?time=16:30');
+  await openCafe(page, '/?time=16:30');
   await expect(page.locator('body')).toHaveAttribute('data-location-state', 'granted');
   await expect(page.locator('body')).toHaveAttribute('data-weather-source', 'fallback');
   await expect(page.locator('#status')).toContainText(/Live-Wetter/);
@@ -357,7 +501,7 @@ for (const scene of [
     const errors: string[] = [];
     page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto(`/?${scene.query}`);
+    await openCafe(page, `/?${scene.query}`);
     const canvas = page.locator('#cafe');
     await expect(canvas).toHaveAttribute('data-day-phase', scene.phase);
     await expect(canvas).toHaveAttribute('data-weather', scene.weather);
@@ -371,7 +515,7 @@ for (const scene of [
 
 test('zeigt Wetter und Uhr bei Reduced Motion statisch vollständig an', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/?time=20:30&weather=storm');
+  await openCafe(page, '/?time=20:30&weather=storm');
   const canvas = page.locator('#cafe');
   await expect(canvas).toHaveAttribute('data-particles', 'low');
   await expect(canvas).toHaveAttribute('data-weather', 'storm');

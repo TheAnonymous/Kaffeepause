@@ -18,22 +18,24 @@
           <h1 id="title">Kaffeepause</h1>
           <p class="welcome__intro">Wähle den Ort für deine kleine Pause.</p>
           <div class="venue-picker" role="radiogroup" aria-label="Ort auswählen" data-testid="venue-picker">
-            <button class="venue-option is-selected" type="button" role="radio" aria-checked="true" data-venue-choice="cafe">
+            <button class="venue-option is-selected" type="button" role="radio" aria-checked="true" tabindex="0" data-venue-choice="cafe">
               <span class="venue-option__mark" aria-hidden="true">●</span>
               <span><strong>Café</strong><small>Fensterplatz &amp; Tassenklang</small></span>
             </button>
-            <button class="venue-option" type="button" role="radio" aria-checked="false" data-venue-choice="ramen">
+            <button class="venue-option" type="button" role="radio" aria-checked="false" tabindex="-1" data-venue-choice="ramen">
               <span class="venue-option__mark" aria-hidden="true">●</span>
               <span><strong>Ramen</strong><small>Laternen &amp; aufsteigender Dampf</small></span>
             </button>
-            <button class="venue-option" type="button" role="radio" aria-checked="false" data-venue-choice="arcade">
+            <button class="venue-option" type="button" role="radio" aria-checked="false" tabindex="-1" data-venue-choice="arcade">
               <span class="venue-option__mark" aria-hidden="true">●</span>
               <span><strong>Arcade</strong><small>Neon &amp; ruhige Automaten</small></span>
             </button>
           </div>
           <p class="venue-description" data-venue-description>Warme Lampen, leise Tassen und ein Platz am Fenster.</p>
           <p class="privacy-note">Wenn du zustimmst, verfeinert dein ungefährer Standort nur Sonne und Wetter. Er wird nicht gespeichert.</p>
-          <button id="enter" type="button" data-testid="enter">Café betreten</button>
+          <p class="renderer-status" data-renderer-status role="status" aria-live="polite">Das Diorama wird vorbereitet …</p>
+          <button id="enter" type="button" data-testid="enter" aria-busy="true" disabled>Café betreten</button>
+          <button class="renderer-retry" type="button" data-testid="renderer-retry" hidden>Noch einmal versuchen</button>
         </div>
       </section>
       <div class="controls" data-testid="controls" aria-label="Café-Steuerung" hidden>
