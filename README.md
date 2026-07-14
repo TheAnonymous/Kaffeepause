@@ -21,7 +21,7 @@ Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen
 - funktionierende Pixel-Wanduhr sowie lokaler Sonnenstand mit Dämmerung und Polarzuständen
 - klare, bewölkte, neblige, regnerische, verschneite und stürmische Außenwelten
 - Passant:innen, Busse, Regenschirme, Vögel und saisonale Außenwelt hinter dem Fenster
-- tageszeitabhängige Auslage, Stadtlichter, Sterne, Lichtstreifen und warme Innenbeleuchtung
+- tageszeitabhängige Auslage, Stadtlichter, Sterne, gerichtetes Fensterlicht, nasse Reflexionen und warme Innenbeleuchtung
 - deterministische Figuren-Zustandsautomaten und zentrale Platzreservierung
 - kollisionsbewusste Routen um Theke, Tische und andere laufende Gäste
 - schlanke Szenenlaufzeit mit unveränderlichen Snapshots zwischen Simulation und Canvas-Renderer

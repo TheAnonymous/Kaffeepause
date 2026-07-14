@@ -5,6 +5,7 @@ import type { CafeEnvironmentSnapshot, DayPhase } from './environment/types';
 import type { VenueKind } from './venue';
 import type { SceneSnapshot } from './scene/types';
 import { CharacterRenderer } from './scene/characterRenderer';
+import { calculateSceneLighting, LightingRenderer, type SceneLighting } from './scene/lightingRenderer';
 import { VenueRenderer } from './scene/venueRenderer';
 
 // Drei physische Pixel pro Szenenpixel lassen kleine Licht-, Holz- und Stoffdetails
@@ -92,6 +93,7 @@ export class CafeRenderer {
   private environment?: CafeEnvironmentSnapshot;
   private venue: VenueKind = 'cafe';
   private readonly characters = new CharacterRenderer(rect, polygon);
+  private readonly lighting = new LightingRenderer(rect, polygon, HALF_PIXEL);
   private readonly venues = new VenueRenderer();
 
   constructor(
@@ -147,6 +149,7 @@ export class CafeRenderer {
     const context = this.context;
     const cameraX = snap(this.camera.x);
     const accident = snapshot.accident;
+    const lighting = calculateSceneLighting(this.venue, this.environment);
     const shaking = !this.reducedMotion && accident?.kind === 'tray-drop' && accident.phase === 'chaos';
     const shakeX = shaking ? Math.round(Math.sin(accident.phaseElapsed * 58)) * HALF_PIXEL : 0;
     const shakeY = shaking ? Math.round(Math.cos(accident.phaseElapsed * 47)) * HALF_PIXEL : 0;
@@ -167,6 +170,14 @@ export class CafeRenderer {
     this.drawDoor(time);
     this.drawVenueArchitecture(time);
     this.drawVenueFurnitureBack();
+    this.lighting.drawAmbient({
+      context,
+      venue: this.venue,
+      time,
+      active: this.active,
+      reducedMotion: this.reducedMotion,
+      lighting,
+    });
     this.drawVenueCounterBack(time);
     this.drawBarista(snapshot.barista, time);
     this.venues.drawHostAccent(context, snapshot.barista, this.venue, rect, snap, HALF_PIXEL);
@@ -180,7 +191,7 @@ export class CafeRenderer {
     if (moment) this.drawMoment(moment, snapshot.guests);
     this.drawVenueDetails(time, snapshot.storyStages.sketchbook);
     if (accident) this.drawAccident(accident, snapshot.guests);
-    this.drawForeground(time);
+    this.drawForeground(time, lighting);
     context.restore();
     this.canvas.dataset.cameraX = this.camera.x.toFixed(1);
     this.canvas.dataset.guestCount = String(snapshot.guests.length);
@@ -193,6 +204,8 @@ export class CafeRenderer {
     this.canvas.dataset.navigation = 'collision-aware';
     this.canvas.dataset.venue = this.venue;
     this.canvas.dataset.characterDetail = 'physical-pixel';
+    this.canvas.dataset.lighting = lighting.night > 0.5 ? 'lamplit' : lighting.solar > 0.35 ? 'daylight' : 'soft';
+    this.canvas.dataset.material = lighting.wetness > 0.12 ? 'wet' : lighting.fog > 0.15 ? 'misty' : 'dry';
   }
 
   private drawRoom(time: number): void {
@@ -252,15 +265,6 @@ export class CafeRenderer {
     rect(context, '#f0b764', 58, 116, 196, 1);
     rect(context, '#d98954', 67, 118, 178, HALF_PIXEL);
 
-    if (solarLight > 0.05 && (this.environment?.weather.cloudCover ?? 100) < 82) {
-      const fromRight = (this.environment?.solar.azimuth ?? 180) > 180;
-      const startX = fromRight ? 248 : 52;
-      const endX = fromRight ? 96 : 225;
-      context.save();
-      context.globalAlpha = solarLight * (1 - (this.environment?.weather.cloudCover ?? 0) / 130) * 0.22;
-      polygon(context, '#ffe6a3', [[startX, 104], [startX + (fromRight ? -28 : 28), 104], [endX + 38, 211], [endX, 211]]);
-      context.restore();
-    }
   }
 
   private drawFloorDecor(time: number): void {
@@ -1885,7 +1889,7 @@ export class CafeRenderer {
     }
   }
 
-  private drawForeground(time: number): void {
+  private drawForeground(time: number, lighting: SceneLighting): void {
     const context = this.context;
     const theme = this.venues.foregroundTheme(this.venue);
     const { base, dark, plank, highlight } = theme;
@@ -1897,6 +1901,14 @@ export class CafeRenderer {
       rect(context, dark, x + 3, 209, 8, HALF_PIXEL);
       rect(context, highlight, x + 5, 207.5, 4, HALF_PIXEL);
     }
+    this.lighting.drawForegroundDepth({
+      context,
+      venue: this.venue,
+      time,
+      active: this.active,
+      reducedMotion: this.reducedMotion,
+      lighting,
+    });
 
     if (!this.active) return;
     const motes = this.reducedMotion ? 3 : 14;
