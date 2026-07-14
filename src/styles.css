@@ -111,6 +111,83 @@ h1 {
   line-height: 1.6;
 }
 
+.welcome .welcome__intro {
+  margin-bottom: 1rem;
+}
+
+.venue-picker {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin: 0 auto 0.75rem;
+  text-align: left;
+}
+
+.venue-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.45rem;
+  min-height: 5.7rem;
+  padding: 0.7rem 0.55rem;
+  border: 1px solid rgba(255, 222, 158, 0.22);
+  color: #d6c3a6;
+  background: rgba(19, 14, 23, 0.52);
+  box-shadow: inset 1px 1px 0 rgba(255, 235, 195, 0.08), inset -2px -2px 0 rgba(13, 10, 17, 0.34);
+  text-align: left;
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.venue-option:hover {
+  border-color: rgba(246, 195, 115, 0.7);
+  background: rgba(91, 52, 55, 0.72);
+  transform: translateY(-1px);
+}
+
+.venue-option.is-selected {
+  border-color: #efbd70;
+  color: #fff0c3;
+  background: #563841;
+  box-shadow: inset 2px 2px 0 rgba(255, 226, 170, 0.16), inset -3px -3px 0 rgba(28, 17, 28, 0.45), 2px 2px 0 #8e4c3e;
+}
+
+.venue-option__mark {
+  align-self: start;
+  color: #d89b61;
+  font-size: 0.7rem;
+  line-height: 1.3;
+}
+
+.venue-option[data-venue-choice="ramen"] .venue-option__mark { color: #e07062; }
+.venue-option[data-venue-choice="arcade"] .venue-option__mark { color: #8ecac4; }
+.venue-option.is-selected .venue-option__mark { color: #fff0a8; }
+
+.venue-option strong,
+.venue-option small {
+  display: block;
+}
+
+.venue-option strong {
+  font-size: 0.73rem;
+  letter-spacing: 0.035em;
+}
+
+.venue-option small {
+  margin-top: 0.32rem;
+  color: inherit;
+  font-family: system-ui, sans-serif;
+  font-size: 0.63rem;
+  line-height: 1.25;
+  opacity: 0.82;
+}
+
+.welcome .venue-description {
+  min-height: 2.8em;
+  margin: 0.6rem auto 1rem;
+  color: #e4ca9a;
+  font-size: 0.79rem;
+  line-height: 1.45;
+}
+
 .welcome .privacy-note {
   margin-top: -0.8rem;
   margin-bottom: 1.25rem;
@@ -155,7 +232,8 @@ button {
 #enter:hover { background: #f1bd72; transform: translate(-1px, -1px); box-shadow: 5px 5px 0 #8e4c3e; }
 #enter:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 #8e4c3e; }
 #enter:focus-visible,
-.control:focus-visible { outline: 3px solid #fff2c2; outline-offset: 4px; }
+.control:focus-visible,
+.venue-option:focus-visible { outline: 3px solid #fff2c2; outline-offset: 3px; }
 
 .controls {
   position: absolute;
@@ -223,7 +301,15 @@ body[data-entered="true"][data-ui-idle="true"] .controls:not(:focus-within) {
 
 @media (prefers-reduced-motion: reduce) {
   .welcome { transition-duration: 120ms; }
-  #enter { transition: none; }
+  #enter, .venue-option { transition: none; }
   .controls { transition: none; }
   .control { transition: none; }
+}
+
+@media (max-width: 540px) {
+  .welcome__card { padding: 1.45rem 1.15rem; }
+  .venue-picker { grid-template-columns: 1fr; gap: 0.35rem; }
+  .venue-option { min-height: 3.8rem; padding: 0.55rem 0.65rem; }
+  .venue-option small { margin-top: 0.14rem; }
+  .welcome .venue-description { min-height: 0; margin-bottom: 0.8rem; }
 }

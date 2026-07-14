@@ -5,6 +5,7 @@ import { CafeSimulation, type CafeSimulationOptions } from './simulation/cafeSim
 import type { AccidentKind, CafeMoment, CafeMomentKind, CafeStoryKind } from './simulation/types';
 import { CafeEnvironmentController, parseEnvironmentOverrides } from './environment/cafeEnvironmentController';
 import type { CafeEnvironmentSnapshot } from './environment/types';
+import { DEFAULT_VENUE, isVenueKind, VENUES, type VenueKind } from './venue';
 
 const UI_IDLE_DELAY = 2_500;
 
@@ -97,6 +98,9 @@ export class KaffeepauseApp {
   private readonly canvas = requiredElement<HTMLCanvasElement>('#cafe');
   private readonly welcome = requiredElement<HTMLElement>('[data-testid="welcome"]');
   private readonly enterButton = requiredElement<HTMLButtonElement>('[data-testid="enter"]');
+  private readonly venueButtons = [...document.querySelectorAll<HTMLButtonElement>('[data-venue-choice]')];
+  private readonly venueEyebrow = requiredElement<HTMLElement>('[data-venue-eyebrow]');
+  private readonly venueDescription = requiredElement<HTMLElement>('[data-venue-description]');
   private readonly controls = requiredElement<HTMLElement>('[data-testid="controls"]');
   private readonly soundButton = requiredElement<HTMLButtonElement>('[data-testid="sound"]');
   private readonly fullscreenButton = requiredElement<HTMLButtonElement>('[data-testid="fullscreen"]');
@@ -118,13 +122,16 @@ export class KaffeepauseApp {
   private idleTimer?: number;
   private lastAnnouncedAccidentId = 0;
   private lastAnnouncedMomentId = 0;
+  private selectedVenue: VenueKind = DEFAULT_VENUE;
 
   start(): void {
     this.updateMotionPreference();
     this.environment.start();
     this.applyEnvironment(this.environment.update());
+    this.selectVenue(this.selectedVenue);
     this.renderer.render(0);
     this.enterButton.addEventListener('click', this.enterCafe);
+    for (const button of this.venueButtons) button.addEventListener('click', this.venueSelected);
     this.soundButton.addEventListener('click', this.toggleSound);
     this.fullscreenButton.addEventListener('click', this.toggleFullscreen);
     window.addEventListener('resize', this.resize);
@@ -153,7 +160,7 @@ export class KaffeepauseApp {
     document.body.dataset.entered = 'true';
     this.setUiIdle(false);
     this.scheduleIdle();
-    this.status.textContent = 'Du bist im Café. Regen und leise Musik erfüllen den Raum.';
+    this.status.textContent = VENUES[this.selectedVenue].statusMessage;
     void this.audio.start().then((state) => {
       this.soundButton.dataset.audioState = state;
       if (state === 'unavailable') {
@@ -162,6 +169,30 @@ export class KaffeepauseApp {
       }
     });
   };
+
+  private readonly venueSelected = (event: Event): void => {
+    if (this.entered) return;
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLButtonElement) || !isVenueKind(target.dataset.venueChoice)) return;
+    this.selectVenue(target.dataset.venueChoice);
+  };
+
+  private selectVenue(venue: VenueKind): void {
+    this.selectedVenue = venue;
+    const definition = VENUES[venue];
+    this.venueEyebrow.textContent = definition.eyebrow;
+    this.venueDescription.textContent = definition.description;
+    this.enterButton.textContent = definition.enterLabel;
+    this.canvas.setAttribute('aria-label', definition.canvasLabel);
+    this.renderer.setVenue(venue);
+    this.audio.setVenue(venue);
+    document.body.dataset.venue = venue;
+    for (const button of this.venueButtons) {
+      const selected = button.dataset.venueChoice === venue;
+      button.classList.toggle('is-selected', selected);
+      button.setAttribute('aria-checked', String(selected));
+    }
+  }
 
   private readonly toggleFullscreen = async (): Promise<void> => {
     this.noteActivity();

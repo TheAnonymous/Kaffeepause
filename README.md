@@ -1,16 +1,17 @@
 # Kaffeepause
 
-Ein autonomes Pixel-Art-Café für eine kleine Pause im Browser.
+Ein autonomes Pixel-Art-Diorama für eine kleine Pause im Browser.
 
-**[Café betreten →](https://theanonymous.github.io/Kaffeepause/)**
+**[Ort auswählen →](https://theanonymous.github.io/Kaffeepause/)**
 
 ![Das Pixel-Art-Café Kaffeepause bei klarem Mittagslicht](docs/kaffeepause-preview.png)
 
 ## Über das Projekt
 
-Kaffeepause zeigt ein gemütliches Café als bildschirmfüllendes Canvas-Diorama. Gerätezeit, Sonnenstand, Wetter und Tagesprofil verändern Außenwelt, Licht, Auslage, Geräuschkulisse und Belegung weich. Gäste kommen und gehen, bestellen, lesen, arbeiten, zeichnen, telefonieren, reden und trinken – vollständig selbstständig und ohne sichtbaren Schleifensprung. Wiederkehrende Stammgäste bringen ruhige Geschichten mit: Mara füllt und hängt eine Skizze auf, Noor und Toni verbringen einen ersten Abend miteinander, Linn verschenkt etwas Selbstgestricktes. Dazwischen verbinden kleine Alltagsmomente die Szene.
+Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen-Restaurant oder eine ruhige Arcade-Halle. Alle drei Varianten teilen sich die autonome, kollisionsbewusste Gäste-Simulation, erhalten aber jeweils eigene Einrichtung, Palette, Theke, Lichtdetails und zurückhaltende Klangfarbe. Gerätezeit, Sonnenstand, Wetter und Tagesprofil verändern Außenwelt, Licht, Auslage, Geräuschkulisse und Belegung weich. Gäste kommen und gehen, bestellen, lesen, arbeiten, zeichnen, telefonieren, reden und trinken – vollständig selbstständig und ohne sichtbaren Schleifensprung. Wiederkehrende Stammgäste bringen ruhige Geschichten mit: Mara füllt und hängt eine Skizze auf, Noor und Toni verbringen einen ersten Abend miteinander, Linn verschenkt etwas Selbstgestricktes. Dazwischen verbinden kleine Alltagsmomente die Szene.
 
 - handgezeichnete Canvas-Pixelart ohne externe Assets
+- Auswahl zwischen Café, Ramen-Restaurant und Arcade-Halle vor dem Eintritt; keine nachträgliche Menühürde
 - hochauflösendes 1152 × 648-Pixel-Canvas mit feineren Ein-Pixel-Details
 - bis zu acht Gäste mit lesbaren Tätigkeiten, Wetteraccessoires und einem animierten Barista
 - neun Gasttätigkeiten, darunter Tagebuchschreiben, Stricken und Brettspiel; Barista mahlt, verkostet und bedient

@@ -41,6 +41,26 @@ test('betritt das Café, füllt den Viewport und schaltet den Ton', async ({ pag
   expect(errors).toEqual([]);
 });
 
+for (const venue of [
+  { kind: 'ramen', label: 'Ramen', entry: 'Ramen-Restaurant betreten', canvas: /Ramen-Restaurant/i },
+  { kind: 'arcade', label: 'Arcade', entry: 'Arcade-Halle betreten', canvas: /Arcade-Halle/i },
+] as const) {
+  test(`wechselt vor dem Eintritt in die ${venue.kind}-Szene`, async ({ page }) => {
+    await page.goto('/?time=20:30&weather=rain');
+    await page.getByRole('radio', { name: new RegExp(venue.label) }).click();
+
+    const canvas = page.locator('#cafe');
+    await expect(page.locator('body')).toHaveAttribute('data-venue', venue.kind);
+    await expect(canvas).toHaveAttribute('data-venue', venue.kind);
+    await expect(canvas).toHaveAccessibleName(venue.canvas);
+    await expect(page.getByRole('button', { name: venue.entry })).toBeVisible();
+
+    await page.getByRole('button', { name: venue.entry }).click();
+    await expect(page.locator('body')).toHaveAttribute('data-entered', 'true');
+    await expect(canvas).toHaveAttribute('data-venue', venue.kind);
+  });
+}
+
 test('wechselt bei schmalem Resize in die ruhige Kamerafahrt', async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 700 });
   await page.goto('/');

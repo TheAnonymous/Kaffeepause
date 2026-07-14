@@ -3,6 +3,7 @@ import { CafeSimulation } from './simulation/cafeSimulation';
 import { WORLD_HEIGHT, WORLD_WIDTH } from './simulation/layout';
 import type { Barista, CafeAccident, CafeMoment, Guest } from './simulation/types';
 import type { CafeEnvironmentSnapshot, DayPhase } from './environment/types';
+import type { VenueKind } from './venue';
 
 // Drei physische Pixel pro Szenenpixel lassen kleine Licht-, Holz- und Stoffdetails
 // klarer wirken, ohne den bewusst groben Pixel-Art-Charakter zu verlieren.
@@ -85,6 +86,7 @@ export class CafeRenderer {
   private reducedMotion = false;
   private active = false;
   private environment?: CafeEnvironmentSnapshot;
+  private venue: VenueKind = 'cafe';
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -99,6 +101,11 @@ export class CafeRenderer {
 
   setActive(active: boolean): void {
     this.active = active;
+  }
+
+  setVenue(venue: VenueKind): void {
+    this.venue = venue;
+    this.canvas.dataset.venue = venue;
   }
 
   setEnvironment(snapshot: CafeEnvironmentSnapshot): void {
@@ -153,19 +160,20 @@ export class CafeRenderer {
     this.drawFloorDecor(time);
     this.drawWindows(time);
     this.drawDoor(time);
-    this.drawArchitecture(time);
-    this.drawFurnitureBack();
-    this.drawCounterBack(time);
+    this.drawVenueArchitecture(time);
+    this.drawVenueFurnitureBack();
+    this.drawVenueCounterBack(time);
     this.drawBarista(this.simulation.barista, time);
-    this.drawCounterFront();
+    this.drawVenueHostAccent(this.simulation.barista);
+    this.drawVenueCounterFront();
 
     const guests = [...this.simulation.guests].sort((left, right) => left.position.y - right.position.y);
     for (const guest of guests) this.drawGuest(guest);
 
-    this.drawFurnitureFront();
+    this.drawVenueFurnitureFront();
     const moment = this.simulation.activeMoment;
     if (moment) this.drawMoment(moment);
-    this.drawCafeDetails(time);
+    this.drawVenueDetails(time);
     if (accident) this.drawAccident(accident);
     this.drawForeground(time);
     context.restore();
@@ -181,18 +189,24 @@ export class CafeRenderer {
       .filter(Boolean)
       .join(',');
     this.canvas.dataset.navigation = 'collision-aware';
+    this.canvas.dataset.venue = this.venue;
   }
 
   private drawRoom(time: number): void {
     const context = this.context;
     const solarLight = clamp(((this.environment?.solar.elevation ?? -12) + 8) / 58);
-    const wall = mixColor('#60434a', '#9c6857', solarLight);
-    const wallLight = mixColor('#865447', '#c58a68', solarLight);
+    const theme = this.venue === 'ramen'
+      ? { wallFrom: '#542d36', wallTo: '#8b514a', wallDark: '#3d2835', trim: '#9f5549', floor: '#392c38', floorLight: '#51404a' }
+      : this.venue === 'arcade'
+        ? { wallFrom: '#202841', wallTo: '#394c68', wallDark: '#171c30', trim: '#46577a', floor: '#1e2638', floorLight: '#303b51' }
+        : { wallFrom: '#60434a', wallTo: '#9c6857', wallDark: COLORS.wallDark, trim: '#9b6554', floor: COLORS.floor, floorLight: COLORS.floorLight };
+    const wall = mixColor(theme.wallFrom, theme.wallTo, solarLight);
+    const wallLight = mixColor(theme.wallFrom, theme.wallTo, Math.min(1, solarLight + 0.22));
     rect(context, COLORS.deepest, 0, 0, WORLD_WIDTH, WORLD_HEIGHT);
-    rect(context, COLORS.wallDark, 0, 9, WORLD_WIDTH, 126);
+    rect(context, theme.wallDark, 0, 9, WORLD_WIDTH, 126);
     rect(context, wall, 0, 14, WORLD_WIDTH, 101);
-    rect(context, '#9b6554', 0, 93, WORLD_WIDTH, 22);
-    rect(context, '#ad7059', 0, 105, WORLD_WIDTH, 2);
+    rect(context, theme.trim, 0, 93, WORLD_WIDTH, 22);
+    rect(context, mixColor(theme.trim, '#e5a16e', solarLight), 0, 105, WORLD_WIDTH, 2);
     for (let x = 4; x < WORLD_WIDTH; x += 21) {
       rect(context, x % 42 === 4 ? '#c17e61' : '#87554c', x, 109, 13, HALF_PIXEL);
       rect(context, '#76474a', x + 3, 111, HALF_PIXEL, 2);
@@ -201,7 +215,7 @@ export class CafeRenderer {
     rect(context, '#c58764', 0, 115, WORLD_WIDTH, 1);
     rect(context, COLORS.ink, 0, 130, WORLD_WIDTH, 4);
     rect(context, '#6c4444', 0, 128, WORLD_WIDTH, 2);
-    rect(context, COLORS.floor, 0, 134, WORLD_WIDTH, 82);
+    rect(context, theme.floor, 0, 134, WORLD_WIDTH, 82);
 
     for (let index = 0; index < 34; index += 1) {
       const x = (index * 37 + 13) % WORLD_WIDTH;
@@ -212,12 +226,12 @@ export class CafeRenderer {
     }
 
     for (let y = 137; y < WORLD_HEIGHT; y += 13) {
-      rect(context, y % 26 === 7 ? '#5b3d40' : COLORS.floorLight, 0, y, WORLD_WIDTH, HALF_PIXEL);
+      rect(context, y % 26 === 7 ? mixColor(theme.floor, '#151b2b', 0.42) : theme.floorLight, 0, y, WORLD_WIDTH, HALF_PIXEL);
       rect(context, '#35272f', 0, y + HALF_PIXEL, WORLD_WIDTH, HALF_PIXEL);
     }
     for (let x = -40; x < WORLD_WIDTH + 40; x += 31) {
-      polygon(context, '#3d2d34', [[x, 216], [x + 1.5, 216], [x + 53.5, 134], [x + 52, 134]]);
-      polygon(context, '#74504b', [[x + 2, 216], [x + 2.5, 216], [x + 54.5, 134], [x + 54, 134]]);
+      polygon(context, mixColor(theme.floor, '#171c2c', 0.42), [[x, 216], [x + 1.5, 216], [x + 53.5, 134], [x + 52, 134]]);
+      polygon(context, mixColor(theme.floorLight, '#54728a', this.venue === 'arcade' ? 0.7 : 0.22), [[x + 2, 216], [x + 2.5, 216], [x + 54.5, 134], [x + 54, 134]]);
     }
 
     for (let index = 0; index < 18; index += 1) {
@@ -246,6 +260,33 @@ export class CafeRenderer {
   private drawFloorDecor(time: number): void {
     const context = this.context;
     const shimmer = this.reducedMotion ? 0 : Math.sin(time * 1.4) * HALF_PIXEL;
+
+    if (this.venue === 'ramen') {
+      rect(context, '#282632', 53, 171, 176, 37);
+      for (let y = 174; y < 205; y += 10) {
+        for (let x = 59; x < 223; x += 28) {
+          rect(context, '#9b8060', x, y, 24, 7);
+          rect(context, '#d1af78', x + 1, y + 1, 22, HALF_PIXEL);
+          rect(context, '#4d3b42', x, y + 7, 24, 1);
+        }
+      }
+      rect(context, '#c25a4d', 72, 202, 132, 2);
+      for (let x = 78; x < 199; x += 16) rect(context, '#efbd73', x, 202 + shimmer, 5, HALF_PIXEL);
+      return;
+    }
+
+    if (this.venue === 'arcade') {
+      rect(context, '#121a2a', 50, 169, 182, 39);
+      for (let x = 55; x < 230; x += 14) rect(context, '#2f5270', x, 170, HALF_PIXEL, 36);
+      for (let y = 176; y < 206; y += 10) rect(context, y % 20 === 6 ? '#a4519f' : '#397a91', 52, y, 178, HALF_PIXEL);
+      for (let index = 0; index < 8; index += 1) {
+        const x = 62 + index * 20;
+        const color = index % 2 ? '#da5e9f' : '#61c9cf';
+        rect(context, color, x, 197 + shimmer, 7, 1);
+        rect(context, '#f3dc9b', x + 2, 196 + shimmer, 2, HALF_PIXEL);
+      }
+      return;
+    }
 
     // Der Teppich füllt den bisher sehr offenen Mittelgrund und verankert die Sitzgruppe.
     polygon(context, '#2c303b', [[54, 177], [67, 169], [211, 169], [231, 179], [225, 205], [207, 211], [73, 211], [51, 202]]);
@@ -547,6 +588,20 @@ export class CafeRenderer {
     rect(context, '#e6cb91', 22, 71.5, 5, HALF_PIXEL);
     rect(context, '#9c5f49', 20, 74, 9, HALF_PIXEL);
 
+    if (this.venue === 'ramen') {
+      rect(context, '#b84e49', 16, 62, 17, 16);
+      rect(context, '#f0bd6d', 18, 64, 13, 12);
+      rect(context, '#5c303a', 20, 66, 9, 8);
+      rect(context, '#f8dc98', 21, 68, 7, HALF_PIXEL);
+      rect(context, '#b94f49', 23, 71, 3, 1);
+    } else if (this.venue === 'arcade') {
+      rect(context, '#243b59', 16, 62, 17, 16);
+      rect(context, '#5bcbd0', 18, 64, 13, 10);
+      rect(context, '#18243a', 20, 66, 9, 6);
+      rect(context, '#e5d982', 22, 67, 5, HALF_PIXEL);
+      rect(context, '#c35aa5', 22, 72, 5, 1);
+    }
+
     this.drawWallClock();
     const rain = clamp(((this.environment?.weather.rain ?? 0) + (this.environment?.weather.showers ?? 0)) / 4);
     if (!this.active || rain <= 0) return;
@@ -658,6 +713,292 @@ export class CafeRenderer {
     rect(context, '#8da071', 264 + plantSway * 0.7, 77, 2, 6);
     rect(context, '#547359', 250 + plantSway * 0.4, 84, 5, 3);
     rect(context, '#5e795f', 266 + plantSway * 0.4, 84, 4, 3);
+  }
+
+  private drawVenueArchitecture(time: number): void {
+    if (this.venue === 'cafe') {
+      this.drawArchitecture(time);
+      return;
+    }
+    if (this.venue === 'ramen') this.drawRamenArchitecture(time);
+    else this.drawArcadeArchitecture(time);
+  }
+
+  private drawRamenArchitecture(time: number): void {
+    const context = this.context;
+    const lampsNeeded = clamp((12 - (this.environment?.solar.elevation ?? -12)) / 24);
+    const lanternGlow = this.reducedMotion ? 0 : Math.sin(time * 1.15) * HALF_PIXEL;
+
+    rect(context, '#241b2a', 0, 7, WORLD_WIDTH, 8);
+    rect(context, '#402334', 0, 10, WORLD_WIDTH, 3);
+    for (let x = 0; x < WORLD_WIDTH; x += 48) {
+      rect(context, '#713943', x + 1, 10.5, 44, HALF_PIXEL);
+      rect(context, '#b2544a', x + 3, 12, 40, HALF_PIXEL);
+    }
+    context.save();
+    context.globalAlpha = 0.08 + lampsNeeded * 0.13;
+    for (const x of [76, 146, 216, 286, 350]) polygon(context, '#f1a45f', [[x - 16, 31], [x + 16, 31], [x + 26, 116], [x - 26, 116]]);
+    context.restore();
+    for (const x of [76, 146, 216, 286, 350]) {
+      rect(context, '#34202d', x, 0, 2, 18);
+      rect(context, '#c34f49', x - 5, 18, 12, 4);
+      rect(context, '#f0b465', x - 4, 20 + lanternGlow, 10, 9);
+      rect(context, '#f9d691', x - 2, 21 + lanternGlow, 6, 1);
+      rect(context, '#9a3d42', x - 5, 29 + lanternGlow, 12, 2);
+      rect(context, '#5d2d3b', x - 2, 31 + lanternGlow, 6, HALF_PIXEL);
+    }
+
+    rect(context, '#251b2a', 267, 20, 103, 64);
+    rect(context, '#352337', 271, 24, 95, 56);
+    rect(context, '#643443', 273, 26, 91, 52);
+    rect(context, '#b85249', 275, 28, 87, 2);
+    rect(context, '#e6a967', 281, 32, 76, 16);
+    rect(context, '#f4d18a', 283, 34, 72, 1);
+    for (const [x, width] of [[285, 17], [308, 23], [336, 14]] as const) {
+      rect(context, '#733343', x, 39, width, 5);
+      rect(context, '#ffe0a3', x + 2, 40, width - 4, HALF_PIXEL);
+    }
+    rect(context, '#2d2030', 279, 53, 79, 20);
+    for (let index = 0; index < 4; index += 1) {
+      const x = 285 + index * 18;
+      rect(context, index % 2 ? '#c75d4c' : '#d99d5f', x, 57, 12, 2);
+      rect(context, '#f1ca86', x + 2, 62, 8, HALF_PIXEL);
+      rect(context, '#b64d49', x + 4, 66, 4, 2);
+    }
+    rect(context, '#b14c49', 276, 74, 84, 2);
+    rect(context, '#e1a15f', 279, 75, 78, HALF_PIXEL);
+
+    rect(context, '#302234', 256, 88, 8, 44);
+    rect(context, '#9f4c43', 254, 87, 12, 4);
+    rect(context, '#e0a662', 255, 88, 10, 1);
+    for (const [x, y, height] of [[254, 79, 10], [261, 77, 13], [267, 82, 8]] as const) {
+      rect(context, '#4e765f', x, y, 4, height);
+      rect(context, '#78966d', x + 2, y - 2, 3, height - 2);
+    }
+  }
+
+  private drawArcadeArchitecture(time: number): void {
+    const context = this.context;
+    const flicker = this.reducedMotion ? 0 : Math.sin(time * 3.4) * HALF_PIXEL;
+    rect(context, '#111728', 0, 7, WORLD_WIDTH, 8);
+    rect(context, '#243451', 0, 10, WORLD_WIDTH, 3);
+    for (let x = 0; x < WORLD_WIDTH; x += 48) {
+      rect(context, x % 96 === 0 ? '#416f91' : '#5b3a79', x + 1, 10.5, 44, HALF_PIXEL);
+      rect(context, '#73cbd0', x + 3, 12, 40, HALF_PIXEL);
+    }
+    context.save();
+    context.globalAlpha = 0.12;
+    for (const x of [74, 146, 218, 290, 352]) polygon(context, '#53d8d1', [[x - 18, 29], [x + 18, 29], [x + 30, 117], [x - 30, 117]]);
+    context.restore();
+    for (const x of [74, 146, 218, 290, 352]) {
+      rect(context, '#182238', x, 0, 3, 18);
+      rect(context, '#4d3a77', x - 6, 18, 15, 3);
+      rect(context, '#5ac6cb', x - 5, 21 + flicker, 13, 4);
+      rect(context, '#f0c67a', x - 3, 22 + flicker, 8, HALF_PIXEL);
+      rect(context, '#c9579e', x - 4, 26, 11, 2);
+    }
+
+    rect(context, '#131a2b', 267, 20, 103, 64);
+    rect(context, '#273354', 271, 24, 95, 56);
+    rect(context, '#1a2239', 274, 27, 89, 50);
+    rect(context, '#54cbd0', 277, 30, 83, HALF_PIXEL);
+    rect(context, '#b955a2', 277, 71, 83, HALF_PIXEL);
+    for (let index = 0; index < 5; index += 1) {
+      const x = 282 + index * 15;
+      const color = index % 2 ? '#ca5da7' : '#62cbd0';
+      rect(context, '#0d1422', x, 38, 11, 23);
+      rect(context, color, x + 1, 39, 9, 10);
+      rect(context, '#f3de91', x + 3, 41, 5, HALF_PIXEL);
+      rect(context, '#3c5071', x + 2, 53, 7, 4);
+      rect(context, color, x + 4, 58, 3, 1);
+    }
+
+    rect(context, '#1b2740', 255, 87, 10, 45);
+    rect(context, '#54cbd0', 253, 87, 14, 2);
+    rect(context, '#c55aa4', 254, 91, 12, 1);
+    rect(context, '#263e58', 258, 92, 5, 36);
+    rect(context, '#70d6d2', 254, 78 + flicker, 3, 9);
+    rect(context, '#cc62a9', 263, 80 - flicker, 3, 7);
+  }
+
+  private drawVenueFurnitureBack(): void {
+    if (this.venue === 'cafe') this.drawFurnitureBack();
+    else if (this.venue === 'ramen') this.drawRamenFurnitureBack();
+    else this.drawArcadeFurnitureBack();
+  }
+
+  private drawRamenFurnitureBack(): void {
+    const context = this.context;
+    rect(context, '#342636', 58, 138, 109, 7);
+    rect(context, '#8c4143', 60, 135, 105, 6);
+    rect(context, '#d46854', 62, 136, 101, 1);
+    for (const x of [70, 99, 128, 151]) {
+      rect(context, '#4c2d3a', x, 140, 22, 10);
+      rect(context, '#a94a46', x + 1, 141, 20, 5);
+      rect(context, '#e5ad68', x + 3, 142, 16, HALF_PIXEL);
+    }
+    for (const x of [105, 179]) {
+      rect(context, '#322432', x - 18, 170, 37, 5);
+      rect(context, '#a74845', x - 16, 167, 33, 4);
+      rect(context, '#ecad63', x - 14, 167.5, 29, HALF_PIXEL);
+      rect(context, '#59313a', x - 2, 172, 4, 31);
+      rect(context, '#2d2531', x - 12, 202, 24, 3);
+      for (const direction of [-1, 1] as const) {
+        rect(context, '#56323c', x + direction * 16 - 3, 176, 7, 25);
+        rect(context, '#8f4644', x + direction * 16 - 2, 174, 5, 5);
+      }
+    }
+    for (const x of [94, 168]) {
+      rect(context, '#f2e0b8', x, 163, 7, 4);
+      rect(context, '#d9a050', x + 1, 162, 5, 2);
+      rect(context, '#48303a', x - 1, 167, 9, 1);
+    }
+  }
+
+  private drawArcadeFurnitureBack(): void {
+    const context = this.context;
+    for (const [x, color] of [[59, '#5ccbd0'], [96, '#c35aa5'], [133, '#62bcd2']] as const) {
+      rect(context, '#111827', x, 88, 29, 57);
+      rect(context, '#314666', x + 2, 90, 25, 51);
+      rect(context, color, x + 4, 93, 21, 22);
+      rect(context, '#1b2740', x + 6, 95, 17, 15);
+      rect(context, '#e4d681', x + 8, 98, 12, HALF_PIXEL);
+      rect(context, '#243752', x + 6, 118, 17, 9);
+      rect(context, color, x + 9, 121, 7, 1);
+      rect(context, '#d06a9e', x + 17, 121, 2, 2);
+      rect(context, '#0e1421', x + 7, 130, 15, 11);
+      rect(context, color, x + 10, 131, 2, 8);
+    }
+    for (const x of [105, 179]) {
+      rect(context, '#101827', x - 18, 170, 37, 5);
+      rect(context, '#293d5c', x - 16, 167, 33, 4);
+      rect(context, '#64c9cd', x - 14, 167.5, 29, HALF_PIXEL);
+      rect(context, '#1b2940', x - 2, 172, 4, 31);
+      rect(context, '#101824', x - 12, 202, 24, 3);
+    }
+    for (const [x, color] of [[78, '#c45aa1'], [130, '#63cbd0'], [158, '#c45aa1'], [207, '#63cbd0']] as const) {
+      rect(context, '#142038', x, 177, 4, 25);
+      rect(context, '#2b4562', x - 3, 174, 10, 5);
+      rect(context, color, x - 2, 174, 8, 1);
+    }
+  }
+
+  private drawVenueCounterBack(time: number): void {
+    if (this.venue === 'cafe') this.drawCounterBack(time);
+    else if (this.venue === 'ramen') this.drawRamenCounterBack(time);
+    else this.drawArcadeCounterBack(time);
+  }
+
+  private drawRamenCounterBack(time: number): void {
+    const context = this.context;
+    rect(context, '#362333', 282, 88, 98, 30);
+    rect(context, '#5a3540', 284, 91, 94, 24);
+    for (const x of [288, 311, 334, 357]) {
+      rect(context, '#2a2832', x, 95, 17, 15);
+      rect(context, '#89958d', x + 2, 97, 13, 11);
+      rect(context, '#e8c57d', x + 5, 99, 7, 2);
+      rect(context, '#c15249', x + 6, 102, 5, 4);
+    }
+    rect(context, '#25222d', 321, 79, 42, 37);
+    rect(context, '#5f3a44', 323, 81, 38, 34);
+    rect(context, '#a84b46', 325, 83, 34, 2);
+    for (let index = 0; index < 4; index += 1) {
+      rect(context, '#dca45f', 328 + index * 7, 89, 4, 16);
+      rect(context, '#f6d78f', 329 + index * 7, 90, 2, HALF_PIXEL);
+    }
+    const steamCount = this.reducedMotion ? 2 : 5;
+    for (let index = 0; index < steamCount; index += 1) {
+      const rise = (time * (4 + index * 0.25) + index * 4) % 18;
+      rect(context, index % 2 ? '#dfcfb8' : '#f3dfbf', 339 + (index % 3) * 3, 108 - rise, HALF_PIXEL, 3);
+    }
+    rect(context, '#211b29', 278, 118, 103, 8);
+    rect(context, '#a84945', 278, 116, 104, 5);
+    rect(context, '#f0b666', 280, 116.5, 100, HALF_PIXEL);
+  }
+
+  private drawArcadeCounterBack(time: number): void {
+    const context = this.context;
+    const flicker = this.reducedMotion ? 0 : Math.sin(time * 3) * HALF_PIXEL;
+    rect(context, '#111827', 282, 88, 98, 30);
+    rect(context, '#253a59', 284, 91, 94, 24);
+    for (const [x, color] of [[288, '#60cbd0'], [310, '#c35ba5'], [332, '#60cbd0'], [354, '#c35ba5']] as const) {
+      rect(context, '#0c1320', x, 95, 17, 17);
+      rect(context, color, x + 2, 97 + flicker, 13, 8);
+      rect(context, '#f2dd8e', x + 4, 99 + flicker, 9, HALF_PIXEL);
+      rect(context, '#374f6a', x + 3, 107, 11, 3);
+    }
+    rect(context, '#0e1525', 321, 79, 42, 37);
+    rect(context, '#29435f', 323, 81, 38, 34);
+    rect(context, '#50cbd0', 325, 83, 34, 2);
+    rect(context, '#172539', 327, 87, 30, 18);
+    rect(context, '#87578e', 329, 89, 26, 14);
+    rect(context, '#d25ca6', 331, 91, 22, 8);
+    rect(context, '#f2d987', 335, 93, 10, HALF_PIXEL);
+    rect(context, '#132034', 332, 106, 5, 7);
+    rect(context, '#132034', 348, 106, 5, 7);
+    rect(context, '#101725', 278, 118, 103, 8);
+    rect(context, '#31526d', 278, 116, 104, 5);
+    rect(context, '#5ccbd0', 280, 116.5, 100, HALF_PIXEL);
+  }
+
+  private drawVenueCounterFront(): void {
+    if (this.venue === 'cafe') this.drawCounterFront();
+    else if (this.venue === 'ramen') this.drawRamenCounterFront();
+    else this.drawArcadeCounterFront();
+  }
+
+  private drawRamenCounterFront(): void {
+    const context = this.context;
+    rect(context, '#d26852', 276, 116, 107, 7);
+    rect(context, '#f0ba68', 278, 116, 103, 1);
+    rect(context, '#57313c', 278, 122, 104, 5);
+    rect(context, '#4c2c39', 282, 126, 99, 81);
+    for (const x of [290, 315, 340, 365]) {
+      rect(context, '#7f3e43', x, 132, 18, 66);
+      rect(context, '#b84d48', x + 1, 133, 16, 3);
+      rect(context, '#e7ac61', x + 4, 151, 10, HALF_PIXEL);
+      rect(context, '#5c3240', x + 7, 138, 3, 48);
+    }
+    rect(context, '#281d2b', 286, 194, 91, 4);
+    rect(context, '#c9574c', 290, 194, 83, HALF_PIXEL);
+    rect(context, '#6c3b42', 288, 200, 87, 3);
+    rect(context, '#271c29', 276, 210, 108, 3);
+  }
+
+  private drawArcadeCounterFront(): void {
+    const context = this.context;
+    rect(context, '#4f91a3', 276, 116, 107, 7);
+    rect(context, '#92e1d5', 278, 116, 103, 1);
+    rect(context, '#17263a', 278, 122, 104, 5);
+    rect(context, '#18253a', 282, 126, 99, 81);
+    for (const [x, color] of [[290, '#c259a2'], [315, '#5ecbd0'], [340, '#c259a2'], [365, '#5ecbd0']] as const) {
+      rect(context, '#263d5a', x, 132, 18, 66);
+      rect(context, color, x + 1, 133, 16, 2);
+      rect(context, '#101927', x + 4, 141, 10, 39);
+      rect(context, color, x + 6, 164, 6, HALF_PIXEL);
+    }
+    rect(context, '#101825', 286, 194, 91, 4);
+    rect(context, '#4d7591', 290, 194, 83, HALF_PIXEL);
+    rect(context, '#273e58', 288, 200, 87, 3);
+    rect(context, '#0d1421', 276, 210, 108, 3);
+  }
+
+  private drawVenueHostAccent(barista: Barista): void {
+    if (this.venue === 'cafe') return;
+    const context = this.context;
+    const x = snap(barista.position.x);
+    const headTop = snap(barista.position.y - 38);
+    if (this.venue === 'ramen') {
+      rect(context, '#f0dfc1', x - 6, headTop - 5, 12, 5);
+      rect(context, '#fff0d0', x - 4, headTop - 7, 8, 3);
+      rect(context, '#ba5149', x - 7, headTop - 1, 14, 2);
+      rect(context, '#eab565', x - 1, headTop - 1, 2, HALF_PIXEL);
+      return;
+    }
+    rect(context, '#17243a', x - 7, headTop - 2, 14, 3);
+    rect(context, '#5ccbd0', x - 6, headTop - 3, 12, 1);
+    rect(context, '#c35aa5', x - 3, headTop - 4, 6, HALF_PIXEL);
+    rect(context, '#e7d985', x + 4, headTop + 3, 2, HALF_PIXEL);
   }
 
   private drawFurnitureBack(): void {
@@ -1300,6 +1641,91 @@ export class CafeRenderer {
     }
   }
 
+  private drawVenueDetails(time: number): void {
+    if (this.venue === 'cafe') {
+      this.drawCafeDetails(time);
+      return;
+    }
+    if (this.venue === 'ramen') this.drawRamenDetails(time);
+    else this.drawArcadeDetails(time);
+  }
+
+  private drawRamenDetails(time: number): void {
+    const context = this.context;
+    const steam = this.reducedMotion ? 0 : Math.sin(time * 2) * HALF_PIXEL;
+    for (const [x, y] of [[105, 168], [179, 168]] as const) {
+      rect(context, '#efdfb9', x - 5, y - 6, 10, 3);
+      rect(context, '#c65a4d', x - 3, y - 8, 6, 3);
+      rect(context, '#f1c471', x - 4, y - 9, 8, 1);
+      rect(context, '#dbc7ad', x - HALF_PIXEL, y - 13 + steam, HALF_PIXEL, 4);
+      rect(context, '#f1e2c7', x + 2, y - 12 - steam, HALF_PIXEL, 3);
+      rect(context, '#45303b', x + 8, y - 5, 5, 4);
+      rect(context, '#d9ad62', x + 9, y - 4, 3, HALF_PIXEL);
+    }
+    for (const [x, color] of [[288, '#d55f4d'], [305, '#e4b86b'], [367, '#d55f4d']] as const) {
+      rect(context, '#372636', x, 109, 9, 7);
+      rect(context, color, x + 1, 110, 7, 4);
+      rect(context, '#f5d793', x + 2, 110.5, 5, HALF_PIXEL);
+    }
+    rect(context, '#4c2e3a', 217, 111, 21, 19);
+    rect(context, '#d7a15f', 219, 113, 17, 15);
+    rect(context, '#f3d797', 221, 115, 13, 11);
+    rect(context, '#b94f49', 223, 118, 9, 1);
+    rect(context, '#6d3540', 225, 122, 6, 1);
+    for (const [x, y] of [[48, 197], [239, 202], [249, 193]] as const) {
+      rect(context, '#613743', x, y, 6, 5);
+      rect(context, '#b75049', x + 1, y - 1, 4, 2);
+      rect(context, '#edb666', x + 2, y + 1, 2, 2);
+    }
+  }
+
+  private drawArcadeDetails(time: number): void {
+    const context = this.context;
+    const flicker = this.reducedMotion ? 0 : Math.sin(time * 4) * HALF_PIXEL;
+    for (const [x, y, color] of [[105, 168, '#c45aa5'], [179, 168, '#60cbd0']] as const) {
+      rect(context, '#172238', x - 7, y - 7, 14, 5);
+      rect(context, '#2b4561', x - 5, y - 9, 10, 4);
+      rect(context, color, x - 3, y - 8 + flicker, 6, 1);
+      rect(context, '#e5d982', x - HALF_PIXEL, y - 12, 1, 3);
+      rect(context, '#202e46', x + 8, y - 5, 5, 4);
+      rect(context, color, x + 9, y - 4, 3, HALF_PIXEL);
+    }
+    for (const [x, color] of [[286, '#5bcbd0'], [302, '#c35aa5'], [365, '#5bcbd0']] as const) {
+      rect(context, '#111a2a', x, 108, 9, 8);
+      rect(context, '#304967', x + 1, 109, 7, 5);
+      rect(context, color, x + 2, 110 + flicker, 5, 1);
+    }
+    rect(context, '#131c2e', 217, 111, 21, 19);
+    rect(context, '#304b69', 219, 113, 17, 15);
+    rect(context, '#61cbd0', 221, 115, 13, 8);
+    rect(context, '#e4d982', 224, 117, 7, HALF_PIXEL);
+    rect(context, '#c35aa5', 224, 124, 7, 1);
+    for (const [x, y, color] of [[48, 197, '#c35aa5'], [239, 202, '#60cbd0'], [249, 193, '#c35aa5']] as const) {
+      rect(context, '#1a2940', x, y, 6, 5);
+      rect(context, color, x + 1, y - 1, 4, 2);
+      rect(context, '#e2d982', x + 2, y + 1, 2, 2);
+    }
+  }
+
+  private drawVenueFurnitureFront(): void {
+    if (this.venue === 'cafe') {
+      this.drawFurnitureFront();
+      return;
+    }
+    const context = this.context;
+    const arcade = this.venue === 'arcade';
+    const edge = arcade ? '#5bcbd0' : '#e4ad62';
+    const table = arcade ? '#2b4562' : '#a94b46';
+    const shadow = arcade ? '#101725' : '#342331';
+    for (const x of [105, 179]) {
+      rect(context, shadow, x - 17, 172, 35, 3);
+      rect(context, table, x - 15, 169, 31, 3);
+      rect(context, edge, x - 13, 169, 27, HALF_PIXEL);
+    }
+    rect(context, shadow, 55, 204, 176, 4);
+    rect(context, table, 58, 204, 170, HALF_PIXEL);
+  }
+
   private drawFurnitureFront(): void {
     const context = this.context;
     for (const x of [105, 179]) {
@@ -1431,13 +1857,19 @@ export class CafeRenderer {
 
   private drawForeground(time: number): void {
     const context = this.context;
-    rect(context, '#38282f', 0, 211, WORLD_WIDTH, 5);
-    rect(context, '#211b24', 0, 215, WORLD_WIDTH, 1);
+    const arcade = this.venue === 'arcade';
+    const ramen = this.venue === 'ramen';
+    const base = arcade ? '#131a2a' : ramen ? '#352230' : '#38282f';
+    const dark = arcade ? '#0b1120' : ramen ? '#221824' : '#211b24';
+    const plank = arcade ? '#304e6b' : ramen ? '#7e3e43' : '#6c4644';
+    const highlight = arcade ? '#61cbd0' : ramen ? '#e3a65f' : '#9b6250';
+    rect(context, base, 0, 211, WORLD_WIDTH, 5);
+    rect(context, dark, 0, 215, WORLD_WIDTH, 1);
     for (let index = 0; index < 12; index += 1) {
       const x = 10 + index * 34;
-      rect(context, index % 2 ? '#6c4644' : '#795047', x, 207, 15, HALF_PIXEL);
-      rect(context, '#4e363b', x + 3, 209, 8, HALF_PIXEL);
-      rect(context, '#9b6250', x + 5, 207.5, 4, HALF_PIXEL);
+      rect(context, index % 2 ? plank : base, x, 207, 15, HALF_PIXEL);
+      rect(context, dark, x + 3, 209, 8, HALF_PIXEL);
+      rect(context, highlight, x + 5, 207.5, 4, HALF_PIXEL);
     }
 
     if (!this.active) return;
@@ -1445,8 +1877,9 @@ export class CafeRenderer {
     for (let index = 0; index < motes; index += 1) {
       const x = 57 + ((index * 41) % 296) + Math.sin(time * 0.3 + index) * 2;
       const y = 32 + ((index * 23 + time * (index % 3 + 0.5)) % 132);
-      rect(context, index % 2 ? '#e1b16c' : '#c78c58', x, y, HALF_PIXEL, HALF_PIXEL);
-      if (index % 5 === 0) rect(context, '#f2c87d', x + HALF_PIXEL, y - HALF_PIXEL, HALF_PIXEL, HALF_PIXEL);
+      const mote = arcade ? (index % 2 ? '#c35aa5' : '#5bcbd0') : ramen ? (index % 2 ? '#e6a964' : '#c65a4e') : (index % 2 ? '#e1b16c' : '#c78c58');
+      rect(context, mote, x, y, HALF_PIXEL, HALF_PIXEL);
+      if (index % 5 === 0) rect(context, arcade ? '#f2dd8e' : '#f2c87d', x + HALF_PIXEL, y - HALF_PIXEL, HALF_PIXEL, HALF_PIXEL);
     }
   }
 }

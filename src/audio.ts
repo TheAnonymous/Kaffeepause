@@ -1,6 +1,7 @@
 import { SeededRandom } from './simulation/random';
 import type { AccidentKind, CafeMomentKind } from './simulation/types';
 import type { CafeEnvironmentSnapshot } from './environment/types';
+import type { VenueKind } from './venue';
 
 export type AudioState = 'idle' | 'playing' | 'muted' | 'unavailable';
 
@@ -30,6 +31,7 @@ export class CafeAudio {
   private atmosphere?: CafeEnvironmentSnapshot;
   private guestCount = 0;
   private atmosphereSignature = '';
+  private venue: VenueKind = 'cafe';
 
   async start(): Promise<AudioState> {
     if (this.context) {
@@ -94,9 +96,17 @@ export class CafeAudio {
       snapshot.weather.snowfall.toFixed(1),
       snapshot.weather.windSpeed.toFixed(0),
       this.guestCount,
+      this.venue,
     ].join('|');
     if (signature === this.atmosphereSignature) return;
     this.atmosphereSignature = signature;
+    this.applyAtmosphere();
+  }
+
+  setVenue(venue: VenueKind): void {
+    if (this.venue === venue) return;
+    this.venue = venue;
+    this.atmosphereSignature = '';
     this.applyAtmosphere();
   }
 
@@ -255,9 +265,10 @@ export class CafeAudio {
       const beat = this.step % 16;
       const chordIndex = Math.floor(this.step / 16) % CHORDS.length;
       const chord = CHORDS[chordIndex] ?? CHORDS[0];
+      const arcade = this.venue === 'arcade';
       if (beat % 4 === 0) {
         const root = chord?.[0] ?? 0;
-        this.playNote(this.midiToFrequency(38 + root), this.nextNoteAt, 0.62, 0.045, 'triangle');
+        this.playNote(this.midiToFrequency((arcade ? 42 : 38) + root), this.nextNoteAt, 0.62, 0.045, arcade ? 'sine' : 'triangle');
       }
       if (beat % 8 === 2 || beat % 8 === 6) {
         for (const interval of chord ?? []) {
@@ -267,9 +278,10 @@ export class CafeAudio {
       if ([1, 5, 10, 13].includes(beat) && this.random.next() > 0.24) {
         const interval = this.random.pick(chord ?? [0]);
         const octave = this.random.next() > 0.7 ? 12 : 0;
-        this.playNote(this.midiToFrequency(69 + interval + octave), this.nextNoteAt, 0.36, 0.018, 'triangle');
+        this.playNote(this.midiToFrequency(69 + interval + octave), this.nextNoteAt, 0.36, 0.018, arcade ? 'square' : 'triangle');
       }
-      this.nextNoteAt += 0.42 + (beat % 4 === 3 ? 0.025 : -0.008);
+      const pace = this.venue === 'ramen' ? 0.46 : arcade ? 0.37 : 0.42;
+      this.nextNoteAt += pace + (beat % 4 === 3 ? 0.025 : -0.008);
       this.step += 1;
     }
   }
@@ -347,6 +359,16 @@ export class CafeAudio {
     if (!context || !roomBus || this.guestCount === 0) return;
     if (this.random.next() > 0.25 + this.guestCount / 10) return;
     const now = context.currentTime + 0.05;
+    if (this.venue === 'ramen') {
+      this.playEffectTone(780, 1_120, now, 0.11, 0.018, 'sine');
+      this.playEffectTone(1_150, 820, now + 0.07, 0.09, 0.012, 'triangle');
+      return;
+    }
+    if (this.venue === 'arcade') {
+      this.playEffectTone(460, 690, now, 0.08, 0.012, 'square');
+      if (this.random.next() > 0.5) this.playEffectTone(740, 1_080, now + 0.11, 0.07, 0.009, 'square');
+      return;
+    }
     if (this.random.next() > 0.36) {
       for (const [offset, frequency] of [[0, 1650], [0.045, 2230]] as const) {
         const oscillator = context.createOscillator();
@@ -400,8 +422,10 @@ export class CafeAudio {
     const night = atmosphere.dayPhase === 'night' || atmosphere.dayPhase === 'evening';
     setTarget(this.rainBus, rain);
     setTarget(this.windBus, wind * 0.16);
-    setTarget(this.roomBus, 0.32 + this.guestCount / 12);
-    setTarget(this.musicBus, night ? 0.58 : 0.92);
+    const roomBase = this.venue === 'arcade' ? 0.24 : this.venue === 'ramen' ? 0.29 : 0.32;
+    const musicBase = this.venue === 'arcade' ? 0.68 : this.venue === 'ramen' ? 0.72 : 0.92;
+    setTarget(this.roomBus, roomBase + this.guestCount / 12);
+    setTarget(this.musicBus, night ? musicBase * 0.7 : musicBase);
   }
 
   private midiToFrequency(note: number): number {
