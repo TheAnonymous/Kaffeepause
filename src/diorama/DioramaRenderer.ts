@@ -39,6 +39,8 @@ import { APPEARANCE_LIBRARY_REPORT } from '../simulation/appearance';
 import { CAFE_LAYOUT_REPORT } from '../simulation/layout';
 import { SCENE_PROPORTION_REPORT, SCENE_PROPORTIONS } from '../scene/proportions';
 import { calculateDioramaLook, type DioramaLook } from './look';
+import { calculateDialogue, type DialogueLine } from './dialogue';
+import { SPEECH_BUBBLE_RESOLUTION, SpeechBubble } from './speechBubble';
 import { SpriteTextureLibrary } from './spriteFactory';
 import { DIORAMA, DIORAMA_SCALE_REPORT, cameraPanForWorldX, worldToDiorama, type DioramaSet } from './types';
 import { buildVenue } from './venueBuilder';
@@ -47,6 +49,7 @@ interface CharacterNode {
   readonly root: Group;
   readonly plane: Mesh<PlaneGeometry, MeshStandardMaterial>;
   readonly shadow: Mesh<CircleGeometry, MeshBasicMaterial>;
+  readonly speech: SpeechBubble;
   textureName: string;
 }
 
@@ -126,6 +129,7 @@ export class DioramaRenderer {
   private reducedMotion = false;
   private sceneWidth = WORLD_WIDTH;
   private doorOpen = 0;
+  private activeSpeechBubbles = 0;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -195,6 +199,8 @@ export class DioramaRenderer {
     canvas.dataset.characterDetail = `${DIORAMA.spriteWidth}x${DIORAMA.spriteHeight}-original-pixel-sprite`;
     canvas.dataset.navigation = 'collision-aware';
     canvas.dataset.optics = 'hd-2d-diorama';
+    canvas.dataset.speechLanguage = 'procedural-pseudo-language';
+    canvas.dataset.speechBubbleResolution = SPEECH_BUBBLE_RESOLUTION;
   }
 
   setActive(active: boolean): void {
@@ -324,6 +330,9 @@ export class DioramaRenderer {
   }
 
   private updateCharacters(snapshot: SceneSnapshot, time: number): void {
+    const dialogue = this.active ? calculateDialogue(snapshot, time, this.venue, this.reducedMotion) : [];
+    const lines = new Map(dialogue.map((line) => [line.speakerId, line]));
+    this.activeSpeechBubbles = dialogue.length;
     const visibleIds = new Set(snapshot.guests.map((guest) => guest.id));
     for (const [id, node] of this.guestNodes) {
       if (visibleIds.has(id)) continue;
@@ -339,30 +348,36 @@ export class DioramaRenderer {
         this.guestNodes.set(guest.id, node);
         this.scene.add(node.root);
       }
-      this.updateGuestNode(node, guest, time);
+      this.updateGuestNode(node, guest, time, lines.get(guest.id));
     }
-    this.updateBaristaNode(this.baristaNode, snapshot.barista, time);
+    this.updateBaristaNode(this.baristaNode, snapshot.barista, time, lines.get('barista'));
   }
 
-  private updateGuestNode(node: CharacterNode, guest: Guest, time: number): void {
+  private updateGuestNode(node: CharacterNode, guest: Guest, time: number, dialogue?: DialogueLine): void {
     const point = worldToDiorama(guest.position);
     const seated = guest.state === 'activity';
     const bounce = this.active && !this.reducedMotion && !seated ? Math.abs(Math.sin(guest.animation * 5.5)) * 0.045 : 0;
     node.root.position.set(point.x, 0.07 + bounce, point.z);
     this.applySprite(node, this.spriteTextures.forGuest(guest, this.venue), seated, guest.facing);
     node.plane.rotation.copy(this.perspective.rotation);
+    node.speech.mesh.rotation.copy(this.perspective.rotation);
+    const tailLeft = point.x < -6 ? true : point.x > 6 ? false : guest.facing > 0;
+    node.speech.update(dialogue, this.venue, tailLeft, seated ? DIORAMA.seatedHeight : DIORAMA.standingHeight);
     node.shadow.scale.set(seated ? 0.92 : 0.72, seated ? 1.3 : 1, 1);
     node.shadow.material.opacity = 0.22 + this.look.daylight * 0.09;
     node.root.renderOrder = Math.round(point.z * 100);
     if (guest.state === 'ordering') node.root.position.y += Math.sin(time * 2.2 + guest.animation) * 0.012;
   }
 
-  private updateBaristaNode(node: CharacterNode, barista: Barista, time: number): void {
+  private updateBaristaNode(node: CharacterNode, barista: Barista, time: number, dialogue?: DialogueLine): void {
     const point = worldToDiorama(barista.position);
     const bounce = this.active && !this.reducedMotion ? Math.abs(Math.sin(barista.animation * 4.2)) * 0.025 : 0;
     node.root.position.set(point.x, 0.07 + bounce, point.z);
     this.applySprite(node, this.spriteTextures.forBarista(barista, this.venue), false, barista.facing);
     node.plane.rotation.copy(this.perspective.rotation);
+    node.speech.mesh.rotation.copy(this.perspective.rotation);
+    const tailLeft = point.x < -6 ? true : point.x > 6 ? false : barista.facing > 0;
+    node.speech.update(dialogue, this.venue, tailLeft, DIORAMA.standingHeight);
     if (barista.task === 'grinding') node.root.rotation.y = Math.sin(time * 8) * 0.012;
   }
 
@@ -439,6 +454,7 @@ export class DioramaRenderer {
     this.canvas.dataset.bloom = this.look.bloom.toFixed(2);
     this.canvas.dataset.clock = 'analog';
     this.canvas.dataset.clockTime = this.environment?.localTimeText ?? '00:00';
+    this.canvas.dataset.speechBubbles = String(this.activeSpeechBubbles);
   }
 
   private createCharacterNode(name: string): CharacterNode {
@@ -459,7 +475,9 @@ export class DioramaRenderer {
     shadow.rotation.x = -Math.PI / 2;
     shadow.position.y = 0.018;
     root.add(shadow);
-    return { root, plane, shadow, textureName: '' };
+    const speech = new SpeechBubble(name);
+    root.add(speech.mesh);
+    return { root, plane, shadow, speech, textureName: '' };
   }
 
   private disposeCharacterNode(node: CharacterNode): void {
@@ -467,6 +485,7 @@ export class DioramaRenderer {
     node.plane.material.dispose();
     node.shadow.geometry.dispose();
     node.shadow.material.dispose();
+    node.speech.dispose();
   }
 
   private createWeatherParticles(): Points<BufferGeometry, PointsMaterial> {

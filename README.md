@@ -13,6 +13,7 @@ Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen
 - echte 2304 × 1296-HD-Masterfläche (6×) mit 144 × 208 Pixel großen Original-Figurentexturen
 - perspektivische 2,5D-Kamera, physische Raumkörper, Möbel, Fenster, Tür, Bodenkontakt und echte Tiefenverdeckung
 - hochauflösende Gesichter, Haare, Stoffnähte, Hände, Schuhe, Accessoires und tätigkeitsgebundene Requisiten
+- animierte Pixel-Sprechblasen mit venueabhängiger Pseudosprache, abwechselnden Gesprächsrunden und Tipp-Effekt
 - separate HD-2D-Kompositionskette für Bloom, Farblicht, Miniatur-Fokus und Vignette
 - zwölf deterministische Figuren-Silhouetten mit fünf Körperformen, vier Gesichtsformen, acht Frisuren, sechs Outfit-Schnitten, unterschiedlichen Größen, Hauttönen und persönlichen Details
 - bis zu acht Gäste mit lesbaren Tätigkeiten, Wetteraccessoires und einer detaillierten animierten Bedienung

@@ -22,6 +22,8 @@ test('betritt das Café, füllt den Viewport und schaltet den Ton', async ({ pag
   await expect(canvas).toHaveAttribute('data-renderer', 'webgl-diorama');
   await expect(canvas).toHaveAttribute('data-depth-model', 'physical-2.5d');
   await expect(canvas).toHaveAttribute('data-diorama-scale-check', 'pass');
+  await expect(canvas).toHaveAttribute('data-speech-language', 'procedural-pseudo-language');
+  await expect(canvas).toHaveAttribute('data-speech-bubble-resolution', '256x112');
   await expect(canvas).toHaveAttribute('data-navigation', 'collision-aware');
   await expect(canvas).toHaveAttribute('data-proportion-check', 'pass');
   await expect(canvas).toHaveAttribute('data-layout-score', '100');
