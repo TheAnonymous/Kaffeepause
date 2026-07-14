@@ -246,7 +246,7 @@ function buildShell(context: BuildContext, root: Group): ShellParts {
 function buildCafe(context: BuildContext, root: Group, animated: AnimatedProp[]): void {
   addTable(context, root, -3.55, 1.55, 2.25);
   addTable(context, root, -0.5, 1.55, 2.25);
-  for (const x of [-4.15, -2.95, -1.1, 0.1]) addChair(context, root, x, 2.38, 0);
+  for (const x of [-4.15, -2.95, -1.1, 0.1]) addChair(context, root, x, 2.38, Math.PI);
   box(context, root, [4.9, 1.18, 1.35], [5.35, 0.6, -1.5], { color: context.theme.wood });
   box(context, root, [5.15, 0.16, 1.55], [5.25, 1.28, -1.5], { color: context.theme.woodLight });
   for (const x of [3.55, 4.65, 5.75, 6.85]) box(context, root, [0.72, 0.76, 0.08], [x, 0.67, -0.79], { color: context.theme.wallDark });
@@ -267,7 +267,7 @@ function buildCafe(context: BuildContext, root: Group, animated: AnimatedProp[])
 function buildRamen(context: BuildContext, root: Group, animated: AnimatedProp[]): void {
   addTable(context, root, -3.55, 1.55, 2.25);
   addTable(context, root, -0.5, 1.55, 2.25);
-  for (const x of [-4.15, -2.95, -1.1, 0.1]) addChair(context, root, x, 2.38, 0);
+  for (const x of [-4.15, -2.95, -1.1, 0.1]) addChair(context, root, x, 2.38, Math.PI);
   box(context, root, [5.3, 1.15, 1.5], [5.15, 0.58, -1.45], { color: context.theme.wood });
   box(context, root, [5.55, 0.18, 1.68], [5.05, 1.26, -1.45], { color: context.theme.woodLight });
   // Open kitchen pass with noren strips.
@@ -304,7 +304,7 @@ function arcadeCabinet(context: BuildContext, root: Group, x: number, z: number,
 function buildArcade(context: BuildContext, root: Group, animated: AnimatedProp[]): void {
   addTable(context, root, -3.55, 1.55, 2.25);
   addTable(context, root, -0.5, 1.55, 2.25);
-  for (const x of [-4.15, -2.95, -1.1, 0.1]) addChair(context, root, x, 2.38, 0);
+  for (const x of [-4.15, -2.95, -1.1, 0.1]) addChair(context, root, x, 2.38, Math.PI);
   for (const [index, x] of [-5.15, -3.65, -2.15].entries()) arcadeCabinet(context, root, x, -1.55, index % 2 ? context.theme.accent : context.theme.neon);
   box(context, root, [5.25, 1.12, 1.45], [5.2, 0.56, -1.45], { color: context.theme.wood });
   box(context, root, [5.5, 0.16, 1.58], [5.1, 1.22, -1.45], { color: context.theme.metal, metalness: 0.38 });
