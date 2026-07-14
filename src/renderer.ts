@@ -1385,7 +1385,7 @@ export class CafeRenderer {
     });
 
     if (seated) {
-      this.drawSeatedArms(guest, x, bodyTop, facing, phase);
+      this.drawSeatedArm(guest, x, bodyTop, facing);
     } else {
       const handY = bodyTop + 7 + (phase % 2) * HALF_PIXEL;
       rect(context, guest.palette.skin, x + facing * 5, handY, 2, 2);
@@ -1544,38 +1544,16 @@ export class CafeRenderer {
     }
   }
 
-  private drawSeatedArms(guest: Guest, x: number, bodyTop: number, facing: 1 | -1, phase: number): void {
+  private drawSeatedArm(guest: Guest, x: number, bodyTop: number, facing: 1 | -1): void {
     const context = this.context;
-    const shoulderY = bodyTop + 3.5;
-    const elbowY = bodyTop + 4.8;
-    const wristY = bodyTop + 5.8;
-    const drawArm = (direction: 1 | -1, sleeve: string, offset: number): void => {
-      const shoulderX = x + direction * 4.6;
-      const elbowX = x + direction * 6.1;
-      const wristX = x + direction * 6.8;
-      polygon(context, COLORS.ink, [
-        [shoulderX - direction * 1.1, shoulderY - 1],
-        [shoulderX + direction * 1.2, shoulderY],
-        [wristX + direction * 1.2, wristY + 1 + offset],
-        [wristX - direction * 1.2, wristY + 1 + offset],
-        [elbowX - direction, elbowY + offset],
-      ]);
-      polygon(context, sleeve, [
-        [shoulderX - direction * HALF_PIXEL, shoulderY],
-        [shoulderX + direction, shoulderY + HALF_PIXEL],
-        [wristX + direction * HALF_PIXEL, wristY + offset],
-        [wristX - direction * HALF_PIXEL, wristY + offset],
-        [elbowX - direction * HALF_PIXEL, elbowY + offset],
-      ]);
-      rect(context, guest.palette.accent, wristX - (direction > 0 ? HALF_PIXEL : 1), wristY - HALF_PIXEL + offset, 1.5, HALF_PIXEL);
-      const handX = wristX + (direction > 0 ? 0 : -2);
-      rect(context, guest.palette.skin, handX, wristY + offset, 2, 1.5);
-      rect(context, '#f0c6a0', handX + (direction > 0 ? 1.5 : HALF_PIXEL), wristY + offset, HALF_PIXEL, HALF_PIXEL);
-    };
-
-    const farDirection: 1 | -1 = facing === 1 ? -1 : 1;
-    drawArm(farDirection, '#4b3437', 0);
-    drawArm(facing, guest.palette.coat, phase % 2 ? HALF_PIXEL : 0);
+    const shoulderY = bodyTop + 4;
+    const sleeveX = facing > 0 ? x + 4 : x - 7;
+    const handX = facing > 0 ? x + 6.5 : x - 8.5;
+    rect(context, COLORS.ink, sleeveX, shoulderY - HALF_PIXEL, 3, 3);
+    rect(context, guest.palette.coat, sleeveX + HALF_PIXEL, shoulderY, 2.5, 2.5);
+    rect(context, guest.palette.accent, sleeveX + (facing > 0 ? 1.5 : HALF_PIXEL), shoulderY + HALF_PIXEL, HALF_PIXEL, 1.5);
+    rect(context, guest.palette.skin, handX, shoulderY + 1.5, 2, 1.5);
+    rect(context, '#f0c6a0', handX + (facing > 0 ? 1.5 : HALF_PIXEL), shoulderY + 1.5, HALF_PIXEL, HALF_PIXEL);
   }
 
   private drawBarista(barista: Barista, time: number): void {
@@ -1721,10 +1699,6 @@ export class CafeRenderer {
         rect(context, '#d9a45c', centerX + 8, tableY - 4, 3, HALF_PIXEL);
         rect(context, '#f5c978', centerX - 1, tableY - 14 + pulse, 2, 2);
       }
-      for (const guest of guests) {
-        const direction = guest.position.x < centerX ? 1 : -1;
-        rect(context, guest.palette.skin, guest.position.x + direction * 5, tableY - 7 + pulse, 3, 2);
-      }
       return;
     }
 
@@ -1748,10 +1722,6 @@ export class CafeRenderer {
       rect(context, '#77a095', centerX - 5, tableY - 9, 10, 5);
       rect(context, '#d8c06f', centerX - 3, tableY - 11 + pulse, 6, 2);
       rect(context, '#b77869', centerX - 8, tableY - 8, 3, 3);
-      for (const guest of guests) {
-        const direction = guest.position.x < centerX ? 1 : -1;
-        rect(context, guest.palette.skin, guest.position.x + direction * 5, tableY - 7 + pulse, 3, 2);
-      }
       return;
     }
 
@@ -1763,8 +1733,6 @@ export class CafeRenderer {
         rect(context, index % 2 ? '#d6b16e' : '#f0dfba', x, tableY - 4 + (index % 2) * HALF_PIXEL, 3, 4);
         rect(context, '#8a5849', x + 1, tableY - 3, 1, 1);
       }
-      const mover = guests[Math.floor(moment.elapsed * 1.6) % guests.length];
-      if (mover) rect(context, mover.palette.skin, mover.position.x + mover.facing * 5, tableY - 7 + pulse, 3, 2);
       return;
     }
 
@@ -1779,8 +1747,6 @@ export class CafeRenderer {
       }
       rect(context, '#e9c476', centerX - 2, tableY - 15 + pulse, 4, 1);
       rect(context, '#fff1bc', centerX - HALF_PIXEL, tableY - 17 + pulse, 1, 2);
-      const taster = guests[0];
-      if (taster) rect(context, taster.palette.skin, taster.position.x + taster.facing * 5, tableY - 8 + pulse, 3, 2);
       return;
     }
 
@@ -1795,8 +1761,6 @@ export class CafeRenderer {
       rect(context, '#f8e5c5', centerX + 1, tableY - 16 + slurp, HALF_PIXEL, 3);
       rect(context, '#dcb875', centerX + 5, tableY - 15, 7, HALF_PIXEL);
       rect(context, '#dcb875', centerX + 8, tableY - 17, HALF_PIXEL, 5);
-      const eater = guests[0];
-      if (eater) rect(context, eater.palette.skin, eater.position.x + eater.facing * 5, tableY - 8 - slurp, 3, 2);
       return;
     }
 
@@ -1813,10 +1777,6 @@ export class CafeRenderer {
       }
       rect(context, sweep % 2 ? '#f2dc8d' : '#76d5d0', centerX - 2 + sweep, tableY - 11, 4, 2);
       rect(context, '#e5b86e', centerX - 1, tableY - 14 + pulse, 2, 2);
-      for (const guest of guests) {
-        const direction = guest.position.x < centerX ? 1 : -1;
-        rect(context, guest.palette.skin, guest.position.x + direction * 5, tableY - 8 + pulse, 3, 2);
-      }
       return;
     }
 
@@ -1830,8 +1790,6 @@ export class CafeRenderer {
       rect(context, '#f1dc8a', champion.position.x + 1, tableY - 8, 4, HALF_PIXEL);
       rect(context, '#e161a6', champion.position.x - 1, tableY - 14 + pulse, 2, 3);
       rect(context, '#f5df8f', champion.position.x - 3, tableY - 16 + pulse, 6, 2);
-      rect(context, champion.palette.skin, champion.position.x + champion.facing * 5, tableY - 8 + pulse, 3, 2);
-      if (guests[1]) rect(context, guests[1].palette.skin, guests[1].position.x - guests[1].facing * 5, tableY - 8, 3, 2);
       return;
     }
 
@@ -1842,10 +1800,6 @@ export class CafeRenderer {
       rect(context, '#d7b16c', centerX - 1, tableY - 11, 1, 8);
       rect(context, '#dce5d4', centerX - 8, tableY - 7 + pulse, 1, 2);
       rect(context, '#dce5d4', centerX + 7, tableY - 6 - pulse, 1, 2);
-      for (const guest of guests) {
-        const direction = guest.position.x < centerX ? 1 : -1;
-        rect(context, guest.palette.skin, guest.position.x + direction * 5, tableY - 8 + pulse, 3, 2);
-      }
       return;
     }
 
