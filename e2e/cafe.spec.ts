@@ -15,6 +15,7 @@ test('betritt das Café, füllt den Viewport und schaltet den Ton', async ({ pag
   await expect(canvas).toHaveAttribute('data-logical-width', '1152');
   await expect(canvas).toHaveAttribute('data-scene-width', '384');
   await expect(canvas).toHaveAttribute('data-render-scale', '3');
+  await expect(canvas).toHaveAttribute('data-character-detail', 'physical-pixel');
   await expect(canvas).toHaveAttribute('data-navigation', 'collision-aware');
   expect(await canvas.evaluate((element) => {
     const target = element as HTMLCanvasElement;

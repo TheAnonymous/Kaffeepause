@@ -28,6 +28,8 @@ const COLORS = {
 
 // Ein einzelner physischer Pixel auf dem hochaufgelösten Canvas.
 const HALF_PIXEL = 1 / RENDER_SCALE;
+// Figuren dürfen diese physische Rasterweite konsequent für Gesicht, Stoff und Hände nutzen.
+const CHARACTER_PIXEL = HALF_PIXEL;
 
 function snap(value: number): number {
   return Math.round(value * RENDER_SCALE) / RENDER_SCALE;
@@ -190,6 +192,7 @@ export class CafeRenderer {
       .join(',');
     this.canvas.dataset.navigation = 'collision-aware';
     this.canvas.dataset.venue = this.venue;
+    this.canvas.dataset.characterDetail = 'physical-pixel';
   }
 
   private drawRoom(time: number): void {
@@ -1242,6 +1245,8 @@ export class CafeRenderer {
       rect(context, '#b77869', x - facing * 8, bodyTop + 10, 4, 4);
     }
 
+    this.drawGuestFineDetails(guest, x, headTop, bodyTop, footY, facing, seated, variant);
+
     const handY = bodyTop + 7 + (phase % 2) * HALF_PIXEL;
     rect(context, guest.palette.skin, x + facing * 5, handY, 2, 2);
     rect(context, '#f0c6a0', x + facing * 5.5, handY, HALF_PIXEL, HALF_PIXEL);
@@ -1288,6 +1293,9 @@ export class CafeRenderer {
         rect(context, '#875244', x - HALF_PIXEL, bodyTop + 7, 1, 4);
         rect(context, '#a06c55', x - 6, bodyTop + 7.5, 4, HALF_PIXEL);
         rect(context, '#a06c55', x + 2, bodyTop + 7.5, 4, HALF_PIXEL);
+        rect(context, '#b98b62', x - 6, bodyTop + 8.5, 3, CHARACTER_PIXEL);
+        rect(context, '#b98b62', x + 2, bodyTop + 8.5, 3, CHARACTER_PIXEL);
+        rect(context, '#f9e5b6', x - 4, bodyTop + 10, 2, CHARACTER_PIXEL);
         rect(context, guest.palette.skin, x - 8, bodyTop + 9, 2, 1.5);
         rect(context, guest.palette.skin, x + 6, bodyTop + 9, 2, 1.5);
         break;
@@ -1298,6 +1306,8 @@ export class CafeRenderer {
         rect(context, '#566975', x - 5.5, bodyTop + 3, 11, 5.5);
         rect(context, '#8da4a1', x - 4.5, bodyTop + 3.5, 9, HALF_PIXEL);
         rect(context, '#3f555f', x - 4.5, bodyTop + 4.5, 7, 3);
+        for (let key = 0; key < 4; key += 1) rect(context, '#9db6af', x - 4 + key * 2, bodyTop + 9, CHARACTER_PIXEL, CHARACTER_PIXEL);
+        rect(context, '#7bc1b7', x + 2, bodyTop + 5.5, 2, CHARACTER_PIXEL);
         rect(context, '#b4a883', x - 9, bodyTop + 10, 18, 2);
         rect(context, '#e0c98c', x - 7, bodyTop + 10, 14, HALF_PIXEL);
         rect(context, guest.palette.skin, x - 5 + tap, bodyTop + 9, 3, 1.5);
@@ -1327,6 +1337,8 @@ export class CafeRenderer {
         rect(context, '#fff3d5', cupX + 1, cupY + HALF_PIXEL, 4, HALF_PIXEL);
         rect(context, '#9b634b', cupX + 1, cupY + 1, 4, HALF_PIXEL);
         rect(context, '#f1dfbd', cupX + (facing > 0 ? 5.5 : -1.5), cupY + 1.5, 2, 2);
+        rect(context, '#c78358', cupX + 2, cupY + 3, 2, CHARACTER_PIXEL);
+        rect(context, '#fff6dd', cupX + 1, cupY + CHARACTER_PIXEL, CHARACTER_PIXEL, CHARACTER_PIXEL);
         if (lift === 0) {
           rect(context, '#d4c8b3', cupX + 2, cupY - 2, HALF_PIXEL, 1.5);
           rect(context, '#eee0c8', cupX + 3, cupY - 3, HALF_PIXEL, 1.5);
@@ -1339,12 +1351,16 @@ export class CafeRenderer {
         rect(context, '#252832', x + facing * 5 - 2, bodyTop + 1, 4, 8);
         rect(context, glow, x + facing * 5 - 1.5, bodyTop + 2, 3, 5);
         rect(context, '#d9e1cf', x + facing * 5 - 1, bodyTop + 2.5, 2, HALF_PIXEL);
+        rect(context, '#e5d88b', x + facing * 5 - CHARACTER_PIXEL, bodyTop + 4, CHARACTER_PIXEL, CHARACTER_PIXEL);
+        rect(context, '#bedbd1', x + facing * 5 - CHARACTER_PIXEL, bodyTop + 6, CHARACTER_PIXEL, CHARACTER_PIXEL);
         break;
       }
       case 'sketching': {
         polygon(context, '#ead7ae', [[x - 9, bodyTop + 6], [x + 7, bodyTop + 4], [x + 9, bodyTop + 11], [x - 7, bodyTop + 12]]);
         rect(context, '#8e6857', x - 5, bodyTop + 8, 8, HALF_PIXEL);
         rect(context, '#6c827c', x - 2, bodyTop + 9.5, 6, HALF_PIXEL);
+        rect(context, '#b45c4c', x - 5, bodyTop + 7, 2, CHARACTER_PIXEL);
+        rect(context, '#91aaa1', x + 2, bodyTop + 7.5, 3, CHARACTER_PIXEL);
         const pencilX = x + (phase % 2 ? 1 : -1);
         polygon(context, '#d9a653', [[pencilX, bodyTop + 4], [pencilX + 1, bodyTop + 3], [pencilX + 7, bodyTop + 9], [pencilX + 6, bodyTop + 10]]);
         rect(context, guest.palette.skin, pencilX - 1, bodyTop + 4, 3, 2);
@@ -1357,6 +1373,7 @@ export class CafeRenderer {
         rect(context, '#8f5947', x - HALF_PIXEL, bodyTop + 5.5, 1, 5);
         rect(context, '#8a674f', x - 4, bodyTop + 7, 4, HALF_PIXEL);
         rect(context, '#8a674f', x + 1, bodyTop + 8.5, 3, HALF_PIXEL);
+        rect(context, '#c67758', x - 5, bodyTop + 9.5, 3, CHARACTER_PIXEL);
         polygon(context, '#d9a653', [[x + write, bodyTop + 4], [x + 1 + write, bodyTop + 3], [x + 6 + write, bodyTop + 9], [x + 5 + write, bodyTop + 10]]);
         rect(context, guest.palette.skin, x - 1 + write, bodyTop + 4, 3, 2);
         break;
@@ -1366,6 +1383,8 @@ export class CafeRenderer {
         rect(context, '#b77869', x - 7, bodyTop + 7, 5, 5);
         rect(context, '#e5b668', x - 5, bodyTop + 8, 2, 2);
         rect(context, '#e5b668', x + 3, bodyTop + 8, 2, 2);
+        rect(context, '#d9915c', x - 7, bodyTop + 8, CHARACTER_PIXEL, 3);
+        rect(context, '#edcb78', x - 4, bodyTop + 9, CHARACTER_PIXEL, CHARACTER_PIXEL);
         rect(context, '#d8c8b3', x - 4, bodyTop + 6 + stitch, 10, HALF_PIXEL);
         rect(context, '#d8c8b3', x - 2, bodyTop + 4 - stitch, 8, HALF_PIXEL);
         rect(context, guest.palette.skin, x - 5, bodyTop + 6 + stitch, 3, 2);
@@ -1382,9 +1401,70 @@ export class CafeRenderer {
         }
         rect(context, '#7c9d92', x - 5 + (phase % 2) * 2, bodyTop + 6.5, 2, 2);
         rect(context, '#b85f52', x + 3, bodyTop + 9, 2, 2);
+        rect(context, '#f2da94', x - 2, bodyTop + 7, CHARACTER_PIXEL, CHARACTER_PIXEL);
         rect(context, guest.palette.skin, x + facing * 4, bodyTop + 7, 3, 2);
         break;
       }
+    }
+  }
+
+  private drawGuestFineDetails(
+    guest: Guest,
+    x: number,
+    headTop: number,
+    bodyTop: number,
+    footY: number,
+    facing: 1 | -1,
+    seated: boolean,
+    variant: number,
+  ): void {
+    const context = this.context;
+    const visibleEye = x + facing * 2;
+    const farEye = x - facing * 1.2;
+    const eyeColor = variant === 0 ? '#8eb2b1' : variant === 3 ? '#b8875e' : '#4b3a39';
+    const cheek = variant % 2 === 0 ? '#d98772' : '#c97667';
+
+    // Zwei Augen, Brauen, Nase und Mund werden mit einzelnen echten Canvas-Pixeln lesbar.
+    rect(context, guest.palette.hair, farEye - CHARACTER_PIXEL, headTop + 2.35, 1.5, CHARACTER_PIXEL);
+    rect(context, guest.palette.hair, visibleEye - CHARACTER_PIXEL, headTop + 2.15, 1.8, CHARACTER_PIXEL);
+    rect(context, '#fff0d0', farEye - CHARACTER_PIXEL, headTop + 3.2, 1.35, CHARACTER_PIXEL);
+    rect(context, '#fff0d0', visibleEye - CHARACTER_PIXEL, headTop + 3.1, 1.5, CHARACTER_PIXEL);
+    rect(context, eyeColor, farEye, headTop + 3.2, CHARACTER_PIXEL, CHARACTER_PIXEL);
+    rect(context, eyeColor, visibleEye, headTop + 3.1, CHARACTER_PIXEL, CHARACTER_PIXEL);
+    rect(context, '#7b4c42', x + facing * 3, headTop + 4.8, CHARACTER_PIXEL, 1.25);
+    rect(context, cheek, x + facing * 2.8, headTop + 6.1, 1.15, CHARACTER_PIXEL);
+    rect(context, '#8e4e4a', x + facing * 1.5, headTop + 7.1, 1.8, CHARACTER_PIXEL);
+    rect(context, '#f1c49f', x - facing * 3.7, headTop + 4.8, CHARACTER_PIXEL, 1.6);
+
+    // Haarsträhnen und kleine Lichtkanten verhindern, dass die Köpfe wie einfarbige Blöcke wirken.
+    rect(context, '#1a171d', x - 3.5, headTop + 0.25, 2.5, CHARACTER_PIXEL);
+    rect(context, '#1a171d', x + 1.5, headTop + 0.25, 2, CHARACTER_PIXEL);
+    rect(context, guest.palette.hair, x + facing * 3.5, headTop + 1.2, CHARACTER_PIXEL, 3.3);
+    if (variant === 2 || variant === 4) rect(context, '#b67b59', x - facing * 4.5, headTop + 6, CHARACTER_PIXEL, 2.2);
+
+    // Kragen, Naht, Knöpfe, Ärmel und Schuhe erhalten ein dichteres 3×-Sprite-Raster.
+    polygon(context, '#2a232b', [[x - 5.1, bodyTop + 1], [x, bodyTop + 4], [x + 5.1, bodyTop + 1], [x + 3.2, bodyTop + 4.7], [x - 3.2, bodyTop + 4.7]]);
+    rect(context, guest.palette.accent, x - 1.1, bodyTop + 2.2, 2.2, seated ? 6 : 9);
+    rect(context, '#e9bc77', x - CHARACTER_PIXEL, bodyTop + 5, CHARACTER_PIXEL, CHARACTER_PIXEL);
+    rect(context, '#e9bc77', x - CHARACTER_PIXEL, bodyTop + 8, CHARACTER_PIXEL, CHARACTER_PIXEL);
+    rect(context, '#2b242c', x - 4.7, bodyTop + (seated ? 8.6 : 11.5), 3.4, CHARACTER_PIXEL);
+    rect(context, '#2b242c', x + 1.3, bodyTop + (seated ? 8.6 : 11.5), 3.4, CHARACTER_PIXEL);
+    rect(context, guest.palette.accent, x - 5.6, bodyTop + 6, CHARACTER_PIXEL, 3);
+    rect(context, guest.palette.accent, x + 5.25, bodyTop + 6, CHARACTER_PIXEL, 3);
+
+    if (!seated) {
+      rect(context, '#bca585', x - 3.5, footY - 2, 2, CHARACTER_PIXEL);
+      rect(context, '#bca585', x + 1.5, footY - 2, 2, CHARACTER_PIXEL);
+      rect(context, '#0f141b', x - 4.5, footY + 0.8, 4.5, CHARACTER_PIXEL);
+      rect(context, '#0f141b', x + 1, footY + 0.8, 4.5, CHARACTER_PIXEL);
+    }
+
+    if (this.venue === 'ramen' && guest.state === 'waiting') {
+      rect(context, '#d95c4d', x + facing * 6 - 1, bodyTop + 4, 3, CHARACTER_PIXEL);
+      rect(context, '#f3c979', x + facing * 6, bodyTop + 3.3, 1, CHARACTER_PIXEL);
+    } else if (this.venue === 'arcade' && guest.state === 'activity' && guest.activity === 'phone') {
+      rect(context, '#d260a5', x + facing * 5 - CHARACTER_PIXEL, bodyTop + 3.2, CHARACTER_PIXEL, 2);
+      rect(context, '#68d0d0', x + facing * 5 - CHARACTER_PIXEL, bodyTop + 5.5, CHARACTER_PIXEL, CHARACTER_PIXEL);
     }
   }
 
@@ -1398,6 +1478,10 @@ export class CafeRenderer {
     // lässt Kopf und Schultern eindeutig hinter der hohen Theke hervorschauen.
     const top = y - 29 + bob;
     const facing = barista.task === 'machine' ? 1 : barista.facing;
+    const uniform = this.venue === 'ramen' ? '#873e45' : this.venue === 'arcade' ? '#3d5d86' : '#4f746d';
+    const uniformLight = this.venue === 'ramen' ? '#c25c52' : this.venue === 'arcade' ? '#63a8bd' : '#70938a';
+    const apron = this.venue === 'ramen' ? '#ead5ba' : this.venue === 'arcade' ? '#c6d3d2' : '#d9c4a4';
+    const apronLight = this.venue === 'ramen' ? '#fff0cd' : this.venue === 'arcade' ? '#e7f0e4' : '#ead8ba';
 
     rect(context, '#2b2228', x - 6.5, y - 1, 13, 2);
     rect(context, '#243136', x - 5, top + 14, 4, 11);
@@ -1405,10 +1489,10 @@ export class CafeRenderer {
     rect(context, '#172126', x - 5.5, top + 23, 5, 2);
     rect(context, '#172126', x + HALF_PIXEL, top + 23, 5, 2);
     rect(context, '#2c2228', x - 6.5, top, 13, 14);
-    rect(context, '#4f746d', x - 5.5, top + 1, 11, 12);
-    rect(context, '#70938a', x - 4.5, top + 1.5, 9, HALF_PIXEL);
-    rect(context, '#d9c4a4', x - 4.5, top + 7, 9, 7);
-    polygon(context, '#ead8ba', [[x - 4, top + 8], [x + 4, top + 8], [x + 5, top + 17], [x - 5, top + 17]]);
+    rect(context, uniform, x - 5.5, top + 1, 11, 12);
+    rect(context, uniformLight, x - 4.5, top + 1.5, 9, HALF_PIXEL);
+    rect(context, apron, x - 4.5, top + 7, 9, 7);
+    polygon(context, apronLight, [[x - 4, top + 8], [x + 4, top + 8], [x + 5, top + 17], [x - 5, top + 17]]);
     rect(context, '#bc8b68', x - 4, top + 16, 8, 1);
     rect(context, '#efc776', x - 3, top + 11, 6, 2);
     rect(context, '#fff0b8', x - 2, top + 11.5, 4, HALF_PIXEL);
@@ -1429,12 +1513,12 @@ export class CafeRenderer {
     const workY = 114;
     if (barista.task === 'wiping') {
       const wipe = phase < 2 ? -3 : 3;
-      rect(context, '#4f746d', x + facing * 4, workY - 4, 7 + Math.abs(wipe), 3);
+      rect(context, uniform, x + facing * 4, workY - 4, 7 + Math.abs(wipe), 3);
       rect(context, '#c88f68', x + facing * (9 + Math.abs(wipe)), workY - 3.5, 2, 2);
       rect(context, '#6c9b91', x + facing * (9 + wipe), workY - 1, 8, 2.5);
       rect(context, '#b5d3c8', x + facing * (9 + wipe), workY - 1, 6, HALF_PIXEL);
     } else if (barista.task === 'serving') {
-      rect(context, '#4f746d', x - 8, workY - 5, 7, 3);
+      rect(context, uniform, x - 8, workY - 5, 7, 3);
       rect(context, '#c88f68', x - 10, workY - 4.5, 3, 2);
       rect(context, '#413038', x - 14, workY - 1, 18, 1.5);
       rect(context, '#d49a63', x - 13, workY - 1.5, 16, HALF_PIXEL);
@@ -1446,7 +1530,7 @@ export class CafeRenderer {
       }
     } else if (barista.task === 'grinding') {
       const crank = phase % 2 ? 2 : -2;
-      rect(context, '#4f746d', x + 2, workY - 5, 8, 3);
+      rect(context, uniform, x + 2, workY - 5, 8, 3);
       rect(context, '#c88f68', x + 9, workY - 4, 3, 2);
       rect(context, '#2b2b30', x + 11, workY - 12, 6, 11);
       rect(context, '#76726b', x + 12, workY - 11, 4, 4);
@@ -1458,20 +1542,20 @@ export class CafeRenderer {
       }
     } else if (barista.task === 'restocking') {
       const lift = phase % 2 ? -2 : 0;
-      rect(context, '#4f746d', x - 7, workY - 6 + lift, 7, 3);
+      rect(context, uniform, x - 7, workY - 6 + lift, 7, 3);
       rect(context, '#c88f68', x - 9, workY - 6 + lift, 3, 2);
       rect(context, '#d69c61', x - 14, workY - 10 + lift, 7, 8);
       rect(context, '#f0c477', x - 13, workY - 9 + lift, 5, 1);
       rect(context, '#a75f48', x - 12, workY - 6 + lift, 3, 2);
     } else if (barista.task === 'polishing') {
       const polish = phase % 2 ? 2 : -2;
-      rect(context, '#4f746d', x + 3, workY - 5, 8, 3);
+      rect(context, uniform, x + 3, workY - 5, 8, 3);
       rect(context, '#c88f68', x + 10, workY - 4, 3, 2);
       rect(context, '#f0dfbd', x + 11 + polish, workY - 8, 6, 7);
       rect(context, '#b9d1c8', x + 9 + polish, workY - 4, 7, 3);
     } else if (barista.task === 'tasting') {
       const lift = phase % 3 === 1 ? -4 : 0;
-      rect(context, '#4f746d', x + 3, workY - 5 + lift * 0.5, 8, 3);
+      rect(context, uniform, x + 3, workY - 5 + lift * 0.5, 8, 3);
       rect(context, '#c88f68', x + 10, workY - 4 + lift * 0.5, 3, 2);
       rect(context, '#f0dfbd', x + 12, workY - 6 + lift, 5, 5);
       rect(context, '#fff2d0', x + 13, workY - 5.5 + lift, 3, HALF_PIXEL);
@@ -1480,7 +1564,7 @@ export class CafeRenderer {
       if (lift === 0) rect(context, '#e4d4bd', x + 14, workY - 9, HALF_PIXEL, 2);
     } else {
       const reach = phase % 2 ? 1 : 0;
-      rect(context, '#4f746d', x + 4, workY - 5, 10 + reach, 3);
+      rect(context, uniform, x + 4, workY - 5, 10 + reach, 3);
       rect(context, '#c88f68', x + 13 + reach, workY - 4.5, 2.5, 2);
       rect(context, '#b8aba2', x + 14 + reach, workY - 2.5, 5, 2.5);
       rect(context, '#f0e6d5', x + 15 + reach, workY - 2.5, 3, HALF_PIXEL);
@@ -1490,6 +1574,52 @@ export class CafeRenderer {
         rect(context, '#e7d8c4', x + 17, workY - 4 - steamRise, HALF_PIXEL, 3);
         rect(context, '#bdb5a9', x + 18, workY - 6 - steamRise, HALF_PIXEL, 2);
       }
+    }
+    this.drawBaristaFineDetails(x, top, headTop, facing, uniformLight, apron, apronLight);
+  }
+
+  private drawBaristaFineDetails(
+    x: number,
+    top: number,
+    headTop: number,
+    facing: 1 | -1,
+    uniformLight: string,
+    apron: string,
+    apronLight: string,
+  ): void {
+    const context = this.context;
+    const badge = this.venue === 'ramen' ? '#d15b4d' : this.venue === 'arcade' ? '#63d1d0' : '#e7ba70';
+
+    // Feine Gesichtspixel geben der Bedienung dieselbe Lesbarkeit wie den Gästen.
+    rect(context, '#2d2529', x - facing * 1.4, headTop + 2.25, 1.5, CHARACTER_PIXEL);
+    rect(context, '#2d2529', x + facing * 2.2, headTop + 2.1, 1.5, CHARACTER_PIXEL);
+    rect(context, '#fff0cc', x - facing * 1.2, headTop + 3.15, 1.2, CHARACTER_PIXEL);
+    rect(context, '#fff0cc', x + facing * 2.4, headTop + 3.05, 1.35, CHARACTER_PIXEL);
+    rect(context, '#4f5d5a', x - facing * 0.9, headTop + 3.15, CHARACTER_PIXEL, CHARACTER_PIXEL);
+    rect(context, '#4f5d5a', x + facing * 2.65, headTop + 3.05, CHARACTER_PIXEL, CHARACTER_PIXEL);
+    rect(context, '#a55a51', x + facing * 2.4, headTop + 6.4, 1.8, CHARACTER_PIXEL);
+    rect(context, '#e2aa82', x - facing * 3.8, headTop + 5, CHARACTER_PIXEL, 1.8);
+    rect(context, '#1a171d', x - 3.6, headTop + 0.25, 2.3, CHARACTER_PIXEL);
+    rect(context, '#1a171d', x + 1.4, headTop + 0.25, 2.3, CHARACTER_PIXEL);
+
+    // Schürzennähte, Brusttasche und Badge erzeugen ein separates, hochdichtes Arbeitssprite.
+    rect(context, apronLight, x - 3.4, top + 8, 6.8, CHARACTER_PIXEL);
+    rect(context, '#9e725b', x - CHARACTER_PIXEL, top + 8.4, CHARACTER_PIXEL, 7.5);
+    rect(context, '#a77960', x - 2.6, top + 13, 5.2, 2.2);
+    rect(context, apron, x - 2.1, top + 13.4, 4.2, 1.3);
+    rect(context, badge, x + facing * 2.3, top + 4.3, 1.8, 1.8);
+    rect(context, '#fff0bd', x + facing * 2.7, top + 4.65, CHARACTER_PIXEL, CHARACTER_PIXEL);
+    rect(context, uniformLight, x - 5.5, top + 5, CHARACTER_PIXEL, 4);
+    rect(context, uniformLight, x + 5.2, top + 5, CHARACTER_PIXEL, 4);
+    rect(context, '#e3bd83', x - CHARACTER_PIXEL, top + 16.2, CHARACTER_PIXEL, CHARACTER_PIXEL);
+    rect(context, '#e3bd83', x - CHARACTER_PIXEL, top + 19.2, CHARACTER_PIXEL, CHARACTER_PIXEL);
+
+    if (this.venue === 'ramen') {
+      rect(context, '#e9c06c', x - 3, top + 12, 6, CHARACTER_PIXEL);
+      rect(context, '#b94f49', x - 3, top + 15.5, 6, CHARACTER_PIXEL);
+    } else if (this.venue === 'arcade') {
+      rect(context, '#c85ba5', x - 3, top + 12, 6, CHARACTER_PIXEL);
+      rect(context, '#5ed1d0', x - 3, top + 15.5, 6, CHARACTER_PIXEL);
     }
   }
 

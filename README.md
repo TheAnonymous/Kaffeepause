@@ -13,7 +13,8 @@ Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen
 - handgezeichnete Canvas-Pixelart ohne externe Assets
 - Auswahl zwischen Café, Ramen-Restaurant und Arcade-Halle vor dem Eintritt; keine nachträgliche Menühürde
 - hochauflösendes 1152 × 648-Pixel-Canvas mit feineren Ein-Pixel-Details
-- bis zu acht Gäste mit lesbaren Tätigkeiten, Wetteraccessoires und einem animierten Barista
+- hochdichte 3×-Figurensprites mit Gesichtszügen, Haarsträhnen, Stoffnähten, Händen und lesbaren Requisiten
+- bis zu acht Gäste mit lesbaren Tätigkeiten, Wetteraccessoires und einer detaillierten animierten Bedienung
 - neun Gasttätigkeiten, darunter Tagebuchschreiben, Stricken und Brettspiel; Barista mahlt, verkostet und bedient
 - sanfte, deterministische Café-Momente mit eigenen Bild- und Klangdetails, die nicht mit Unfällen kollidieren
 - vier visuell wiedererkennbare Stammgäste mit seltenen, zusammenhängenden Mini-Geschichten
