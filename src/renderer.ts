@@ -1063,8 +1063,8 @@ export class CafeRenderer {
     rect(context, '#d26852', 276, 128, 107, 6);
     rect(context, '#f0ba68', 278, 128, 103, 1);
     rect(context, '#57313c', 278, 134, 104, 4);
-    // Die Front endet bewusst oberhalb des Bodens: eine echte, niedrige Theke
-    // wirkt neben den Figuren glaubwürdiger als ein durchgehender Tresorblock.
+    // Die Front ist zum Boden hin zurückgesetzt. Der breite Sockel verankert
+    // die Theke im Raum, ohne sie wieder zu einem mannshohen Block zu machen.
     rect(context, '#4c2c39', 282, 138, 99, 46);
     for (const x of [290, 315, 340, 365]) {
       rect(context, '#7f3e43', x, 142, 18, 38);
@@ -1074,12 +1074,16 @@ export class CafeRenderer {
     }
     rect(context, '#281d2b', 286, 182, 91, 4);
     rect(context, '#c9574c', 290, 182, 83, HALF_PIXEL);
-    rect(context, '#6c3b42', 288, 187, 87, 3);
-    for (const x of [302, 329, 356]) {
-      rect(context, '#3a2634', x, 186, 5, 24);
-      rect(context, '#b84d48', x + 1, 187, 3, 20);
-      rect(context, '#e7ac61', x + 1.5, 188, HALF_PIXEL, 17);
+    rect(context, '#3a2634', 288, 186, 87, 21);
+    rect(context, '#6c3b42', 292, 187, 79, 17);
+    rect(context, '#b84d48', 294, 188, 75, 1);
+    rect(context, '#4b2d38', 295, 191, 73, 11);
+    for (const x of [298, 322, 346]) {
+      rect(context, '#7f3e43', x, 191, 19, 11);
+      rect(context, '#b84d48', x + 1, 192, 17, 1);
+      rect(context, '#e7ac61', x + 3, 199, 13, HALF_PIXEL);
     }
+    rect(context, '#261b28', 292, 204, 79, 3);
     rect(context, '#271c29', 276, 211, 108, 2);
   }
 
@@ -1097,12 +1101,16 @@ export class CafeRenderer {
     }
     rect(context, '#101825', 286, 182, 91, 4);
     rect(context, '#4d7591', 290, 182, 83, HALF_PIXEL);
-    rect(context, '#273e58', 288, 187, 87, 3);
-    for (const [x, color] of [[302, '#c259a2'], [329, '#5ecbd0'], [356, '#c259a2']] as const) {
-      rect(context, '#101825', x, 186, 5, 24);
-      rect(context, '#304c69', x + 1, 187, 3, 20);
-      rect(context, color, x + 2, 188, HALF_PIXEL, 17);
+    rect(context, '#101825', 288, 186, 87, 21);
+    rect(context, '#273e58', 292, 187, 79, 17);
+    rect(context, '#4d7591', 294, 188, 75, 1);
+    rect(context, '#182b43', 295, 191, 73, 11);
+    for (const [x, color] of [[298, '#c259a2'], [322, '#5ecbd0'], [346, '#c259a2']] as const) {
+      rect(context, '#263d5a', x, 191, 19, 11);
+      rect(context, color, x + 1, 192, 17, 1);
+      rect(context, color, x + 3, 199, 13, HALF_PIXEL);
     }
+    rect(context, '#0c1320', 292, 204, 79, 3);
     rect(context, '#0d1421', 276, 211, 108, 2);
   }
 
@@ -1247,14 +1255,16 @@ export class CafeRenderer {
     }
     rect(context, '#4c3338', 286, 182, 91, 4);
     rect(context, '#b97755', 290, 182, 83, HALF_PIXEL);
-    rect(context, '#d1a86a', 298, 187, 67, 1.5);
-    rect(context, '#7a5546', 299, 188.5, 65, HALF_PIXEL);
-    for (const x of [303, 330, 357]) {
-      rect(context, '#55373b', x, 186, 5, 24);
-      rect(context, '#c8925e', x + 1, 187, 3, 20);
-      rect(context, '#f0c77b', x + 1.5, 188, HALF_PIXEL, 17);
+    rect(context, '#55373b', 288, 186, 87, 21);
+    rect(context, '#6a403c', 292, 187, 79, 17);
+    rect(context, '#d1a86a', 294, 188, 75, 1.5);
+    rect(context, '#51343a', 295, 191, 73, 11);
+    for (const x of [298, 322, 346]) {
+      rect(context, '#70433e', x, 191, 19, 11);
+      rect(context, '#a46a4d', x + 1, 192, 17, 1);
+      rect(context, '#d49a64', x + 3, 199, 13, HALF_PIXEL);
     }
-    rect(context, '#6a403c', 288, 190, 87, 2);
+    rect(context, '#3d2930', 292, 204, 79, 3);
     rect(context, '#4b3036', 278, 207, 106, 4);
     rect(context, '#6b4140', 281, 207, 99, 1);
     rect(context, '#2f242b', 276, 211, 108, 2);
