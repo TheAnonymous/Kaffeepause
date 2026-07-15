@@ -3,7 +3,31 @@ import { expect, test, type Page } from '@playwright/test';
 function qualityUrl(path: string, tier: 'master' | 'balanced' | 'fallback'): string {
   const url = new URL(path, 'http://kaffeepause.test');
   url.searchParams.set('quality', tier);
+  url.searchParams.set('testRender', 'diagnostic');
   return `${url.pathname}${url.search}`;
+}
+
+async function renderVisualFrame(page: Page): Promise<void> {
+  const canvas = page.locator('#cafe');
+  const previous = Number(await canvas.getAttribute('data-visual-render-count'));
+  await page.evaluate(() => {
+    (window as typeof window & { renderDioramaVisualFrame?: () => void }).renderDioramaVisualFrame?.();
+  });
+  await expect.poll(async () => Number(await canvas.getAttribute('data-visual-render-count')))
+    .toBeGreaterThan(previous);
+}
+
+async function pauseBeforeEntry(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (window as typeof window & { setDioramaPaused?: (paused: boolean) => void }).setDioramaPaused?.(true);
+  });
+}
+
+async function stepDiagnosticFrames(page: Page, count: number, deltaSeconds = 0.1): Promise<void> {
+  await page.evaluate(({ frameCount, delta }) => {
+    const testWindow = window as typeof window & { stepDioramaDiagnosticFrame?: (deltaSeconds?: number) => void };
+    for (let frame = 0; frame < frameCount; frame += 1) testWindow.stepDioramaDiagnosticFrame?.(delta);
+  }, { frameCount: count, delta: deltaSeconds });
 }
 
 async function openCafe(page: Page, path = '/', tier: 'master' | 'balanced' | 'fallback' = 'fallback'): Promise<void> {
@@ -133,6 +157,7 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
   await expect(canvas).toHaveAttribute('data-art-assets', 'ready', { timeout: 15_000 });
   await expect(canvas).toHaveAttribute('data-art-pack', /^v3-cafe-/);
   await expect(canvas).toHaveAttribute('data-texture-bytes', '334304');
+  await renderVisualFrame(page);
   await expect.poll(async () => Number(await canvas.getAttribute('data-draw-calls'))).toBeGreaterThan(0);
   await expect(canvas).toHaveAttribute('data-bloom-surfaces', /[1-9]\d*/);
   await expect(canvas).toHaveAttribute('data-weather-layers', '3');
@@ -886,8 +911,11 @@ for (const scene of visualVenues) {
     await installFramePause(page);
     await openCafe(page, `/?time=${scene.time}&weather=${scene.weather}`, 'balanced');
     await chooseVenue(page, scene.venue);
+    await pauseBeforeEntry(page);
     await page.getByTestId('enter').click();
+    await stepDiagnosticFrames(page, 1);
     await expect(page.locator('#cafe')).toHaveAttribute('data-camera-phase', 'overview');
+    await renderVisualFrame(page);
     await setFramePaused(page, true);
     await hideVisualUi(page);
     await captureBaseline(page, `v3-${scene.venue}-overview`);
@@ -906,13 +934,17 @@ for (const scene of cinematicBaselines) {
         'balanced',
       );
       await chooseVenue(page, scene.venue);
+      await pauseBeforeEntry(page);
       await page.getByTestId('enter').click();
+      await stepDiagnosticFrames(page, 4);
+      await stepDiagnosticFrames(page, 12, 0);
       const canvas = page.locator('#cafe');
       await hideVisualUi(page);
       await expect(canvas).toHaveAttribute('data-moment', scene.moment, { timeout: 20_000 });
       await expect(canvas).toHaveAttribute('data-camera-sequence', `moment:${scene.moment}`, { timeout: 20_000 });
       await expect(canvas).toHaveAttribute('data-shot-beat', beat, { timeout: 20_000 });
       await expect(canvas).toHaveAttribute('data-focus-safe', 'true', { timeout: 20_000 });
+      await renderVisualFrame(page);
       await setFramePaused(page, true);
       await captureBaseline(page, `v3-${scene.venue}-${scene.story}-${beat}`);
     });
@@ -926,10 +958,13 @@ for (const scene of visualVenues) {
     await installFramePause(page);
     await openCafe(page, `/?time=${scene.time}&weather=${scene.weather}`, 'balanced');
     await chooseVenue(page, scene.venue);
+    await pauseBeforeEntry(page);
     await page.getByTestId('enter').click();
+    await stepDiagnosticFrames(page, 1);
     const canvas = page.locator('#cafe');
     await expect(canvas).toHaveAttribute('data-camera-phase', 'overview');
     await expect(canvas).toHaveAttribute('data-particles', 'low');
+    await renderVisualFrame(page);
     await setFramePaused(page, true);
     await hideVisualUi(page);
     await captureBaseline(page, `v3-${scene.venue}-mobile`);
@@ -942,12 +977,15 @@ test('hält Reduced Motion als vollständig statische V3-Baseline', async ({ pag
   await installFramePause(page);
   await openCafe(page, '/?time=20:30&weather=storm', 'balanced');
   await chooseVenue(page, 'cafe');
+  await pauseBeforeEntry(page);
   await page.getByTestId('enter').click();
+  await stepDiagnosticFrames(page, 1);
   const canvas = page.locator('#cafe');
   await expect(canvas).toHaveAttribute('data-shot-beat', 'overview');
   await expect(canvas).toHaveAttribute('data-camera-sequence', 'none');
   await expect(canvas).toHaveAttribute('data-particles', 'low');
   await expect(canvas).toHaveAttribute('data-clock-time', '20:30');
+  await renderVisualFrame(page);
   await setFramePaused(page, true);
   await hideVisualUi(page);
   await captureBaseline(page, 'v3-reduced-motion');
@@ -962,7 +1000,10 @@ test('hält Renderer- und Art-Pack-Fallback als V3-Baseline', async ({ page }) =
   await expect(canvas).toHaveAttribute('data-art-assets', 'failed', { timeout: 15_000 });
   await expect(canvas).toHaveAttribute('data-art-pack', /^procedural/);
   await expect(canvas).toHaveAttribute('data-quality-tier', 'fallback');
+  await pauseBeforeEntry(page);
   await page.getByTestId('enter').click();
+  await stepDiagnosticFrames(page, 1);
+  await renderVisualFrame(page);
   await setFramePaused(page, true);
   await hideVisualUi(page);
   await captureBaseline(page, 'v3-renderer-art-fallback');

@@ -254,12 +254,14 @@ export class DioramaRenderer {
   private qualityTier: RenderQualityTier;
   private qualityProfile: RenderQualityProfile;
   private renderCount = 0;
+  private visualRenderCount = 0;
   private readonly artLoader: VenueArtPackLoader;
   private artPack?: LoadedVenueArtPack;
   private artDecoration?: VenueArtDecoration;
   private artGeneration = 0;
   private readonly cinematicScale: number;
   private readonly cinematicShotOverride?: Extract<CinematicShotBeat, 'establishing' | 'detail' | 'reaction'>;
+  private readonly diagnosticRendering: boolean;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -268,6 +270,7 @@ export class DioramaRenderer {
   ) {
     const parameters = new URLSearchParams(window.location.search);
     const forceArtFallback = import.meta.env.DEV && parameters.get('art') === 'fallback';
+    this.diagnosticRendering = import.meta.env.DEV && parameters.get('testRender') === 'diagnostic';
     this.cinematicScale = import.meta.env.DEV
       ? Math.max(0.02, Math.min(1, Number(parameters.get('cinematicScale') ?? 1) || 1))
       : 1;
@@ -371,6 +374,7 @@ export class DioramaRenderer {
     canvas.dataset.speechLanguage = 'symbolic-emotes';
     canvas.dataset.speechBubbleResolution = SPEECH_BUBBLE_RESOLUTION;
     canvas.dataset.renderCount = '0';
+    canvas.dataset.visualRenderCount = '0';
     canvas.dataset.reactingCharacter = 'none';
     canvas.dataset.pointerHit = 'none';
     canvas.dataset.reaction = 'none';
@@ -556,7 +560,15 @@ export class DioramaRenderer {
   }
 
   render(elapsed: number, snapshot: SceneSnapshot): void {
-    this.webgl.info.reset();
+    this.renderFrame(elapsed, snapshot, !this.diagnosticRendering);
+  }
+
+  renderVisual(elapsed: number, snapshot: SceneSnapshot): void {
+    this.renderFrame(elapsed, snapshot, true);
+  }
+
+  private renderFrame(elapsed: number, snapshot: SceneSnapshot, drawVisualFrame: boolean): void {
+    if (drawVisualFrame) this.webgl.info.reset();
     const time = this.active ? elapsed : 0;
     this.applyLook(time);
     this.updatePointerReaction(snapshot, time);
@@ -570,18 +582,22 @@ export class DioramaRenderer {
     this.updateFocusFrame(snapshot);
     this.updateWeather(time);
     this.updateEvent(snapshot, time);
-    if (this.qualityProfile.bloom !== 'off') {
-      const background = this.scene.background;
-      this.scene.background = this.bloomBackground;
-      this.perspective.layers.set(SELECTIVE_BLOOM_LAYER);
-      this.bloomComposer.render();
-      this.perspective.layers.set(0);
-      this.scene.background = background;
+    if (drawVisualFrame) {
+      if (this.qualityProfile.bloom !== 'off') {
+        const background = this.scene.background;
+        this.scene.background = this.bloomBackground;
+        this.perspective.layers.set(SELECTIVE_BLOOM_LAYER);
+        this.bloomComposer.render();
+        this.perspective.layers.set(0);
+        this.scene.background = background;
+      }
+      this.composer.render();
+      this.visualRenderCount += 1;
+      this.canvas.dataset.visualRenderCount = String(this.visualRenderCount);
+      this.canvas.dataset.drawCalls = String(this.webgl.info.render.calls);
     }
-    this.composer.render();
     this.renderCount += 1;
     this.canvas.dataset.renderCount = String(this.renderCount);
-    this.canvas.dataset.drawCalls = String(this.webgl.info.render.calls);
     this.canvas.dataset.textureBytes = String(this.artPack?.textureBytes ?? 0);
     this.updateDatasets(snapshot);
   }

@@ -213,6 +213,13 @@ export class KaffeepauseApp {
   private lastReactionAudioToken = 0;
   private selectedVenue: VenueKind = DEFAULT_VENUE;
 
+  private get devRenderingWindow(): typeof window & {
+    renderDioramaVisualFrame?: () => void;
+    stepDioramaDiagnosticFrame?: (deltaSeconds?: number) => void;
+  } {
+    return window;
+  }
+
   start(): void {
     this.setRendererState('loading');
     this.canvas.dataset.audioSamples = this.audio.getSampleState();
@@ -243,6 +250,18 @@ export class KaffeepauseApp {
     this.canvas.addEventListener('pointermove', this.pointerMoved);
     this.canvas.addEventListener('pointerleave', this.pointerLeft);
     document.body.dataset.uiIdle = 'false';
+    if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('testRender') === 'diagnostic') {
+      this.devRenderingWindow.renderDioramaVisualFrame = () => {
+        this.lifecycle?.renderVisualOnce(this.elapsed);
+      };
+      this.devRenderingWindow.stepDioramaDiagnosticFrame = (deltaSeconds = 0.1) => {
+        if (!this.lifecycle || !this.entered) return;
+        const delta = Math.max(0, Math.min(0.1, deltaSeconds));
+        this.elapsed += delta;
+        const scene = this.lifecycle.update(delta);
+        this.lifecycle.renderOnce(this.elapsed, scene);
+      };
+    }
     this.updateFullscreenState();
     this.scheduleRendererPreparation();
   }
@@ -570,6 +589,8 @@ export class KaffeepauseApp {
     if (this.idleTimer !== undefined) window.clearTimeout(this.idleTimer);
     this.environmentUnsubscribe?.();
     this.environment.stop();
+    delete this.devRenderingWindow.renderDioramaVisualFrame;
+    delete this.devRenderingWindow.stepDioramaDiagnosticFrame;
     this.canvas.removeEventListener('pointermove', this.pointerMoved);
     this.canvas.removeEventListener('pointerleave', this.pointerLeft);
     this.lifecycle?.dispose();
