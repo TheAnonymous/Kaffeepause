@@ -20,6 +20,7 @@ export interface RendererLifecycle {
   stop(): void;
   update(deltaSeconds: number): SceneSnapshot;
   renderOnce(elapsed: number, snapshot?: SceneSnapshot): void;
+  renderVisualOnce(elapsed: number, snapshot?: SceneSnapshot): void;
   resize(reducedMotion: boolean): void;
   setVenue(venue: VenueKind): void;
   setEnvironment(snapshot: CafeEnvironmentSnapshot): void;

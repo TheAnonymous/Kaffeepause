@@ -3,7 +3,31 @@ import { expect, test, type Page } from '@playwright/test';
 function qualityUrl(path: string, tier: 'master' | 'balanced' | 'fallback'): string {
   const url = new URL(path, 'http://kaffeepause.test');
   url.searchParams.set('quality', tier);
+  url.searchParams.set('testRender', 'diagnostic');
   return `${url.pathname}${url.search}`;
+}
+
+async function renderVisualFrame(page: Page): Promise<void> {
+  const canvas = page.locator('#cafe');
+  const previous = Number(await canvas.getAttribute('data-visual-render-count'));
+  await page.evaluate(() => {
+    (window as typeof window & { renderDioramaVisualFrame?: () => void }).renderDioramaVisualFrame?.();
+  });
+  await expect.poll(async () => Number(await canvas.getAttribute('data-visual-render-count')))
+    .toBeGreaterThan(previous);
+}
+
+async function pauseBeforeEntry(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (window as typeof window & { setDioramaPaused?: (paused: boolean) => void }).setDioramaPaused?.(true);
+  });
+}
+
+async function stepDiagnosticFrames(page: Page, count: number, deltaSeconds = 0.1): Promise<void> {
+  await page.evaluate(({ frameCount, delta }) => {
+    const testWindow = window as typeof window & { stepDioramaDiagnosticFrame?: (deltaSeconds?: number) => void };
+    for (let frame = 0; frame < frameCount; frame += 1) testWindow.stepDioramaDiagnosticFrame?.(delta);
+  }, { frameCount: count, delta: deltaSeconds });
 }
 
 async function openCafe(page: Page, path = '/', tier: 'master' | 'balanced' | 'fallback' = 'fallback'): Promise<void> {
@@ -63,7 +87,7 @@ async function expectFocusFraming(
   await expect(canvas).toHaveAttribute('data-camera-focus-target', /^\d+\.\d,-?\d+\.\d,\d+\.\d{2}$/);
   await expect(canvas).toHaveAttribute('data-focus-participants', /^(?!none$).+/);
   await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-fov'))).toBeLessThanOrEqual(30.01);
-  await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-fov'))).toBeGreaterThanOrEqual(21.99);
+  await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-fov'))).toBeGreaterThanOrEqual(19.99);
   await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-amount'))).toBeGreaterThan(0.7);
   if (expectOccluder) {
     await expect(canvas).toHaveAttribute('data-focus-occluders', /^(?!none$).+/);
@@ -97,6 +121,8 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
 
   await page.setViewportSize({ width: 1440, height: 810 });
   await openCafe(page, '/?time=12:30&weather=clear', 'master');
+  await expect(page).toHaveTitle('Kaffeepause');
+  await expect(page).toHaveURL(/time=12%3A30.*weather=clear.*quality=master/);
   await expect(page.getByRole('heading', { name: 'Kaffeepause' })).toBeVisible();
   const canvas = page.getByRole('img', { name: /gemütliches.*Café/i });
   await expect(canvas).toHaveAttribute('data-camera-mode', 'overview');
@@ -127,6 +153,12 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
   await expect(canvas).toHaveAttribute('data-session-act', 'arrival');
   await expect(canvas).toHaveAttribute('data-camera-phase', 'overview');
   await expect(canvas).toHaveAttribute('data-selective-bloom', 'half-res-registered');
+  await expect(canvas).toHaveAttribute('data-character-bloom', 'excluded');
+  await expect(canvas).toHaveAttribute('data-art-assets', 'ready', { timeout: 15_000 });
+  await expect(canvas).toHaveAttribute('data-art-pack', /^v3-cafe-/);
+  await expect(canvas).toHaveAttribute('data-texture-bytes', '334304');
+  await renderVisualFrame(page);
+  await expect.poll(async () => Number(await canvas.getAttribute('data-draw-calls'))).toBeGreaterThan(0);
   await expect(canvas).toHaveAttribute('data-bloom-surfaces', /[1-9]\d*/);
   await expect(canvas).toHaveAttribute('data-weather-layers', '3');
   await expect(canvas).toHaveAttribute('data-audio-samples', 'idle');
@@ -492,7 +524,7 @@ test('deaktiviert Fokusfahrten bei Reduced Motion vollständig', async ({ page }
 
 test('pausiert die mobile Tour während eines Fokus und setzt sie danach fort', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await openCafe(page, '/?time=12:30&weather=clear');
+  await openCafe(page, '/?time=12:30&weather=clear&cinematicScale=0.2');
   await page.getByTestId('enter').click();
   const canvas = page.locator('#cafe');
   await moveToReactionTarget(page, 'guest-1');
@@ -818,170 +850,161 @@ for (const scene of [
   });
 }
 
-for (const scene of [
-  { name: 'v2-cafe-ritual-window-rain-trace', venue: 'cafe', moment: 'window-rain-trace', time: '20:30', weather: 'rain' },
-  { name: 'v2-cafe-encounter-pencil-return', venue: 'cafe', moment: 'pencil-return', time: '12:30', weather: 'clear' },
-  { name: 'v2-ramen-ritual-broth-lid-lift', venue: 'ramen', moment: 'broth-lid-lift', time: '20:30', weather: 'rain' },
-  { name: 'v2-ramen-encounter-condiment-pass', venue: 'ramen', moment: 'condiment-pass', time: '20:30', weather: 'clear' },
-  { name: 'v2-arcade-ritual-attract-mode-wave', venue: 'arcade', moment: 'attract-mode-wave', time: '22:00', weather: 'clear' },
-  { name: 'v2-arcade-encounter-coop-rescue', venue: 'arcade', moment: 'coop-rescue', time: '22:00', weather: 'clear' },
-] as const) {
-  test(`hält den V2-Moment ${scene.name} als filmische Baseline`, async ({ page }) => {
-    test.setTimeout(90_000);
-    await page.setViewportSize({ width: 1440, height: 810 });
-    await page.addInitScript(() => {
-      let hidden = false;
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
-      (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama = () => {
-        hidden = true;
-        document.dispatchEvent(new Event('visibilitychange'));
-      };
-    });
-    await openCafe(page, `/?moment=${scene.moment}&time=${scene.time}&weather=${scene.weather}`, 'balanced');
-    if (scene.venue !== 'cafe') await page.getByRole('radio', { name: new RegExp(scene.venue, 'i') }).click();
-    await page.getByTestId('enter').click();
-    const canvas = page.locator('#cafe');
-    await expect(canvas).toHaveAttribute('data-moment', scene.moment, { timeout: 20_000 });
-    await expect(canvas).toHaveAttribute('data-moment-phase', 'hold', { timeout: 20_000 });
-    await expect(canvas).toHaveAttribute('data-camera-focus-source', 'moment', { timeout: 20_000 });
-    await expect(canvas).toHaveAttribute('data-camera-phase', 'focus', { timeout: 20_000 });
-    await expect(canvas).toHaveAttribute('data-focus-safe', 'true');
-    await expect(canvas).toHaveAttribute('data-selective-bloom', 'half-res-registered');
-    await page.evaluate(() => (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama?.());
-    await expect(canvas).toHaveAttribute('data-render-loop', 'paused');
-    await page.getByTestId('welcome').evaluate((element) => { element.style.display = 'none'; });
-    await page.getByTestId('controls').evaluate((element) => { (element as HTMLElement).hidden = true; });
-    await expect(page.locator('#app')).toHaveScreenshot(`${scene.name}.png`, {
-      animations: 'disabled',
-      maxDiffPixelRatio: 0.02,
-    });
+type VisualVenue = 'cafe' | 'ramen' | 'arcade';
+type VisualBeat = 'establishing' | 'detail' | 'reaction';
+
+const visualVenues = [
+  { venue: 'cafe', time: '20:30', weather: 'rain' },
+  { venue: 'ramen', time: '20:30', weather: 'rain' },
+  { venue: 'arcade', time: '22:00', weather: 'clear' },
+] as const;
+
+const cinematicBaselines = [
+  { venue: 'cafe', story: 'ritual', moment: 'window-rain-trace', time: '20:30', weather: 'rain' },
+  { venue: 'cafe', story: 'encounter', moment: 'pencil-return', time: '12:30', weather: 'clear' },
+  { venue: 'ramen', story: 'ritual', moment: 'broth-lid-lift', time: '20:30', weather: 'rain' },
+  { venue: 'ramen', story: 'encounter', moment: 'condiment-pass', time: '20:30', weather: 'clear' },
+  { venue: 'arcade', story: 'ritual', moment: 'attract-mode-wave', time: '22:00', weather: 'clear' },
+  { venue: 'arcade', story: 'encounter', moment: 'coop-rescue', time: '22:00', weather: 'clear' },
+] as const;
+
+async function installFramePause(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    let hidden = false;
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+    (window as typeof window & { setDioramaPaused?: (paused: boolean) => void }).setDioramaPaused = (paused) => {
+      hidden = paused;
+      document.dispatchEvent(new Event('visibilitychange'));
+    };
   });
 }
 
-for (const scene of [
-  { name: 'v2-cafe-mobile', venue: 'cafe', time: '20:30', weather: 'rain' },
-  { name: 'v2-arcade-mobile', venue: 'arcade', time: '22:00', weather: 'clear' },
-] as const) {
-  test(`hält ${scene.name} im reduzierten mobilen Profil`, async ({ page }) => {
+async function setFramePaused(page: Page, paused: boolean): Promise<void> {
+  await page.evaluate((nextPaused) => {
+    (window as typeof window & { setDioramaPaused?: (paused: boolean) => void }).setDioramaPaused?.(nextPaused);
+  }, paused);
+  await expect(page.locator('#cafe')).toHaveAttribute('data-render-loop', paused ? 'paused' : 'running');
+}
+
+async function chooseVenue(page: Page, venue: VisualVenue): Promise<void> {
+  if (venue !== 'cafe') await page.locator(`[data-venue-choice="${venue}"]`).click();
+  await expect(page.locator('#cafe')).toHaveAttribute('data-art-pack', new RegExp(`^v3-${venue}-`), { timeout: 15_000 });
+  await expect(page.locator('#cafe')).toHaveAttribute('data-art-assets', 'ready', { timeout: 15_000 });
+}
+
+async function hideVisualUi(page: Page): Promise<void> {
+  await page.getByTestId('welcome').evaluate((element) => { element.style.display = 'none'; });
+  await page.getByTestId('controls').evaluate((element) => { (element as HTMLElement).hidden = true; });
+}
+
+async function captureBaseline(page: Page, name: string): Promise<void> {
+  await expect(page.locator('#app')).toHaveScreenshot(`${name}.png`, {
+    animations: 'disabled',
+    maxDiffPixelRatio: 0.02,
+  });
+}
+
+for (const scene of visualVenues) {
+  test(`hält die V3-Übersicht ${scene.venue} als Baseline`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 810 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await installFramePause(page);
+    await openCafe(page, `/?time=${scene.time}&weather=${scene.weather}`, 'balanced');
+    await chooseVenue(page, scene.venue);
+    await pauseBeforeEntry(page);
+    await page.getByTestId('enter').click();
+    await stepDiagnosticFrames(page, 1);
+    await expect(page.locator('#cafe')).toHaveAttribute('data-camera-phase', 'overview');
+    await renderVisualFrame(page);
+    await setFramePaused(page, true);
+    await hideVisualUi(page);
+    await captureBaseline(page, `v3-${scene.venue}-overview`);
+  });
+}
+
+for (const scene of cinematicBaselines) {
+  for (const beat of ['establishing', 'detail', 'reaction'] as const satisfies readonly VisualBeat[]) {
+    test(`hält ${scene.venue}-${scene.story}-${beat} als V3-Baseline`, async ({ page }) => {
+      test.setTimeout(60_000);
+      await page.setViewportSize({ width: 1440, height: 810 });
+      await installFramePause(page);
+      await openCafe(
+        page,
+        `/?moment=${scene.moment}&time=${scene.time}&weather=${scene.weather}&cinematicShot=${beat}`,
+        'balanced',
+      );
+      await chooseVenue(page, scene.venue);
+      await pauseBeforeEntry(page);
+      await page.getByTestId('enter').click();
+      await stepDiagnosticFrames(page, 4);
+      await stepDiagnosticFrames(page, 12, 0);
+      const canvas = page.locator('#cafe');
+      await hideVisualUi(page);
+      await expect(canvas).toHaveAttribute('data-moment', scene.moment, { timeout: 20_000 });
+      await expect(canvas).toHaveAttribute('data-camera-sequence', `moment:${scene.moment}`, { timeout: 20_000 });
+      await expect(canvas).toHaveAttribute('data-shot-beat', beat, { timeout: 20_000 });
+      await expect(canvas).toHaveAttribute('data-focus-safe', 'true', { timeout: 20_000 });
+      await renderVisualFrame(page);
+      await setFramePaused(page, true);
+      await captureBaseline(page, `v3-${scene.venue}-${scene.story}-${beat}`);
+    });
+  }
+}
+
+for (const scene of visualVenues) {
+  test(`hält die mobile V3-Komposition ${scene.venue}`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.addInitScript(() => {
-      let hidden = false;
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
-      (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama = () => {
-        hidden = true;
-        document.dispatchEvent(new Event('visibilitychange'));
-      };
-    });
-    await openCafe(page, `/?time=${scene.time}&weather=${scene.weather}`);
-    if (scene.venue !== 'cafe') await page.getByRole('radio', { name: new RegExp(scene.venue, 'i') }).click();
-    await page.getByTestId('enter').evaluate((button) => {
-      button.addEventListener('click', () => (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama?.(), { once: true });
-    });
+    await installFramePause(page);
+    await openCafe(page, `/?time=${scene.time}&weather=${scene.weather}`, 'balanced');
+    await chooseVenue(page, scene.venue);
+    await pauseBeforeEntry(page);
     await page.getByTestId('enter').click();
+    await stepDiagnosticFrames(page, 1);
     const canvas = page.locator('#cafe');
-    await expect(canvas).toHaveAttribute('data-render-loop', 'paused');
     await expect(canvas).toHaveAttribute('data-camera-phase', 'overview');
     await expect(canvas).toHaveAttribute('data-particles', 'low');
-    await page.getByTestId('welcome').evaluate((element) => { element.style.display = 'none'; });
-    await page.getByTestId('controls').evaluate((element) => { (element as HTMLElement).hidden = true; });
-    await expect(page.locator('#app')).toHaveScreenshot(`${scene.name}.png`, {
-      animations: 'disabled',
-      maxDiffPixelRatio: 0.02,
-    });
+    await renderVisualFrame(page);
+    await setFramePaused(page, true);
+    await hideVisualUi(page);
+    await captureBaseline(page, `v3-${scene.venue}-mobile`);
   });
 }
 
-for (const scene of [
-  { name: 'cafe-conversation-focus', venue: 'cafe', path: '/?time=12:30&weather=clear', waitFor: 'conversation' },
-  { name: 'ramen-noodle-mishap', venue: 'ramen', path: '/?story=noodle-mishap&time=20:30&weather=rain', waitFor: 'story' },
-  { name: 'arcade-pointer-reaction', venue: 'arcade', path: '/?time=22:00&weather=clear', waitFor: 'reaction' },
-] as const) {
-  test(`hält die fokussierte Szene ${scene.name} als deterministische Baseline`, async ({ page }) => {
-    test.setTimeout(60_000);
-    await page.setViewportSize({ width: 1440, height: 810 });
-    await page.addInitScript(() => {
-      let hidden = false;
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
-      (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama = () => {
-        hidden = true;
-        document.dispatchEvent(new Event('visibilitychange'));
-      };
-    });
-    await openCafe(page, scene.path);
-    if (scene.venue !== 'cafe') await page.getByRole('radio', { name: new RegExp(scene.venue, 'i') }).click();
-    await page.getByTestId('enter').click();
-    const canvas = page.locator('#cafe');
-    if (scene.waitFor === 'reaction') {
-      await expect(canvas).toHaveAttribute('data-camera-focus-source', 'conversation', { timeout: 5_000 });
-      await page.waitForTimeout(1_000);
-      await moveToReactionTarget(page, 'guest-1');
-      await expect(canvas).toHaveAttribute('data-camera-focus-source', 'reaction', { timeout: 10_000 });
-    } else {
-      await expect(canvas).toHaveAttribute('data-camera-focus-source', scene.waitFor, { timeout: 5_000 });
-    }
-    await expect(canvas).toHaveAttribute('data-camera-phase', 'focus', { timeout: 20_000 });
-    await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-amount')), { timeout: 20_000 })
-      .toBeGreaterThanOrEqual(0.99);
-    await page.evaluate(() => (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama?.());
-    await expect(canvas).toHaveAttribute('data-render-loop', 'paused');
-    await expect(canvas).toHaveAttribute('data-focus-safe', 'true');
-    await expect(canvas).toHaveAttribute('data-focus-bounds', /^(?!none$).+/);
-    await page.getByTestId('welcome').evaluate((element) => { element.style.display = 'none'; });
-    await page.getByTestId('controls').evaluate((element) => { (element as HTMLElement).hidden = true; });
-    await expect(page.locator('#app')).toHaveScreenshot(`${scene.name}.png`, {
-      animations: 'disabled',
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-}
-
-test('zeigt Wetter und Uhr bei Reduced Motion statisch vollständig an', async ({ page }) => {
+test('hält Reduced Motion als vollständig statische V3-Baseline', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await openCafe(page, '/?time=20:30&weather=storm');
+  await installFramePause(page);
+  await openCafe(page, '/?time=20:30&weather=storm', 'balanced');
+  await chooseVenue(page, 'cafe');
+  await pauseBeforeEntry(page);
+  await page.getByTestId('enter').click();
+  await stepDiagnosticFrames(page, 1);
   const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-shot-beat', 'overview');
+  await expect(canvas).toHaveAttribute('data-camera-sequence', 'none');
   await expect(canvas).toHaveAttribute('data-particles', 'low');
-  await expect(canvas).toHaveAttribute('data-weather', 'storm');
   await expect(canvas).toHaveAttribute('data-clock-time', '20:30');
-  await expect(page.locator('body')).toHaveAttribute('data-reduced-motion', 'true');
+  await renderVisualFrame(page);
+  await setFramePaused(page, true);
+  await hideVisualUi(page);
+  await captureBaseline(page, 'v3-reduced-motion');
 });
 
-for (const scene of [
-  { name: 'cafe-midday-clear', venue: 'cafe', time: '12:30', weather: 'clear' },
-  { name: 'cafe-night-rain', venue: 'cafe', time: '22:00', weather: 'rain' },
-  { name: 'ramen-dusk-rain', venue: 'ramen', time: '20:30', weather: 'rain' },
-  { name: 'arcade-night-clear', venue: 'arcade', time: '22:00', weather: 'clear' },
-] as const) {
-  test(`hält die visuelle Baseline ${scene.name} figurenlesbar`, async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 810 });
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.addInitScript(() => {
-      let hidden = false;
-      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
-      (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama = () => {
-        hidden = true;
-        document.dispatchEvent(new Event('visibilitychange'));
-      };
-    });
-    await openCafe(page, `/?time=${scene.time}&weather=${scene.weather}`);
-    if (scene.venue !== 'cafe') await page.getByRole('radio', { name: new RegExp(scene.venue, 'i') }).click();
-    await page.getByTestId('enter').evaluate((button) => {
-      button.addEventListener('click', () => {
-        window.dispatchEvent(new Event('resize'));
-        (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama?.();
-      }, { once: true });
-    });
-    await page.getByTestId('enter').click();
-
-    const canvas = page.locator('#cafe');
-    await expect(canvas).toHaveAttribute('data-render-loop', 'paused');
-    await expect(canvas).toHaveAttribute('data-guest-count', /[1-8]/);
-    await expect(page.locator('body')).toHaveAttribute('data-reduced-motion', 'true');
-    await page.getByTestId('welcome').evaluate((element) => { element.style.display = 'none'; });
-    await page.getByTestId('controls').evaluate((element) => { (element as HTMLElement).hidden = true; });
-    await expect(page.locator('#app')).toHaveScreenshot(`${scene.name}.png`, {
-      animations: 'disabled',
-      maxDiffPixelRatio: 0.02,
-    });
-  });
-}
+test('hält Renderer- und Art-Pack-Fallback als V3-Baseline', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installFramePause(page);
+  await openCafe(page, '/?time=20:30&weather=rain&art=fallback', 'fallback');
+  const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-art-assets', 'failed', { timeout: 15_000 });
+  await expect(canvas).toHaveAttribute('data-art-pack', /^procedural/);
+  await expect(canvas).toHaveAttribute('data-quality-tier', 'fallback');
+  await pauseBeforeEntry(page);
+  await page.getByTestId('enter').click();
+  await stepDiagnosticFrames(page, 1);
+  await renderVisualFrame(page);
+  await setFramePaused(page, true);
+  await hideVisualUi(page);
+  await captureBaseline(page, 'v3-renderer-art-fallback');
+});

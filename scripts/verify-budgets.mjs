@@ -31,4 +31,23 @@ for (const file of audioFiles) {
   if (file.endsWith('atmosphere.mp3') && (duration < 30 || duration > 45)) fail(`${file}: loop duration ${duration}`);
 }
 
-console.log(JSON.stringify({ javascript: assets.length, audioFiles: audioFiles.length, audioBytes }));
+const sharedArt = join('public/art/v3/shared', 'character-atlas.webp');
+const venueArt = ['cafe', 'ramen', 'arcade'].map((venue) => join('public/art/v3/venues', `${venue}-atlas.webp`));
+const artFiles = [sharedArt, ...venueArt];
+const sharedArtBytes = statSync(sharedArt).size;
+const venueArtBytes = venueArt.map((file) => statSync(file).size);
+const artBytes = sharedArtBytes + venueArtBytes.reduce((total, bytes) => total + bytes, 0);
+const maximumActiveArtBytes = sharedArtBytes + Math.max(...venueArtBytes);
+if (artBytes > 4_000_000) fail(`art: ${artBytes} bytes exceeds 4 MB`);
+if (maximumActiveArtBytes > 1_500_000) {
+  fail(`active art pack: ${maximumActiveArtBytes} bytes exceeds 1.5 MB`);
+}
+
+console.log(JSON.stringify({
+  javascript: assets.length,
+  audioFiles: audioFiles.length,
+  audioBytes,
+  artFiles: artFiles.length,
+  artBytes,
+  maximumActiveArtBytes,
+}));

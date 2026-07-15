@@ -32,6 +32,10 @@ class WebglRendererLifecycle implements RendererLifecycle {
     this.runtime.render(elapsed, snapshot);
   }
 
+  renderVisualOnce(elapsed: number, snapshot?: SceneSnapshot): void {
+    this.renderer.renderVisual(elapsed, snapshot ?? this.runtime.snapshot());
+  }
+
   resize(reducedMotion: boolean): void {
     this.renderer.resize(reducedMotion);
   }

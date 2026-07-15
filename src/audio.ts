@@ -3,10 +3,19 @@ import type { AccidentKind, CafeMomentKind } from './simulation/types';
 import type { CafeEnvironmentSnapshot } from './environment/types';
 import type { VenueKind } from './venue';
 import { loadVenueSamplePack, samplesForVenue, type VenueSampleState } from './audioSamples';
-import { momentDefinition } from './simulation/momentRegistry';
+import { momentDefinition, type MomentFoleyCue } from './simulation/momentRegistry';
 
 export type AudioState = 'idle' | 'playing' | 'muted' | 'unavailable';
 export const REACTION_ACCENT_MAX_GAIN = 0.008;
+
+export function clampStereoPan(value: number): number {
+  return Math.max(-1, Math.min(1, value));
+}
+
+export function cuePlaybackRate(range: readonly [number, number], randomValue: number): number {
+  const amount = Math.max(0, Math.min(1, randomValue));
+  return range[0] + (range[1] - range[0]) * amount;
+}
 
 const CHORDS = [
   [0, 3, 7, 10],
@@ -186,8 +195,14 @@ export class CafeAudio {
     if (!context || !this.master || this.muted || this.state !== 'playing') return;
     const start = context.currentTime + 0.02;
     this.duckBed(0.76, 0.14);
-    const cue = momentDefinition(kind)?.audioCue;
-    if (cue && this.playSample(cue, start)) return;
+    const definition = momentDefinition(kind);
+    if (definition) {
+      for (const cue of definition.cues.filter((entry): entry is MomentFoleyCue => entry.type === 'foley')) {
+        const cueStart = start + cue.atSeconds;
+        if (!this.playSample(cue.cue, cueStart, cue)) this.playProceduralMomentCue(cue, cueStart);
+      }
+      return;
+    }
     if (kind === 'shared-cake') {
       this.playEffectTone(1_380, 1_720, start, 0.12, 0.024, 'sine');
       this.playEffectTone(1_660, 1_980, start + 0.05, 0.1, 0.019, 'sine');
@@ -233,6 +248,16 @@ export class CafeAudio {
       return;
     }
     this.playEffectTone(1_120, 1_520, start, 0.16, 0.015, 'triangle');
+  }
+
+  private playProceduralMomentCue(cue: MomentFoleyCue, start: number): void {
+    const base: Readonly<Record<string, readonly [number, number]>> = {
+      cup: [920, 1_220], plate: [1_450, 1_050], chair: [260, 180], 'door-bell': [1_720, 2_180],
+      bowl: [820, 1_080], ladle: [1_360, 780], curtain: [420, 310], condiment: [1_020, 760],
+      button: [620, 980], coin: [1_650, 2_240], ticket: [880, 1_180], relay: [310, 520],
+    };
+    const [from, to] = base[cue.cue] ?? [1_120, 1_520];
+    this.playEffectTone(from, to, start, 0.12, 0.018 * cue.gain, this.venue === 'arcade' ? 'square' : 'triangle', undefined, cue.pan);
   }
 
   playReaction(): boolean {
@@ -343,7 +368,7 @@ export class CafeAudio {
     this.sampleAtmosphere = source;
   }
 
-  private playSample(cue: string, start: number): boolean {
+  private playSample(cue: string, start: number, staging?: MomentFoleyCue): boolean {
     const context = this.context;
     const sampleBus = this.sampleBus;
     if (!context || !sampleBus || (this.sampleState !== 'ready' && this.sampleState !== 'partial')) return false;
@@ -352,9 +377,19 @@ export class CafeAudio {
     if (!entry || !buffer) return false;
     const source = context.createBufferSource();
     const gain = context.createGain();
+    const panner = context.createStereoPanner();
     source.buffer = buffer;
-    gain.gain.value = entry.level;
-    source.connect(gain).connect(sampleBus);
+    const rate = staging ? cuePlaybackRate(staging.playbackRate, this.random.next()) : 1;
+    source.playbackRate.setValueAtTime(rate, start);
+    const level = entry.level * (staging?.gain ?? 1);
+    const attack = staging?.attackSeconds ?? 0.008;
+    const release = staging?.releaseSeconds ?? 0.08;
+    const audibleDuration = Math.max(attack + release + 0.02, Math.min(buffer.duration / rate, 0.9));
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, level), start + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + Math.max(attack + 0.01, audibleDuration - release));
+    panner.pan.setValueAtTime(clampStereoPan(staging?.pan ?? 0), start);
+    source.connect(gain).connect(panner).connect(sampleBus);
     source.start(start);
     return true;
   }
@@ -517,19 +552,22 @@ export class CafeAudio {
     volume: number,
     type: OscillatorType,
     destination?: AudioNode,
+    pan = 0,
   ): void {
     const context = this.context;
     const output = destination ?? this.effectsBus ?? this.master;
     if (!context || !output) return;
     const oscillator = context.createOscillator();
     const gain = context.createGain();
+    const panner = context.createStereoPanner();
     oscillator.type = type;
     oscillator.frequency.setValueAtTime(fromFrequency, start);
     oscillator.frequency.exponentialRampToValueAtTime(Math.max(1, toFrequency), start + duration);
     gain.gain.setValueAtTime(0.0001, start);
     gain.gain.exponentialRampToValueAtTime(volume, start + 0.012);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-    oscillator.connect(gain).connect(output);
+    panner.pan.setValueAtTime(clampStereoPan(pan), start);
+    oscillator.connect(gain).connect(panner).connect(output);
     oscillator.start(start);
     oscillator.stop(start + duration + 0.03);
   }

@@ -48,6 +48,7 @@ interface BuildContext {
   readonly profile: VenueVisualProfile;
   readonly surfaces: PixelSurfaceLibrary;
   readonly usedSurfaceKinds: Set<SurfaceKind>;
+  readonly surfaceMaterials: Map<SurfaceKind, MeshStandardMaterial[]>;
   readonly focusOccluders: FocusOccluder[];
   readonly seatBindings: SeatVisualBinding[];
   focusOccluderSerial: number;
@@ -106,6 +107,9 @@ function material(context: BuildContext, options: BoxOptions): MeshStandardMater
   });
   result.userData.surfaceKind = surfaceKind;
   context.usedSurfaceKinds.add(surfaceKind);
+  const registered = context.surfaceMaterials.get(surfaceKind) ?? [];
+  registered.push(result);
+  context.surfaceMaterials.set(surfaceKind, registered);
   context.materials.add(result);
   return result;
 }
@@ -673,10 +677,12 @@ export function buildVenue(venue: VenueKind): DioramaSet {
   const profile = VENUE_VISUAL_PROFILES[venue];
   const surfaces = new PixelSurfaceLibrary(profile.surfaces);
   const usedSurfaceKinds = new Set<SurfaceKind>();
+  const surfaceMaterials = new Map<SurfaceKind, MeshStandardMaterial[]>();
   const focusOccluders: FocusOccluder[] = [];
   const seatBindings: SeatVisualBinding[] = [];
   const context: BuildContext = {
-    geometries, materials, theme, profile, surfaces, usedSurfaceKinds, focusOccluders, seatBindings, focusOccluderSerial: 0,
+    geometries, materials, theme, profile, surfaces, usedSurfaceKinds, surfaceMaterials,
+    focusOccluders, seatBindings, focusOccluderSerial: 0,
   };
   const animatedProps: AnimatedProp[] = [];
   const shell = buildShell(context, root, venue);
@@ -711,6 +717,7 @@ export function buildVenue(venue: VenueKind): DioramaSet {
     theme,
     surfaceTextureCount: surfaces.size,
     surfaceKinds: [...availableSurfaceKinds].sort(),
+    surfaceMaterials,
     bloomSurfaceCount: countSelectiveBloomSurfaces(root),
     dispose(): void {
       for (const geometry of geometries) geometry.dispose();
