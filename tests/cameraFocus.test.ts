@@ -37,15 +37,17 @@ describe('sanfte Kameraregie', () => {
     });
   });
 
-  it('fährt in 2,2 Sekunden auf 22 Grad, hält und kehrt in 2,8 Sekunden zurück', () => {
+  it('durchläuft Establishing, Detail und Reaktion und kehrt in 2,8 Sekunden zurück', () => {
     const director = new CameraFocusDirector();
     const candidates = [candidate('reaction', '1', 100)];
     director.update(0, candidates);
     expect(director.update(1.1, candidates).phase).toBe('approach');
-    expect(director.update(2.2, candidates).fieldOfView).toBeCloseTo(22);
-    expect(director.update(5.4, candidates).phase).toBe('recover');
-    expect(director.update(8.2, []).active).toBe(false);
-    expect(director.update(8.2, []).fieldOfView).toBe(30);
+    expect(director.update(2.2, candidates)).toMatchObject({ shotBeat: 'establishing', fieldOfView: 28 });
+    expect(director.update(6, candidates)).toMatchObject({ shotBeat: 'detail', fieldOfView: 21 });
+    expect(director.update(9.4, candidates)).toMatchObject({ shotBeat: 'reaction', fieldOfView: 23 });
+    expect(director.update(11.8, candidates).phase).toBe('recover');
+    expect(director.update(14.6, []).active).toBe(false);
+    expect(director.update(14.6, []).fieldOfView).toBe(30);
     expect(cameraFocusEase(0.5)).toBe(0.5);
   });
 
@@ -56,29 +58,50 @@ describe('sanfte Kameraregie', () => {
     const handedOver = director.update(1.1, [...conversation, candidate('story', 's', 180)]);
     expect(handedOver).toMatchObject({ source: 'story', phase: 'approach' });
     expect(handedOver.amount).toBeCloseTo(before.amount);
-    expect(handedOver.target).toEqual(before.target);
+    expect(handedOver.position).toEqual(before.position);
+    expect(handedOver.lookAt).toEqual(before.lookAt);
     expect(handedOver.fieldOfView).toBeCloseTo(before.fieldOfView);
     expect(director.update(3.31, [candidate('story', 's', 180)])).toMatchObject({
-      source: 'story', phase: 'focus', amount: 1, target: { x: 180, y: 170 }, fieldOfView: 22,
+      source: 'story', phase: 'focus', amount: 1, target: { x: 180, y: 170 }, shotBeat: 'establishing', fieldOfView: 28,
     });
+  });
+
+  it('folgt den Teilnehmern innerhalb derselben Sequenz ohne die Shot-Uhr neu zu starten', () => {
+    const director = new CameraFocusDirector();
+    director.update(0, [candidate('moment', 'moving', 80)]);
+    const followed = director.update(3, [candidate('moment', 'moving', 120)]);
+    expect(followed).toMatchObject({ target: { x: 120, y: 170 }, shotBeat: 'establishing', amount: 1 });
+    expect(followed.position.x).toBe(120);
   });
 
   it('hält nach der identischen Rückkehr mindestens 20 Sekunden Übersicht', () => {
     const director = new CameraFocusDirector();
     director.update(0, [candidate('conversation', '1', 80)]);
     expect(director.update(6, [candidate('conversation', '2', 100)]).active).toBe(true);
-    expect(director.update(10, [candidate('conversation', '2', 100)]).active).toBe(false);
-    expect(director.update(29.1, [candidate('conversation', '2', 100)]).active).toBe(false);
-    expect(director.update(30, [candidate('conversation', '3', 120)]).source).toBe('conversation');
+    expect(director.update(14.6, [candidate('conversation', '2', 100)]).active).toBe(false);
+    expect(director.update(34.5, [candidate('conversation', '2', 100)]).active).toBe(false);
+    expect(director.update(34.6, [candidate('conversation', '3', 120)]).source).toBe('conversation');
   });
 
   it('deaktiviert Fokus vollständig bei Reduced Motion und berechnet Teilnehmermittelpunkte', () => {
     const director = new CameraFocusDirector();
-    expect(director.update(0, [candidate('story', '1', 80)], true)).toEqual({
+    expect(director.update(0, [candidate('story', '1', 80)], true)).toMatchObject({
       active: false, phase: 'overview', participantIds: [], amount: 0, fieldOfView: 30,
+      shotBeat: 'overview', sequenceId: 'none', sequenceProgress: 0,
     });
     expect(participantMidpoint([{ x: 40, y: 150 }, { x: 80, y: 180 }, { x: 120, y: 210 }])).toEqual({ x: 80, y: 180 });
     expect(participantMidpoint([])).toBeUndefined();
+  });
+
+  it('friert einen angeforderten Diagnose-Shot in dessen Hold ein', () => {
+    const director = new CameraFocusDirector();
+    const candidates = [candidate('moment', 'visual', 100)];
+    expect(director.update(0, candidates, false, undefined, 'detail')).toMatchObject({
+      active: true, shotBeat: 'detail', phase: 'focus', amount: 1,
+    });
+    expect(director.update(60, candidates, false, undefined, 'detail')).toMatchObject({
+      active: true, shotBeat: 'detail', phase: 'focus', amount: 1,
+    });
   });
 
   it('hält Einzelne bei 22 Grad und öffnet räumlich verteilte Gruppen höchstens auf 26 Grad', () => {

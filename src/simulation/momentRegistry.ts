@@ -1,6 +1,11 @@
 import type { ActivitySpotTag } from './layout';
 import type { CafeMomentKind, BaristaTask } from './types';
 import type { VenueKind } from '../venue';
+import {
+  cinematicSequenceDuration,
+  cinematicSequenceProfile,
+  type CinematicSequenceProfileId,
+} from '../diorama/cinematicSequence';
 
 export type MomentCategory = 'ritual' | 'encounter';
 export type MomentWeatherCondition = 'wet' | 'rain' | 'wind';
@@ -9,13 +14,25 @@ export type MomentAudioCue =
   | 'bowl' | 'ladle' | 'curtain' | 'condiment'
   | 'button' | 'coin' | 'ticket' | 'relay';
 
-export interface CinematicShotProfile {
-  readonly approachSeconds: 2.2;
-  readonly recoverSeconds: 2.8;
-  readonly minimumOverviewSeconds: 20;
-  readonly safeFrameInset: 0.1;
-  readonly fieldOfView: readonly [number, number];
+export interface MomentFoleyCue {
+  readonly type: 'foley';
+  readonly atSeconds: number;
+  readonly cue: MomentAudioCue;
+  readonly pan: number;
+  readonly gain: number;
+  readonly playbackRate: readonly [number, number];
+  readonly attackSeconds: number;
+  readonly releaseSeconds: number;
 }
+
+export interface MomentLightCue {
+  readonly type: 'light';
+  readonly atSeconds: number;
+  readonly intensity: number;
+  readonly durationSeconds: number;
+}
+
+export type MomentStageCue = MomentFoleyCue | MomentLightCue;
 
 export interface MomentDefinition {
   readonly kind: CafeMomentKind;
@@ -27,21 +44,18 @@ export interface MomentDefinition {
   readonly weather?: MomentWeatherCondition;
   readonly duration: Readonly<{ enter: number; hold: number; return: number }>;
   readonly cooldownSeconds: number;
-  readonly camera: CinematicShotProfile;
+  readonly camera: CinematicSequenceProfileId;
+  readonly propAnchor: Readonly<{ x: number; y: number }>;
+  readonly cues: readonly MomentStageCue[];
   readonly audioCue: MomentAudioCue;
   readonly staffTask?: BaristaTask;
   readonly crescendo?: true;
 }
 
-export const DEFAULT_CINEMATIC_SHOT: CinematicShotProfile = Object.freeze({
-  approachSeconds: 2.2,
-  recoverSeconds: 2.8,
-  minimumOverviewSeconds: 20,
-  safeFrameInset: 0.1,
-  fieldOfView: [22, 26] as const,
-});
-
-const duration = (hold: number): MomentDefinition['duration'] => ({ enter: 1.4, hold, return: 1.6 });
+const duration = (camera: CinematicSequenceProfileId): MomentDefinition['duration'] => {
+  const total = cinematicSequenceDuration(cinematicSequenceProfile(camera));
+  return { enter: 2.2, hold: total - 5, return: 2.8 };
+};
 const definition = (
   kind: CafeMomentKind,
   venue: VenueKind,
@@ -49,17 +63,40 @@ const definition = (
   guestCount: 0 | 1 | 2,
   audioCue: MomentAudioCue,
   options: Partial<Pick<MomentDefinition, 'includesStaff' | 'anchorTags' | 'weather' | 'staffTask' | 'crescendo'>> = {},
-): MomentDefinition => Object.freeze({
-  kind, venue, category, guestCount, audioCue,
-  includesStaff: options.includesStaff ?? false,
-  anchorTags: Object.freeze(options.anchorTags ?? []),
-  weather: options.weather,
-  staffTask: options.staffTask,
-  crescendo: options.crescendo,
-  duration: Object.freeze(duration(options.crescendo ? 10 : 7)),
-  cooldownSeconds: category === 'ritual' ? 70 : 82,
-  camera: DEFAULT_CINEMATIC_SHOT,
-});
+): MomentDefinition => {
+  const camera = `moment:${kind}` as const;
+  const profile = cinematicSequenceProfile(camera);
+  if (!profile.propAnchor) throw new Error(`Requisitenanker fehlt: ${kind}`);
+  const pan = Math.max(-0.78, Math.min(0.78, (profile.propAnchor.x / 384 - 0.5) * 1.56));
+  const detailAt = 2.2 + 2.4;
+  const reactionAt = detailAt + 1.4 + (profile.crescendo ? 3.4 : 2);
+  return Object.freeze({
+    kind, venue, category, guestCount, audioCue,
+    includesStaff: options.includesStaff ?? false,
+    anchorTags: Object.freeze(options.anchorTags ?? []),
+    weather: options.weather,
+    staffTask: options.staffTask,
+    crescendo: options.crescendo,
+    duration: Object.freeze(duration(camera)),
+    cooldownSeconds: category === 'ritual' ? 70 : 82,
+    camera,
+    propAnchor: profile.propAnchor,
+    cues: Object.freeze([
+      Object.freeze({
+        type: 'foley', atSeconds: 2.24, cue: audioCue, pan, gain: 0.82,
+        playbackRate: [0.975, 1.025] as const, attackSeconds: 0.012, releaseSeconds: 0.16,
+      }),
+      Object.freeze({
+        type: 'light', atSeconds: detailAt, intensity: profile.crescendo ? 1 : 0.72,
+        durationSeconds: profile.crescendo ? 6.6 : 4.8,
+      }),
+      Object.freeze({
+        type: 'foley', atSeconds: reactionAt, cue: audioCue, pan: -pan * 0.45, gain: 0.42,
+        playbackRate: [0.985, 1.015] as const, attackSeconds: 0.008, releaseSeconds: 0.1,
+      }),
+    ]),
+  });
+};
 
 /** The complete V2 set: exactly three rituals and three encounters per venue. */
 export const MOMENT_REGISTRY: readonly MomentDefinition[] = Object.freeze([

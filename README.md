@@ -8,7 +8,7 @@ Ein autonomes Pixel-Art-Diorama für eine kleine Pause im Browser.
 
 Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen-Restaurant oder eine ruhige Arcade-Halle. Alle drei Varianten teilen sich die autonome, kollisionsbewusste Gäste-Simulation, besitzen aber eigenständige Grundrisse mit eigenen Eingängen, Laufwegen, Aufenthaltsplätzen, Möbeln, Lichtdetails und zurückhaltender Klangfarbe. Gerätezeit, Sonnenstand, Wetter und Tagesprofil verändern Außenwelt, Licht, Auslage, Geräuschkulisse und Belegung weich. Gäste kommen und gehen, bestellen, lesen, arbeiten, zeichnen, telefonieren, reden und trinken – vollständig selbstständig und ohne sichtbaren Schleifensprung. Zwölf venuegebundene Stammgäste bringen ruhige und verspielte Geschichten mit, von Maras Skizzenbuch bis zu einer vertauschten Bestellung, einer widerspenstigen Nudel und einem unerwarteten Co-op-Sieg. Dazwischen verbinden kleine Alltagsmomente die Szene.
 
-- vollständig prozedurale WebGL-Dioramen ohne fremde Spiel- oder Grafikassets
+- hybride WebGL-Dioramen aus eigenen Pixelatlanten und einer jederzeit verfügbaren prozeduralen Ersatzdarstellung
 - Auswahl zwischen Café, Ramen-Restaurant und Arcade-Halle vor dem Eintritt; keine nachträgliche Menühürde
 - echte 2304 × 1296-HD-Masterfläche (6×) mit 144 × 208 Pixel großen Original-Figurentexturen
 - perspektivische 2,5D-Kamera, physische Raumkörper, Möbel, Fenster, Tür, Bodenkontakt und echte Tiefenverdeckung
@@ -24,7 +24,9 @@ Kaffeepause beginnt mit einer Ortswahl: ein gemütliches Café, ein warmes Ramen
 - sanfte, deterministische Café-Momente mit eigenen Bild- und Klangdetails, die nicht mit Unfällen kollidieren
 - zwölf venuegebundene Stammgäste und sieben seltene, zusammenhängende Mini-Geschichten
 - vier lesbare Animationsposen für Gehen, Warten, Bestellen, neun Gasttätigkeiten und sieben Barista-Aufgaben
-- sanfter räumlicher Ereignisfokus mit priorisierter Kameraregie, gezielt abblendenden Sichtblockern und statischer Reduced-Motion-Übersicht
+- registrierte Drei-Shot-Sequenzen aus Establishing, Detail und Reaktion für alle 18 Momente, mit exakter Rückkehrkamera und statischer Reduced-Motion-Übersicht
+- asynchron geladene, ortsweise freigegebene Art-Packs für Oberflächen, Requisiten, Emission und sechs gemeinsame Figurenposen
+- sanfter räumlicher Ereignisfokus mit priorisierter Kameraregie, 10-%-Safe-Frame und gezielt abblendenden Sichtblockern
 - rein dekorative Mausnähe-Reaktionen mit Blickkontakt, Geste, Emote und sehr leisem venueabhängigem Akzent
 - funktionierende Pixel-Wanduhr sowie lokaler Sonnenstand mit Dämmerung und Polarzuständen
 - klare, bewölkte, neblige, regnerische, verschneite und stürmische Außenwelten
@@ -63,6 +65,7 @@ npm run dev
 ```sh
 npm test
 npm run build
+npm run verify:budgets
 npm run test:e2e
 ```
 
@@ -70,4 +73,6 @@ Die Simulation verwendet weiterhin stabile Szenenkoordinaten von 384 × 216. Der
 
 Die gemeinsame Grundriss-Registry liegt in `src/simulation/layout.ts`, tragende Simulationsmaße in `src/scene/proportions.ts` und die physische Maßkette des Dioramas in `src/diorama/types.ts`. Die automatische Prüfung vergleicht Beziehungen wie Tisch zu Figur, Theke zu Personal, Tür zu Körperhöhe, Sitz- zu Stehhöhe, Sitzrichtung, Rückenlehnenlage, Texturauflösung und freie Laufwege. Der Canvas veröffentlicht die Ergebnisse zusätzlich über `data-proportion-check`, `data-diorama-scale-check`, `data-layout-score`, `data-venue-layout`, `data-entry-flow`, `data-layout-capacity`, `data-seat-alignment`, `data-seat-bindings` und die belegten Aktivitätsplätze.
 
-Im Entwicklungsserver lassen sich visuelle Szenen mit `?time=HH:MM`, `?weather=clear|cloudy|fog|rain|snow|storm`, `?lat=<Breite>` und `?lon=<Länge>` kombinieren. Genau eine Unfallart kann zusätzlich beschleunigt werden, zum Beispiel mit `?accident=tray-drop`, `?accident=coffee-spill` oder `?accident=umbrella-pop`. `?moment=` akzeptiert neben den bestehenden Szenen auch `foam-moustache`, `sugar-packet-domino`, `steam-glasses`, `chopstick-drop`, `ticket-stream` und `button-mash-sync`; `?story=` zusätzlich `order-mixup`, `noodle-mishap` und `glitched-coop`. Produktionsbuilds ignorieren sämtliche Testparameter.
+Im Entwicklungsserver lassen sich visuelle Szenen mit `?time=HH:MM`, `?weather=clear|cloudy|fog|rain|snow|storm`, `?lat=<Breite>` und `?lon=<Länge>` kombinieren. Genau eine Unfallart kann zusätzlich beschleunigt werden, zum Beispiel mit `?accident=tray-drop`, `?accident=coffee-spill` oder `?accident=umbrella-pop`. `?moment=` akzeptiert neben den bestehenden Szenen auch `foam-moustache`, `sugar-packet-domino`, `steam-glasses`, `chopstick-drop`, `ticket-stream` und `button-mash-sync`; `?story=` zusätzlich `order-mixup`, `noodle-mishap` und `glitched-coop`. `?cinematicScale=` beschleunigt nur für visuelle Tests die Shot-Uhr, `?cinematicShot=establishing|detail|reaction` friert einen Shot in seinem Hold ein und `?art=fallback` erzwingt den prozeduralen Grafikpfad. Produktionsbuilds ignorieren sämtliche Testparameter.
+
+Für Browserdiagnosen veröffentlicht der Canvas zusätzlich den aktiven Shot und Sequenzfortschritt (`data-shot-beat`, `data-camera-sequence`), den Zustand des Ortspakets (`data-art-assets`, `data-art-pack`) sowie Draw Calls und geladene Texturbytes (`data-draw-calls`, `data-texture-bytes`). Die 26 V3-Playwright-Baselines decken die drei Übersichten, Ritual- und Begegnungsfolgen mit je drei Shots, alle mobilen Orte, Reduced Motion und den kombinierten Renderer-/Art-Fallback ab.

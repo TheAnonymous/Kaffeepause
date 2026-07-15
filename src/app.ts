@@ -137,6 +137,8 @@ function simulationOptions(): CafeSimulationOptions {
     'attract-mode-wave', 'token-hopper-refill', 'cabinet-reboot', 'ticket-trade', 'coop-rescue', 'lounge-prize-share',
   ];
   if (momentKinds.includes(requestedMoment as CafeMomentKind)) {
+    const requestedScale = Number(parameters.get('cinematicScale') ?? 1);
+    const cinematicScale = Number.isFinite(requestedScale) ? Math.max(0.02, Math.min(1, requestedScale)) : 1;
     options.initialGuests = Math.max(options.initialGuests ?? 0,
       requestedMoment === 'lounge-prize-share' ? 7 : requestedMoment === 'window-gaze' ? 2 : 4);
     options.moments = {
@@ -144,7 +146,7 @@ function simulationOptions(): CafeSimulationOptions {
       minDelaySeconds: 0.35,
       maxDelaySeconds: 0.35,
       kinds: [requestedMoment as CafeMomentKind],
-      durationScale: 0.45,
+      durationScale: cinematicScale,
     };
   }
   const requestedStory = parameters.get('story');

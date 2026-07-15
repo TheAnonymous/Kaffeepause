@@ -1,5 +1,17 @@
 import type { Point } from '../simulation/types';
 import type { FocusFrameBounds } from './visualProfiles';
+import {
+  cinematicEase,
+  cinematicShotHoldTime,
+  cinematicSequenceDuration,
+  cinematicSequenceProfile,
+  sampleCinematicSequence,
+  type CameraTransform,
+  type CameraVector3,
+  type CinematicSequenceProfile,
+  type CinematicShotBeat,
+  type CinematicTransformSet,
+} from './cinematicSequence';
 
 export type CameraFocusSource = 'story' | 'accident' | 'reaction' | 'moment' | 'conversation';
 export type CameraPhase = 'overview' | 'approach' | 'focus' | 'recover';
@@ -10,6 +22,11 @@ export interface CameraRigOutput {
   readonly fieldOfView: number;
   readonly target?: Readonly<Point>;
   readonly targetHeight?: number;
+  readonly shotBeat: CinematicShotBeat;
+  readonly sequenceId: string;
+  readonly sequenceProgress: number;
+  readonly position: CameraVector3;
+  readonly lookAt: CameraVector3;
 }
 
 export interface CameraFocusCandidate {
@@ -19,6 +36,8 @@ export interface CameraFocusCandidate {
   readonly participantIds: readonly string[];
   readonly targetHeight: number;
   readonly fieldOfView: number;
+  readonly sequenceProfile?: CinematicSequenceProfile;
+  readonly transforms?: CinematicTransformSet;
 }
 
 export interface CameraFocusState extends CameraRigOutput {
@@ -36,12 +55,11 @@ const PRIORITY: Readonly<Record<CameraFocusSource, number>> = {
   conversation: 1,
 };
 
-const FOCUS_HOLD_SECONDS: Readonly<Record<CameraFocusSource, number>> = {
-  story: 8,
-  accident: 8,
-  reaction: 3.2,
-  moment: 6,
-  conversation: 4.2,
+const GENERIC_PROFILE: Readonly<Record<Exclude<CameraFocusSource, 'moment'>, ReturnType<typeof cinematicSequenceProfile>>> = {
+  story: cinematicSequenceProfile('story'),
+  accident: cinematicSequenceProfile('accident'),
+  reaction: cinematicSequenceProfile('pointer-reaction'),
+  conversation: cinematicSequenceProfile('conversation'),
 };
 
 export const CAMERA_APPROACH_SECONDS = 2.2;
@@ -62,19 +80,21 @@ export interface FocusFrameElement {
 
 interface ActiveFocus extends CameraFocusCandidate {
   readonly startedAt: number;
-  readonly approachEndsAt: number;
-  readonly focusEndsAt: number;
   readonly endsAt: number;
-  readonly approachOrigin: CameraRigOutput;
+  readonly profile: CinematicSequenceProfile;
+  readonly approachOrigin: CameraTransform;
+  readonly overviewTransform: CameraTransform;
+  readonly cinematicTransforms: CinematicTransformSet;
 }
 
-function clamp(value: number): number {
-  return Math.max(0, Math.min(1, value));
-}
+const DEFAULT_OVERVIEW: CameraTransform = Object.freeze({
+  position: Object.freeze({ x: 0, y: 6.7, z: 15.8 }),
+  target: Object.freeze({ x: 0, y: 2.55, z: -0.2 }),
+  fieldOfView: CAMERA_OVERVIEW_FOV,
+});
 
 export function cameraFocusEase(progress: number): number {
-  const value = clamp(progress);
-  return value * value * (3 - 2 * value);
+  return cinematicEase(progress);
 }
 
 export function participantMidpoint(values: readonly Readonly<Point>[]): Point | undefined {
@@ -106,6 +126,51 @@ export function focusFieldOfView(values: readonly Readonly<Point>[]): number {
   return Math.min(CAMERA_GROUP_FOCUS_FOV, CAMERA_SINGLE_FOCUS_FOV + Math.max(groupLift, spreadLift));
 }
 
+function transformFromOutput(output: CameraRigOutput): CameraTransform {
+  return { position: output.position, target: output.lookAt, fieldOfView: output.fieldOfView };
+}
+
+function defaultTransforms(candidate: CameraFocusCandidate, profile: CinematicSequenceProfile): CinematicTransformSet {
+  const shots = profile.shots;
+  const establishingFov = shots.find((shot) => shot.beat === 'establishing')?.fieldOfView ?? candidate.fieldOfView;
+  const detailFov = shots.find((shot) => shot.beat === 'detail')?.fieldOfView ?? candidate.fieldOfView;
+  const reactionFov = shots.find((shot) => shot.beat === 'reaction')?.fieldOfView ?? candidate.fieldOfView;
+  const centerX = candidate.target.x;
+  const centerZ = candidate.target.y;
+  return {
+    establishing: {
+      position: { x: centerX, y: 6.05, z: 13.7 },
+      target: { x: centerX, y: candidate.targetHeight, z: centerZ },
+      fieldOfView: establishingFov,
+    },
+    detail: {
+      position: { x: centerX, y: 4.85, z: 10.9 },
+      target: { x: centerX, y: candidate.targetHeight * 0.58, z: centerZ },
+      fieldOfView: detailFov,
+    },
+    reaction: {
+      position: { x: centerX, y: 5.3, z: 11.7 },
+      target: { x: centerX, y: candidate.targetHeight, z: centerZ },
+      fieldOfView: reactionFov,
+    },
+  };
+}
+
+function overviewState(transform: Readonly<CameraTransform>): CameraFocusState {
+  return {
+    active: false,
+    phase: 'overview',
+    participantIds: [],
+    amount: 0,
+    fieldOfView: transform.fieldOfView,
+    shotBeat: 'overview',
+    sequenceId: 'none',
+    sequenceProgress: 0,
+    position: transform.position,
+    lookAt: transform.target,
+  };
+}
+
 export class CameraFocusDirector {
   private current?: ActiveFocus;
   private readonly completedKeys = new Set<string>();
@@ -116,27 +181,46 @@ export class CameraFocusDirector {
     this.current = undefined;
   }
 
-  update(now: number, candidates: readonly CameraFocusCandidate[], reducedMotion = false): CameraFocusState {
+  update(
+    now: number,
+    candidates: readonly CameraFocusCandidate[],
+    reducedMotion = false,
+    overviewTransform: Readonly<CameraTransform> = DEFAULT_OVERVIEW,
+    shotOverride?: 'establishing' | 'detail' | 'reaction',
+  ): CameraFocusState {
     if (reducedMotion) {
       this.reset();
-      return { active: false, phase: 'overview', participantIds: [], amount: 0, fieldOfView: CAMERA_OVERVIEW_FOV };
+      return overviewState(overviewTransform);
     }
 
-    if (this.current && now >= this.current.endsAt) {
+    if (!shotOverride && this.current && now >= this.current.endsAt - 0.000001) {
       this.completedKeys.add(`${this.current.source}:${this.current.key}`);
       this.current = undefined;
       this.lastRecoveredAt = now;
     }
 
     if (this.current) {
+      const refreshed = candidates.find((candidate) => (
+        candidate.source === this.current?.source && candidate.key === this.current.key
+      ));
+      if (refreshed) {
+        this.current = {
+          ...this.current,
+          target: refreshed.target,
+          participantIds: refreshed.participantIds,
+          targetHeight: refreshed.targetHeight,
+          cinematicTransforms: refreshed.transforms ?? defaultTransforms(refreshed, this.current.profile),
+        };
+      }
       const currentPriority = PRIORITY[this.current.source];
       const higherPriority = candidates
         .filter((candidate) => PRIORITY[candidate.source] > currentPriority && this.canStart(candidate, now))
         .sort((left, right) => PRIORITY[right.source] - PRIORITY[left.source])[0];
       if (higherPriority) {
-        const origin = this.stateFor(this.current, now);
+        const origin = this.stateFor(this.current, now, shotOverride);
+        const savedOverview = this.current.overviewTransform;
         this.completedKeys.add(`${this.current.source}:${this.current.key}`);
-        this.start(higherPriority, now, origin);
+        this.start(higherPriority, now, transformFromOutput(origin), savedOverview);
       }
     }
 
@@ -145,47 +229,41 @@ export class CameraFocusDirector {
         .filter((candidate) => this.canStart(candidate, now))
         .sort((left, right) => PRIORITY[right.source] - PRIORITY[left.source]);
       const next = eligible[0];
-      if (next) this.start(next, now);
+      if (next) this.start(next, now, overviewTransform, overviewTransform);
     }
 
     const current = this.current;
-    if (!current) return { active: false, phase: 'overview', participantIds: [], amount: 0, fieldOfView: CAMERA_OVERVIEW_FOV };
-    return this.stateFor(current, now);
+    if (!current) return overviewState(overviewTransform);
+    return this.stateFor(current, now, shotOverride);
   }
 
-  private stateFor(current: ActiveFocus, now: number): CameraFocusState {
-    const phase: CameraPhase = now < current.approachEndsAt ? 'approach'
-      : now < current.focusEndsAt ? 'focus' : 'recover';
-    const approachProgress = cameraFocusEase((now - current.startedAt) / CAMERA_APPROACH_SECONDS);
-    const amount = phase === 'approach'
-      ? current.approachOrigin.amount + (1 - current.approachOrigin.amount) * approachProgress
-      : phase === 'focus'
-        ? 1
-        : 1 - cameraFocusEase((now - current.focusEndsAt) / CAMERA_RECOVER_SECONDS);
-    const target = phase === 'approach' && current.approachOrigin.target
-      ? {
-          x: current.approachOrigin.target.x + (current.target.x - current.approachOrigin.target.x) * approachProgress,
-          y: current.approachOrigin.target.y + (current.target.y - current.approachOrigin.target.y) * approachProgress,
-        }
-      : current.target;
-    const targetHeight = phase === 'approach' && current.approachOrigin.targetHeight !== undefined
-      ? current.approachOrigin.targetHeight
-        + (current.targetHeight - current.approachOrigin.targetHeight) * approachProgress
-      : current.targetHeight;
-    const fieldOfView = phase === 'approach'
-      ? current.approachOrigin.fieldOfView
-        + (current.fieldOfView - current.approachOrigin.fieldOfView) * approachProgress
-      : CAMERA_OVERVIEW_FOV - (CAMERA_OVERVIEW_FOV - current.fieldOfView) * amount;
+  private stateFor(
+    current: ActiveFocus,
+    now: number,
+    shotOverride?: 'establishing' | 'detail' | 'reaction',
+  ): CameraFocusState {
+    const sample = sampleCinematicSequence(
+      current.profile,
+      shotOverride ? cinematicShotHoldTime(current.profile, shotOverride) : now - current.startedAt,
+      current.approachOrigin,
+      current.overviewTransform,
+      current.cinematicTransforms,
+    );
     return {
       active: true,
-      phase,
+      phase: sample.phase,
       source: current.source,
       key: current.key,
-      target,
+      target: current.target,
       participantIds: current.participantIds,
-      targetHeight,
-      amount,
-      fieldOfView,
+      targetHeight: sample.transform.target.y,
+      amount: sample.amount,
+      fieldOfView: sample.transform.fieldOfView,
+      shotBeat: sample.shotBeat,
+      sequenceId: current.profile.id,
+      sequenceProgress: sample.sequenceProgress,
+      position: sample.transform.position,
+      lookAt: sample.transform.target,
     };
   }
 
@@ -195,18 +273,22 @@ export class CameraFocusDirector {
     return !this.completedKeys.has(`${candidate.source}:${candidate.key}`);
   }
 
-  private start(candidate: CameraFocusCandidate, now: number, approachOrigin?: CameraRigOutput): void {
-    const duration = FOCUS_HOLD_SECONDS[candidate.source];
+  private start(
+    candidate: CameraFocusCandidate,
+    now: number,
+    approachOrigin: Readonly<CameraTransform>,
+    overviewTransform: Readonly<CameraTransform>,
+  ): void {
+    const profile = candidate.sequenceProfile
+      ?? (candidate.source === 'moment' ? cinematicSequenceProfile('conversation') : GENERIC_PROFILE[candidate.source]);
     this.current = {
       ...candidate,
       startedAt: now,
-      approachEndsAt: now + CAMERA_APPROACH_SECONDS,
-      focusEndsAt: now + CAMERA_APPROACH_SECONDS + duration,
-      endsAt: now + CAMERA_APPROACH_SECONDS + duration + CAMERA_RECOVER_SECONDS,
-      approachOrigin: approachOrigin ?? {
-        phase: 'overview', amount: 0, fieldOfView: CAMERA_OVERVIEW_FOV, target: candidate.target,
-        targetHeight: candidate.targetHeight,
-      },
+      endsAt: now + cinematicSequenceDuration(profile),
+      profile,
+      approachOrigin: { ...approachOrigin },
+      overviewTransform: { ...overviewTransform },
+      cinematicTransforms: candidate.transforms ?? defaultTransforms(candidate, profile),
     };
     if (candidate.source === 'conversation') this.lastConversationFocusAt = now;
   }
