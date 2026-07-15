@@ -22,6 +22,7 @@ function guest(overrides: Partial<Guest> = {}): Guest {
 
 function scene(guests: readonly Guest[]): SceneSnapshot {
   return {
+    venue: 'cafe',
     guests,
     barista: { position: { x: 316, y: 142 }, target: { x: 316, y: 142 }, task: 'serving', taskTime: 0, taskDuration: 4, animation: 0, facing: -1 },
     regularIds: [],

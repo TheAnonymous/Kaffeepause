@@ -15,6 +15,7 @@ describe('Szenen-Snapshot', () => {
     simulation.start();
 
     const snapshot = simulation.getSceneSnapshot();
+    expect(snapshot.venue).toBe('cafe');
     const guest = snapshot.guests[0];
     expect(guest).toBeDefined();
     if (!guest) return;

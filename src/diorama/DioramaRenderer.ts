@@ -32,12 +32,17 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import type { CafeCamera } from '../camera';
 import type { CafeEnvironmentSnapshot } from '../environment/types';
-import { WORLD_HEIGHT, WORLD_WIDTH } from '../simulation/layout';
+import {
+  VENUE_LAYOUTS,
+  VENUE_LAYOUT_REPORTS,
+  WORLD_HEIGHT,
+  WORLD_WIDTH,
+  activitySpotById,
+} from '../simulation/layout';
 import type { Barista, Guest } from '../simulation/types';
 import type { SceneSnapshot } from '../scene/types';
 import type { VenueKind } from '../venue';
 import { APPEARANCE_LIBRARY_REPORT } from '../simulation/appearance';
-import { CAFE_LAYOUT_REPORT } from '../simulation/layout';
 import { SCENE_PROPORTION_REPORT, SCENE_PROPORTIONS } from '../scene/proportions';
 import {
   RENDER_QUALITY_PROFILES,
@@ -261,10 +266,11 @@ export class DioramaRenderer {
     this.composer.addPass(this.miniature);
     this.applyQualityProfile();
 
-    const checksPass = SCENE_PROPORTION_REPORT.valid && CAFE_LAYOUT_REPORT.valid
+    const layoutScore = Math.min(...Object.values(VENUE_LAYOUT_REPORTS).map((report) => report.score));
+    const checksPass = SCENE_PROPORTION_REPORT.valid && Object.values(VENUE_LAYOUT_REPORTS).every((report) => report.valid)
       && APPEARANCE_LIBRARY_REPORT.valid && DIORAMA_SCALE_REPORT.valid;
     canvas.dataset.proportionCheck = checksPass ? 'pass' : 'warning';
-    canvas.dataset.layoutScore = String(Math.min(SCENE_PROPORTION_REPORT.score, CAFE_LAYOUT_REPORT.score, DIORAMA_SCALE_REPORT.score));
+    canvas.dataset.layoutScore = String(Math.min(SCENE_PROPORTION_REPORT.score, layoutScore, DIORAMA_SCALE_REPORT.score));
     canvas.dataset.dioramaScaleCheck = DIORAMA_SCALE_REPORT.valid ? 'pass' : 'warning';
     canvas.dataset.scaleModel = `${SCENE_PROPORTIONS.character.standingHeight}px-adult`;
     canvas.dataset.characterVariation = `${APPEARANCE_LIBRARY_REPORT.uniqueSilhouettes}-silhouettes`;
@@ -291,6 +297,7 @@ export class DioramaRenderer {
     canvas.dataset.focusOccluderOpacity = '1.00';
     canvas.dataset.visibleEmotes = 'none';
     canvas.dataset.emoteBubbles = '0';
+    this.applyLayoutDatasets(this.venue);
   }
 
   setActive(active: boolean): void {
@@ -326,6 +333,7 @@ export class DioramaRenderer {
     }
     this.look = calculateDioramaLook(this.venue, this.environment);
     this.canvas.dataset.venue = venue;
+    this.applyLayoutDatasets(venue);
   }
 
   setEnvironment(snapshot: CafeEnvironmentSnapshot): void {
@@ -369,7 +377,7 @@ export class DioramaRenderer {
     this.updateFocus(snapshot, time, dialogue);
     this.updateCamera();
     this.updateVenue(time);
-    this.updateDoor(snapshot.guests);
+    this.updateDoor(snapshot.guests, snapshot.venue);
     this.updateCharacters(snapshot, time, dialogue);
     this.updateFocusEffects(snapshot);
     this.updateWeather(time);
@@ -540,21 +548,22 @@ export class DioramaRenderer {
       .filter((position): position is Guest['position'] => position !== undefined);
     const target = participantMidpoint(positions) ?? fallbackTarget;
     if (!target) return undefined;
-    const heights = participantIds.map((id) => {
-      if (id === 'barista') return DIORAMA.standingHeight;
-      return snapshot.guests.find((guest) => guest.id === id)?.state === 'activity'
-        ? DIORAMA.seatedHeight
-        : DIORAMA.standingHeight;
+    const targetHeights = participantIds.map((id) => {
+      if (id === 'barista') return DIORAMA.standingHeight + 0.25;
+      const guest = snapshot.guests.find((entry) => entry.id === id);
+      const spot = activitySpotById(VENUE_LAYOUTS[snapshot.venue], guest?.activitySpotId);
+      if (guest?.state !== 'activity') return DIORAMA.standingHeight + 0.25;
+      return (spot?.focusHeight ?? DIORAMA.seatedHeight) + (spot?.pose === 'standing' ? 0.1 : 0.48);
     });
-    const characterHeight = heights.length > 0
-      ? heights.reduce((sum, height) => sum + height, 0) / heights.length
-      : DIORAMA.standingHeight;
+    const targetHeight = targetHeights.length > 0
+      ? targetHeights.reduce((sum, height) => sum + height, 0) / targetHeights.length
+      : DIORAMA.standingHeight + 0.25;
     return {
       source,
       key,
       target: { ...target },
       participantIds,
-      targetHeight: characterHeight + 0.68,
+      targetHeight,
       fieldOfView: focusFieldOfView(positions.length > 0 ? positions : [target]),
     };
   }
@@ -604,14 +613,17 @@ export class DioramaRenderer {
     }
   }
 
-  private updateDoor(guests: readonly Guest[]): void {
+  private updateDoor(guests: readonly Guest[], venue: VenueKind): void {
+    const entrance = VENUE_LAYOUTS[venue].entrance;
     const active = guests.some((guest) => (
       (guest.state === 'entering' || guest.state === 'exiting' || guest.state === 'walking-to-exit')
-      && guest.position.x < 54
+      && Math.hypot(guest.position.x - entrance.x, guest.position.y - entrance.y) < 48
     ));
     const target = active ? 1 : 0;
     this.doorOpen += (target - this.doorOpen) * (this.reducedMotion ? 1 : 0.09);
-    this.venueSet.doorPivot.rotation.y = this.doorOpen * 1.18;
+    const closedRotation = Number(this.venueSet.doorPivot.userData.closedRotation ?? 0);
+    const direction = venue === 'ramen' ? -1 : 1;
+    this.venueSet.doorPivot.rotation.y = closedRotation + this.doorOpen * 1.18 * direction;
   }
 
   private updateCharacters(snapshot: SceneSnapshot, time: number, dialogue: readonly DialogueLine[]): void {
@@ -638,6 +650,7 @@ export class DioramaRenderer {
       const participantPositions = snapshot.moment?.participantIds
         .map((id) => snapshot.guests.find((entry) => entry.id === id)?.position)
         .filter((value): value is Guest['position'] => value !== undefined) ?? [];
+      const activitySpot = activitySpotById(VENUE_LAYOUTS[snapshot.venue], guest.activitySpotId);
       const visual = calculateGuestVisualState({
         guest,
         moment: snapshot.moment,
@@ -647,6 +660,9 @@ export class DioramaRenderer {
         frameRate: this.qualityProfile.characterFrameRate,
         reducedMotion: this.reducedMotion,
         participantCenterX: participantMidpoint(participantPositions)?.x,
+        activityPose: activitySpot?.pose,
+        activitySpotKind: activitySpot?.kind,
+        activityFacing: activitySpot?.facing,
       });
       this.updateGuestNode(node, guest, visual, lines.get(guest.id), placements.get(guest.id));
     }
@@ -806,7 +822,8 @@ export class DioramaRenderer {
       const guest = snapshot.guests.find((entry) => entry.id === id);
       const node = id === 'barista' ? this.baristaNode : this.guestNodes.get(id);
       if (!node) continue;
-      const height = guest?.state === 'activity' ? DIORAMA.seatedHeight : DIORAMA.standingHeight;
+      const spot = activitySpotById(VENUE_LAYOUTS[snapshot.venue], guest?.activitySpotId);
+      const height = guest?.state === 'activity' ? (spot?.focusHeight ?? DIORAMA.seatedHeight) : DIORAMA.standingHeight;
       targets.push({
         id,
         position: node.root.position,
@@ -870,6 +887,17 @@ export class DioramaRenderer {
     this.eventAccent.scale.setScalar(scale);
   }
 
+  private applyLayoutDatasets(venue: VenueKind): void {
+    const layout = VENUE_LAYOUTS[venue];
+    this.canvas.dataset.venueLayout = layout.venue;
+    this.canvas.dataset.entryFlow = layout.entryFlow;
+    this.canvas.dataset.layoutCapacity = `${layout.population.min}-${layout.population.max}`;
+    this.canvas.dataset.layoutCheck = VENUE_LAYOUT_REPORTS[venue].valid ? 'pass' : 'warning';
+    this.canvas.dataset.activitySpots = layout.activitySpots
+      .map((spot) => `${spot.id}:${spot.kind}:${spot.pose}`)
+      .join('|');
+  }
+
   private updateDatasets(snapshot: SceneSnapshot): void {
     const { accident, moment } = snapshot;
     this.canvas.dataset.cameraX = this.camera.x.toFixed(1);
@@ -880,11 +908,17 @@ export class DioramaRenderer {
     this.canvas.dataset.story = moment?.story ?? 'none';
     this.canvas.dataset.storyStep = String(moment?.storyStep ?? 0);
     this.canvas.dataset.regulars = snapshot.regularIds.join(',');
-    this.canvas.dataset.venue = this.venue;
+    this.canvas.dataset.venue = snapshot.venue;
     this.canvas.dataset.lighting = this.look.night > 0.5 ? 'lamplit' : this.look.daylight > 0.45 ? 'daylight' : 'soft';
     this.canvas.dataset.material = this.look.wetness > 0.12 ? 'wet' : this.look.fog > 0.15 ? 'misty' : 'dry';
     this.canvas.dataset.venueActivity = snapshot.barista.task;
-    this.canvas.dataset.occupiedTables = String(snapshot.guests.filter((guest) => guest.state === 'activity').length);
+    const layout = VENUE_LAYOUTS[snapshot.venue];
+    const occupied = snapshot.guests.filter((guest) => guest.state === 'activity' && guest.activitySpotId);
+    this.canvas.dataset.occupiedSpots = occupied.map((guest) => guest.activitySpotId).join(',') || 'none';
+    this.canvas.dataset.occupiedTables = String(occupied.filter((guest) => {
+      const kind = activitySpotById(layout, guest.activitySpotId)?.kind;
+      return kind === 'table' || kind === 'bench' || kind === 'counter-stool';
+    }).length);
     this.canvas.dataset.door = this.doorOpen > 0.03 ? 'opening' : 'closed';
     this.canvas.dataset.doorOpen = this.doorOpen.toFixed(2);
     this.canvas.dataset.bloom = this.look.bloom.toFixed(2);

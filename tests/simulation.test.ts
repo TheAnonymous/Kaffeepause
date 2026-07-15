@@ -41,36 +41,31 @@ describe('CafeSimulation', () => {
     expect(simulation.reservations.resourcesOf(guest?.id ?? '')).toEqual([]);
   });
 
-  it('nutzt die erweiterte Kapazität von bis zu acht Gästen', () => {
-    const simulation = new CafeSimulation({ seed: 11, durationScale: 0.02 });
-    simulation.start();
-    let smallest = Number.POSITIVE_INFINITY;
-    let largest = 0;
-    for (let index = 0; index < 5_000; index += 1) {
-      simulation.update(0.1);
-      if (index > 20) {
-        smallest = Math.min(smallest, simulation.guests.length + 1);
-        largest = Math.max(largest, simulation.guests.length + 1);
-      }
-    }
-    expect(smallest).toBeGreaterThanOrEqual(5);
-    expect(largest).toBeLessThanOrEqual(9);
-    expect(simulation.stats.arrivals).toBeGreaterThan(4);
-    expect(simulation.stats.departures).toBeGreaterThan(0);
-  });
+  it.each([['cafe', 4, 6], ['ramen', 5, 7], ['arcade', 4, 7]] as const)(
+    'hält die Zielbelegung in %s zwischen %i und %i Gästen',
+    (venue, minimum, maximum) => {
+      const simulation = new CafeSimulation({ venue, seed: 11, durationScale: 0.02 });
+      simulation.start();
+      for (let index = 0; index < 5_000; index += 1) simulation.update(0.1);
+      expect(simulation.guests.length).toBeGreaterThanOrEqual(minimum);
+      expect(simulation.guests.length).toBeLessThanOrEqual(maximum);
+      expect(simulation.stats.arrivals).toBeGreaterThanOrEqual(minimum);
+      expect(simulation.stats.departures).toBeGreaterThan(0);
+    },
+  );
 
   it('reserviert jeden Sitz höchstens einmal und gibt ihn beim Aufstehen frei', () => {
     const simulation = new CafeSimulation({ seed: 91, initialGuests: 1, minGuests: 0, maxGuests: 1, durationScale: 0.01 });
     simulation.start();
     const guest = simulation.guests[0];
-    const seatId = guest?.seatId;
-    expect(seatId).toBeDefined();
-    expect(simulation.reservations.ownerOf(seatId ?? '')).toBe(guest?.id);
+    const activitySpotId = guest?.activitySpotId;
+    expect(activitySpotId).toBeDefined();
+    expect(simulation.reservations.ownerOf(activitySpotId ?? '')).toBe(guest?.id);
 
     runUntil(simulation, () => guest?.state === 'walking-to-exit');
-    expect(simulation.reservations.ownerOf(seatId ?? '')).toBeUndefined();
-    expect(new Set(simulation.guests.flatMap((item) => item.seatId ? [item.seatId] : [])).size)
-      .toBe(simulation.guests.filter((item) => item.seatId).length);
+    expect(simulation.reservations.ownerOf(activitySpotId ?? '')).toBeUndefined();
+    expect(new Set(simulation.guests.flatMap((item) => item.activitySpotId ? [item.activitySpotId] : [])).size)
+      .toBe(simulation.guests.filter((item) => item.activitySpotId).length);
   });
 
   it('startet und stoppt idempotent', () => {
@@ -84,14 +79,14 @@ describe('CafeSimulation', () => {
     expect(simulation.stats.elapsed).toBe(elapsed);
   });
 
-  it('füllt den Mittagspeak bis acht Gäste mit höchstens sechs Sitzenden', () => {
+  it('begrenzt den Café-Mittagspeak auf seine sechs Aktivitätsplätze', () => {
     const simulation = new CafeSimulation({ seed: 27, initialGuests: 6, minGuests: 0, maxGuests: 8, durationScale: 0.02, accidents: false });
     simulation.setEnvironment(environment(8));
     simulation.start();
-    runUntil(simulation, () => simulation.guests.length === 8);
-    expect(simulation.guests).toHaveLength(8);
-    expect(simulation.guests.filter((guest) => guest.seatId)).toHaveLength(6);
-    expect(new Set(simulation.guests.flatMap((guest) => guest.seatId ? [guest.seatId] : [])).size).toBe(6);
+    runUntil(simulation, () => simulation.guests.length === 6);
+    expect(simulation.guests).toHaveLength(6);
+    expect(simulation.guests.filter((guest) => guest.activitySpotId)).toHaveLength(6);
+    expect(new Set(simulation.guests.flatMap((guest) => guest.activitySpotId ? [guest.activitySpotId] : [])).size).toBe(6);
   });
 
   it('senkt die Belegung natürlich ab, ohne neue Gäste zu erzeugen', () => {

@@ -26,10 +26,10 @@ function guest(id: string, overrides: Partial<Guest>): Guest {
 describe('Ortsrequisiten-Zustand', () => {
   it('ordnet tatsächlich belegte Sitze ihren sichtbaren Tischgruppen zu', () => {
     const state = calculateVenueActivityState([
-      guest('window', { seatId: 'seat-window-a' }),
-      guest('left', { seatId: 'seat-table-a2', activity: 'drinking' }),
-      guest('right', { seatId: 'seat-table-b1' }),
-      guest('walking', { state: 'walking-to-seat', seatId: 'seat-table-a1' }),
+      guest('window', { activitySpotId: 'cafe-window-a' }),
+      guest('left', { activitySpotId: 'cafe-table-a2', activity: 'drinking' }),
+      guest('right', { activitySpotId: 'cafe-table-b1' }),
+      guest('walking', { state: 'walking-to-seat', activitySpotId: 'cafe-table-a1' }),
     ]);
 
     expect(state.seated).toBe(3);

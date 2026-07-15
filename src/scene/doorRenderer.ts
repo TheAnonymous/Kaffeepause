@@ -1,5 +1,6 @@
 import type { Guest } from '../simulation/types';
 import type { VenueKind } from '../venue';
+import { VENUE_LAYOUTS } from '../simulation/layout';
 
 type Rect = (context: CanvasRenderingContext2D, color: string, x: number, y: number, width: number, height: number) => void;
 type Polygon = (context: CanvasRenderingContext2D, color: string, points: readonly [number, number][]) => void;
@@ -32,12 +33,14 @@ function clamp(value: number, min = 0, max = 1): number {
 }
 
 /** Gäste öffnen die Tür nur im schmalen Eingangsbereich bei x=24/y=188. */
-export function doorTargetForGuests(guests: readonly Guest[]): number {
+export function doorTargetForGuests(guests: readonly Guest[], venue: VenueKind = 'cafe'): number {
+  const entrance = VENUE_LAYOUTS[venue].entrance;
   let target = 0;
   for (const guest of guests) {
     const crossing = guest.state === 'entering' || guest.state === 'walking-to-exit' || guest.state === 'exiting';
-    if (!crossing || guest.position.y < 164 || guest.position.y > 208) continue;
-    const distance = Math.hypot(guest.position.x - 24, guest.position.y - 188);
+    if (!crossing) continue;
+    const distance = Math.hypot(guest.position.x - entrance.x, guest.position.y - entrance.y);
+    if (distance >= 46) continue;
     const proximity = clamp(1 - distance / 46);
     target = Math.max(target, 0.25 + proximity * 0.75);
   }
@@ -52,7 +55,7 @@ export class DoorRenderer {
   constructor(private readonly rect: Rect, private readonly polygon: Polygon, private readonly pixel: number) {}
 
   draw(frame: DoorFrame): DoorVisualState {
-    const target = doorTargetForGuests(frame.guests);
+    const target = doorTargetForGuests(frame.guests, frame.venue);
     const delta = frame.active ? clamp(frame.time - this.lastTime, 0, 0.1) : 0;
     this.lastTime = frame.time;
     const speed = target > this.opening ? 4.8 : 1.45;

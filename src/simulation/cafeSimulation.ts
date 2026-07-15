@@ -1,14 +1,14 @@
 import {
-  BARISTA_PLACES,
-  ENTRANCE,
   GUEST_RADIUS,
-  OUTSIDE,
-  QUEUE_PLACES,
-  SEATS,
-  WAIT_PLACES,
+  VENUE_LAYOUTS,
   WORLD_WIDTH,
-  pointHitsCafeCollider,
+  activitySpotById,
+  planVenueRoute,
+  pointHitsVenueCollider,
+  type ActivitySpot,
+  type ActivitySpotTag,
   type Place,
+  type VenueLayout,
 } from './layout';
 import { SeededRandom } from './random';
 import { ReservationManager } from './reservations';
@@ -166,7 +166,7 @@ interface GuestSnapshot {
   stateDuration: number;
   animation: number;
   activityRounds: number;
-  seatId?: string;
+  activitySpotId?: string;
   destinationId?: string;
   reservedResources: readonly string[];
 }
@@ -243,37 +243,10 @@ function isCoffeeTime(snapshot?: CafeEnvironmentSnapshot): boolean {
   return ['dawn', 'morning', 'midday', 'afternoon'].includes(snapshot?.dayPhase ?? 'afternoon');
 }
 
-const NAVIGATION_STEP = 12;
-const NAVIGATION_MIN_X = 12;
-const NAVIGATION_MAX_X = 264;
-const NAVIGATION_MIN_Y = 140;
-const NAVIGATION_MAX_Y = 200;
-
-function segmentIsClear(start: Point, end: Point): boolean {
-  const steps = Math.max(1, Math.ceil(distance(start, end) / 2));
-  for (let index = 1; index <= steps; index += 1) {
-    const progress = index / steps;
-    const point = {
-      x: start.x + (end.x - start.x) * progress,
-      y: start.y + (end.y - start.y) * progress,
-    };
-    if (pointHitsCafeCollider(point)) return false;
-  }
-  return true;
-}
-
 export class CafeSimulation {
   readonly reservations = new ReservationManager();
   readonly guests: Guest[] = [];
-  readonly barista: Barista = {
-    position: copyPoint(BARISTA_PLACES.machine),
-    target: copyPoint(BARISTA_PLACES.machine),
-    task: 'machine',
-    taskTime: 0,
-    taskDuration: 9,
-    animation: 0,
-    facing: 1,
-  };
+  readonly barista: Barista;
 
   readonly stats: SimulationStats = {
     arrivals: 0,
@@ -286,9 +259,12 @@ export class CafeSimulation {
   };
 
   private readonly random: SeededRandom;
-  private readonly initialGuests: number;
-  private readonly minGuests: number;
-  private readonly maxGuests: number;
+  private initialGuests: number;
+  private minGuests: number;
+  private maxGuests: number;
+  private readonly configuredInitialGuests?: number;
+  private readonly configuredMinGuests?: number;
+  private readonly configuredMaxGuests?: number;
   private readonly durationScale: number;
   private readonly accidentRandom: SeededRandom;
   private readonly accidentEnabled: boolean;
@@ -337,15 +313,30 @@ export class CafeSimulation {
   };
   private environment?: CafeEnvironmentSnapshot;
   private venue: VenueKind;
+  private layout: VenueLayout;
 
   constructor(options: CafeSimulationOptions = {}) {
     this.venue = options.venue ?? 'cafe';
+    this.layout = VENUE_LAYOUTS[this.venue];
+    this.configuredInitialGuests = options.initialGuests;
+    this.configuredMinGuests = options.minGuests;
+    this.configuredMaxGuests = options.maxGuests;
     this.random = new SeededRandom(options.seed);
-    this.minGuests = Math.max(0, Math.min(SEATS.length, options.minGuests ?? 4));
-    this.maxGuests = Math.max(this.minGuests, Math.min(8, options.maxGuests ?? 8));
-    this.initialGuests = Math.max(0, Math.min(this.maxGuests, options.initialGuests ?? 4));
+    this.minGuests = 0;
+    this.maxGuests = 0;
+    this.initialGuests = 0;
+    this.applyVenueLimits();
     this.durationScale = Math.max(0.001, options.durationScale ?? 1);
     this.desiredGuestCount = this.random.integer(this.minGuests, this.maxGuests);
+    this.barista = {
+      position: copyPoint(this.layout.staffPlaces.machine),
+      target: copyPoint(this.layout.staffPlaces.machine),
+      task: 'machine',
+      taskTime: 0,
+      taskDuration: 9,
+      animation: 0,
+      facing: 1,
+    };
 
     const accidentOptions = options.accidents === false ? { enabled: false } : (options.accidents ?? {});
     this.accidentEnabled = accidentOptions.enabled !== false;
@@ -375,8 +366,8 @@ export class CafeSimulation {
     if (this.started) return;
     this.started = true;
     const initialCount = this.environment
-      ? Math.min(this.initialGuests, this.desiredGuestCount, SEATS.length)
-      : Math.min(this.initialGuests, SEATS.length);
+      ? Math.min(this.initialGuests, this.desiredGuestCount, this.layout.activitySpots.length)
+      : Math.min(this.initialGuests, this.layout.activitySpots.length);
     for (let index = 0; index < initialCount; index += 1) this.addInitialGuest();
     if (this.accidentEnabled && this.accidentCountdown === undefined) this.scheduleNextAccident();
     if (this.momentEnabled && this.momentCountdown === undefined) this.scheduleNextMoment();
@@ -409,6 +400,7 @@ export class CafeSimulation {
 
   getSceneSnapshot(): SceneSnapshot {
     return Object.freeze({
+      venue: this.venue,
       guests: Object.freeze(this.guests.map(copyGuest)),
       barista: copyBarista(this.barista),
       accident: this.currentAccident ? copyAccident(this.currentAccident) : undefined,
@@ -433,7 +425,13 @@ export class CafeSimulation {
   }
 
   setVenue(venue: VenueKind): void {
+    if (this.started || venue === this.venue) return;
     this.venue = venue;
+    this.layout = VENUE_LAYOUTS[venue];
+    this.applyVenueLimits();
+    this.desiredGuestCount = this.random.integer(this.minGuests, this.maxGuests);
+    this.barista.position = copyPoint(this.layout.staffPlaces.machine);
+    this.barista.target = copyPoint(this.layout.staffPlaces.machine);
   }
 
   setEnvironment(snapshot: CafeEnvironmentSnapshot): void {
@@ -444,11 +442,11 @@ export class CafeSimulation {
 
   spawnGuest(): Guest | undefined {
     if (this.guests.length >= this.maxGuests) return undefined;
-    const queuePlace = this.findAvailable(QUEUE_PLACES);
+    const queuePlace = this.findAvailable(this.layout.queuePlaces);
     if (!queuePlace) return undefined;
 
-    const guest = this.makeGuest('entering', OUTSIDE);
-    this.setGuestTarget(guest, ENTRANCE);
+    const guest = this.makeGuest('entering', this.layout.outside);
+    this.setGuestTarget(guest, this.layout.entrance);
     guest.destinationId = queuePlace.id;
     this.reservations.reserve(queuePlace.id, guest.id);
     this.guests.push(guest);
@@ -498,15 +496,18 @@ export class CafeSimulation {
   }
 
   private addInitialGuest(): void {
-    const seat = this.findAvailable(SEATS);
-    if (!seat) return;
     const homeRegulars = REGULARS_BY_VENUE[this.venue];
     const regularsPresent = this.guests.filter((guest) => guest.regularId !== undefined).length;
-    const guest = this.makeGuest('activity', seat, regularsPresent < homeRegulars.length);
-    guest.seatId = seat.id;
+    const guest = this.makeGuest('activity', this.layout.entrance, regularsPresent < homeRegulars.length);
+    const activitySpot = this.findAvailableActivitySpot(guest);
+    if (!activitySpot) return;
+    guest.position = copyPoint(activitySpot);
+    guest.target = copyPoint(activitySpot);
+    guest.activitySpotId = activitySpot.id;
     guest.activity = this.pickActivityFor(guest);
+    guest.facing = activitySpot.facing;
     guest.stateDuration = this.duration(this.random.range(guest.regularId ? 42 : 19, guest.regularId ? 58 : 34));
-    this.reservations.reserve(seat.id, guest.id);
+    this.reservations.reserve(activitySpot.id, guest.id);
     this.guests.push(guest);
     this.applyAccessory(guest);
     this.stats.arrivals += 1;
@@ -553,9 +554,30 @@ export class CafeSimulation {
   }
 
   private pickActivityFor(guest: Guest, excluding?: GuestActivity): GuestActivity {
+    const spot = activitySpotById(this.layout, guest.activitySpotId);
+    const allowed = spot?.activities ?? ACTIVITIES;
     const regular = REGULARS.find((profile) => profile.id === guest.regularId);
-    if (regular && regular.favoriteActivity !== excluding) return regular.favoriteActivity;
-    return this.random.pick(ACTIVITIES.filter((activity) => activity !== excluding));
+    if (regular && allowed.includes(regular.favoriteActivity) && regular.favoriteActivity !== excluding) return regular.favoriteActivity;
+    const choices = allowed.filter((activity) => activity !== excluding);
+    return this.random.pick(choices.length > 0 ? choices : allowed);
+  }
+
+  private findAvailableActivitySpot(guest: Guest): ActivitySpot | undefined {
+    const preferredGroups: Partial<Record<RegularId, string>> = {
+      mara: 'cafe-window', noor: 'cafe-table-a', toni: 'cafe-table-a', linn: 'cafe-window',
+      bo: 'cafe-table-b', cleo: 'cafe-table-b', sora: 'arcade-pair-1', kai: 'arcade-pair-1',
+      ari: 'arcade-pair-2', mika: 'arcade-pair-2',
+    };
+    const preferredTags: Partial<Record<RegularId, ActivitySpot['tags'][number]>> = {
+      jun: 'counter-adjacent', emi: 'counter-adjacent',
+    };
+    const open = this.layout.activitySpots.filter((spot) => !this.reservations.ownerOf(spot.id));
+    const group = guest.regularId ? preferredGroups[guest.regularId] : undefined;
+    const grouped = group ? open.filter((spot) => spot.groupId === group) : [];
+    if (grouped.length > 0) return this.random.pick(grouped);
+    const tag = guest.regularId ? preferredTags[guest.regularId] : undefined;
+    const tagged = tag ? open.filter((spot) => spot.tags.includes(tag)) : [];
+    return this.random.pick(tagged.length > 0 ? tagged : open);
   }
 
   private updatePopulation(delta: number): void {
@@ -623,22 +645,23 @@ export class CafeSimulation {
     const late = isLateDay(this.environment);
     const coffeeTime = isCoffeeTime(this.environment);
     const eligible = this.momentKinds.filter((kind) => {
-      if (kind === 'shared-cake' || kind === 'card-game') return seated.length >= 2;
-      if (kind === 'window-gaze') return rainy && seated.length >= 1;
+      const spatiallyEligible = this.eligibleGuestsForMoment(kind, seated);
+      if (kind === 'shared-cake' || kind === 'card-game') return spatiallyEligible.length >= 2;
+      if (kind === 'window-gaze') return rainy && spatiallyEligible.length >= 1;
       if (kind === 'first-date-toast') return this.findDatePair(seated).length === 2;
       if (kind === 'knit-gift') return this.findKnittingPair(seated).length === 2;
-      if (kind === 'coffee-tasting') return this.venue === 'cafe' && coffeeTime && seated.length >= 1;
-      if (kind === 'ramen-slurp') return this.venue === 'ramen' && (late || rainy) && seated.length >= 1;
-      if (kind === 'arcade-duel') return this.venue === 'arcade' && seated.length >= 2;
-      if (kind === 'arcade-high-score') return this.venue === 'arcade' && (late || seated.some((guest) => guest.activity === 'phone')) && seated.length >= 1;
+      if (kind === 'coffee-tasting') return this.venue === 'cafe' && coffeeTime && spatiallyEligible.length >= 1;
+      if (kind === 'ramen-slurp') return this.venue === 'ramen' && (late || rainy) && spatiallyEligible.length >= 1;
+      if (kind === 'arcade-duel') return this.venue === 'arcade' && spatiallyEligible.length >= 2;
+      if (kind === 'arcade-high-score') return this.venue === 'arcade' && (late || spatiallyEligible.some((guest) => guest.activity === 'phone')) && spatiallyEligible.length >= 1;
       if (kind === 'umbrella-handoff') return rainy && seated.length >= 2;
-      if (kind === 'foam-moustache') return this.venue === 'cafe' && seated.length >= 1;
-      if (kind === 'sugar-packet-domino') return this.venue === 'cafe' && seated.length >= 2;
-      if (kind === 'steam-glasses') return this.venue === 'ramen' && seated.length >= 1;
-      if (kind === 'chopstick-drop') return this.venue === 'ramen' && seated.length >= 1;
-      if (kind === 'ticket-stream') return this.venue === 'arcade' && seated.length >= 1;
-      if (kind === 'button-mash-sync') return this.venue === 'arcade' && seated.length >= 2;
-      return seated.length >= 1;
+      if (kind === 'foam-moustache') return this.venue === 'cafe' && spatiallyEligible.length >= 1;
+      if (kind === 'sugar-packet-domino') return this.venue === 'cafe' && spatiallyEligible.length >= 2;
+      if (kind === 'steam-glasses') return this.venue === 'ramen' && spatiallyEligible.length >= 1;
+      if (kind === 'chopstick-drop') return this.venue === 'ramen' && spatiallyEligible.length >= 1;
+      if (kind === 'ticket-stream') return this.venue === 'arcade' && spatiallyEligible.length >= 1;
+      if (kind === 'button-mash-sync') return this.venue === 'arcade' && spatiallyEligible.length >= 2;
+      return spatiallyEligible.length >= 1;
     });
     if (eligible.length === 0) return false;
     const fresh = eligible.filter((kind) => kind !== this.lastMomentKind);
@@ -771,7 +794,33 @@ export class CafeSimulation {
     return 2;
   }
 
+  private momentTag(kind: CafeMomentKind): ActivitySpotTag | undefined {
+    if (kind === 'window-gaze' || kind === 'sketch-reveal') return 'window';
+    if (kind === 'shared-cake' || kind === 'card-game' || kind === 'first-date-toast'
+      || kind === 'coffee-tasting' || kind === 'foam-moustache' || kind === 'sugar-packet-domino') return 'table-pair';
+    if (kind === 'ramen-slurp' || kind === 'steam-glasses' || kind === 'chopstick-drop') return 'counter-adjacent';
+    if (kind === 'arcade-duel' || kind === 'arcade-high-score' || kind === 'ticket-stream'
+      || kind === 'button-mash-sync') return 'cabinet-pair';
+    return undefined;
+  }
+
+  private eligibleGuestsForMoment(kind: CafeMomentKind, guests: readonly Guest[]): Guest[] {
+    const tag = this.momentTag(kind);
+    return tag ? guests.filter((guest) => this.guestHasTag(guest, tag)) : [...guests];
+  }
+
+  private guestHasTag(guest: Guest, tag: ActivitySpotTag): boolean {
+    return activitySpotById(this.layout, guest.activitySpotId)?.tags.includes(tag) ?? false;
+  }
+
+  private sameActivityGroup(first: Guest, second: Guest): boolean {
+    const firstGroup = activitySpotById(this.layout, first.activitySpotId)?.groupId;
+    const secondGroup = activitySpotById(this.layout, second.activitySpotId)?.groupId;
+    return Boolean(firstGroup && firstGroup === secondGroup);
+  }
+
   private pickMomentParticipants(kind: CafeMomentKind, seated: readonly Guest[]): Guest[] {
+    const eligible = this.eligibleGuestsForMoment(kind, seated);
     if (kind === 'shared-cake' || kind === 'card-game' || kind === 'arcade-duel' || kind === 'umbrella-handoff'
       || kind === 'sugar-packet-domino' || kind === 'button-mash-sync') {
       if (kind === 'arcade-duel') {
@@ -779,11 +828,11 @@ export class CafeSimulation {
         if (rivals.length === 2) return rivals;
       }
       const pairs: Array<readonly [Guest, Guest]> = [];
-      for (let left = 0; left < seated.length; left += 1) {
-        for (let right = left + 1; right < seated.length; right += 1) {
-          const first = seated[left];
-          const second = seated[right];
-          if (first && second) pairs.push([first, second]);
+      for (let left = 0; left < eligible.length; left += 1) {
+        for (let right = left + 1; right < eligible.length; right += 1) {
+          const first = eligible[left];
+          const second = eligible[right];
+          if (first && second && (kind === 'umbrella-handoff' || this.sameActivityGroup(first, second))) pairs.push([first, second]);
         }
       }
       pairs.sort(([leftA, rightA], [leftB, rightB]) => distance(leftA.position, rightA.position) - distance(leftB.position, rightB.position));
@@ -791,60 +840,60 @@ export class CafeSimulation {
       return nearbyPairs.length > 0 ? [...this.momentRandom.pick(nearbyPairs)] : [];
     }
     if (kind === 'window-gaze') {
-      const byWindow = [...seated].sort((left, right) => left.position.y - right.position.y || left.position.x - right.position.x);
+      const byWindow = [...eligible].sort((left, right) => left.position.y - right.position.y || left.position.x - right.position.x);
       return byWindow[0] ? [byWindow[0]] : [];
     }
     if (kind === 'first-date-toast') return this.findDatePair(seated);
     if (kind === 'knit-gift') return this.findKnittingPair(seated);
     if (kind === 'ramen-slurp') {
-      const kai = seated.find((guest) => guest.regularId === 'kai');
-      return kai ? [kai] : [seated.find((guest) => guest.activity === 'drinking') ?? this.momentRandom.pick(seated)].filter(Boolean) as Guest[];
+      const jun = eligible.find((guest) => guest.regularId === 'jun');
+      return jun ? [jun] : [eligible.find((guest) => guest.activity === 'drinking') ?? this.momentRandom.pick(eligible)].filter(Boolean) as Guest[];
     }
     if (kind === 'arcade-high-score') {
-      const sora = seated.find((guest) => guest.regularId === 'sora');
-      return sora ? [sora] : [seated.find((guest) => guest.activity === 'phone') ?? this.momentRandom.pick(seated)].filter(Boolean) as Guest[];
+      const sora = eligible.find((guest) => guest.regularId === 'sora');
+      return sora ? [sora] : [eligible.find((guest) => guest.activity === 'phone') ?? this.momentRandom.pick(eligible)].filter(Boolean) as Guest[];
     }
     if (kind === 'coffee-tasting') {
-      const coffeeFan = seated.find((guest) => guest.activity === 'drinking');
-      return coffeeFan ? [coffeeFan] : [this.momentRandom.pick(seated)].filter(Boolean) as Guest[];
+      const coffeeFan = eligible.find((guest) => guest.activity === 'drinking');
+      return coffeeFan ? [coffeeFan] : [this.momentRandom.pick(eligible)].filter(Boolean) as Guest[];
     }
     if (kind === 'foam-moustache') {
-      const cleo = seated.find((guest) => guest.regularId === 'cleo');
-      return [cleo ?? seated.find((guest) => guest.activity === 'drinking') ?? this.momentRandom.pick(seated)].filter(Boolean) as Guest[];
+      const cleo = eligible.find((guest) => guest.regularId === 'cleo');
+      return [cleo ?? eligible.find((guest) => guest.activity === 'drinking') ?? this.momentRandom.pick(eligible)].filter(Boolean) as Guest[];
     }
     if (kind === 'steam-glasses') {
-      const glasses = seated.find((guest) => guest.appearance.detail === 'glasses');
-      return [glasses ?? this.momentRandom.pick(seated)].filter(Boolean) as Guest[];
+      const glasses = eligible.find((guest) => guest.appearance.detail === 'glasses');
+      return [glasses ?? this.momentRandom.pick(eligible)].filter(Boolean) as Guest[];
     }
     if (kind === 'chopstick-drop' || kind === 'ticket-stream') {
-      return [this.momentRandom.pick(seated)].filter(Boolean) as Guest[];
+      return [this.momentRandom.pick(eligible)].filter(Boolean) as Guest[];
     }
-    const artist = seated.find((guest) => guest.activity === 'sketching') ?? this.momentRandom.pick(seated);
+    const artist = eligible.find((guest) => guest.activity === 'sketching') ?? this.momentRandom.pick(eligible);
     return artist ? [artist] : [];
   }
 
   private findDatePair(seated: readonly Guest[]): Guest[] {
     const noor = seated.find((guest) => guest.regularId === 'noor');
     const toni = seated.find((guest) => guest.regularId === 'toni');
-    return noor && toni ? [noor, toni] : [];
+    return noor && toni && this.sameActivityGroup(noor, toni) ? [noor, toni] : [];
   }
 
   private findKnittingPair(seated: readonly Guest[]): Guest[] {
     const linn = seated.find((guest) => guest.regularId === 'linn');
-    const neighbour = seated.find((guest) => guest.id !== linn?.id);
+    const neighbour = seated.find((guest) => guest.id !== linn?.id && linn && this.sameActivityGroup(linn, guest));
     return linn && neighbour ? [linn, neighbour] : [];
   }
 
   private findArcadeRivals(seated: readonly Guest[]): Guest[] {
     const sora = seated.find((guest) => guest.regularId === 'sora');
     const kai = seated.find((guest) => guest.regularId === 'kai');
-    return sora && kai ? [sora, kai] : [];
+    return sora && kai && this.sameActivityGroup(sora, kai) ? [sora, kai] : [];
   }
 
   private findRegularPair(seated: readonly Guest[], firstId: RegularId, secondId: RegularId): Guest[] {
     const first = seated.find((guest) => guest.regularId === firstId);
     const second = seated.find((guest) => guest.regularId === secondId);
-    return first && second ? [first, second] : [];
+    return first && second && this.sameActivityGroup(first, second) ? [first, second] : [];
   }
 
   private restoreMomentParticipants(): void {
@@ -945,7 +994,7 @@ export class CafeSimulation {
       stateDuration: guest.stateDuration,
       animation: guest.animation,
       activityRounds: guest.activityRounds,
-      seatId: guest.seatId,
+      activitySpotId: guest.activitySpotId,
       destinationId: guest.destinationId,
       reservedResources: this.reservations.resourcesOf(guest.id),
     };
@@ -992,7 +1041,7 @@ export class CafeSimulation {
     guest.stateDuration = snapshot.stateDuration;
     guest.animation = snapshot.animation;
     guest.activityRounds = snapshot.activityRounds;
-    guest.seatId = snapshot.seatId;
+    guest.activitySpotId = snapshot.activitySpotId;
     guest.destinationId = snapshot.destinationId;
 
     this.reservations.releaseAll(guest.id);
@@ -1023,7 +1072,7 @@ export class CafeSimulation {
         break;
       case 'queueing':
         this.promoteQueue(guest);
-        if (this.moveToward(guest, delta) && guest.destinationId === 'queue-0') {
+        if (this.moveToward(guest, delta) && guest.destinationId === this.layout.queuePlaces[0]?.id) {
           guest.state = 'ordering';
           guest.stateTime = 0;
           guest.stateDuration = this.duration(this.random.range(2.7, 4.6));
@@ -1034,10 +1083,10 @@ export class CafeSimulation {
         if (guest.stateTime >= guest.stateDuration) this.beginWaiting(guest);
         break;
       case 'waiting':
-        if (this.moveToward(guest, delta) && guest.stateTime >= guest.stateDuration && guest.seatId) {
+        if (this.moveToward(guest, delta) && guest.stateTime >= guest.stateDuration && guest.activitySpotId) {
           if (guest.destinationId) this.reservations.release(guest.destinationId, guest.id);
-          const seat = this.placeById(guest.seatId);
-          if (seat) this.transition(guest, 'walking-to-seat', seat);
+          const activitySpot = this.placeById(guest.activitySpotId);
+          if (activitySpot) this.transition(guest, 'walking-to-seat', activitySpot);
         }
         break;
       case 'walking-to-seat':
@@ -1046,7 +1095,7 @@ export class CafeSimulation {
           guest.stateTime = 0;
           guest.stateDuration = this.duration(this.random.range(guest.regularId ? 38 : 20, guest.regularId ? 56 : 38));
           guest.activity = this.pickActivityFor(guest);
-          guest.facing = guest.position.x < 150 ? 1 : -1;
+          guest.facing = activitySpotById(this.layout, guest.activitySpotId)?.facing ?? guest.facing;
         }
         break;
       case 'activity':
@@ -1055,7 +1104,7 @@ export class CafeSimulation {
       case 'walking-to-exit':
         if (this.moveToward(guest, delta)) {
           this.reservations.release('exit-lane', guest.id);
-          this.transition(guest, 'exiting', OUTSIDE);
+          this.transition(guest, 'exiting', this.layout.outside);
         }
         break;
       case 'exiting':
@@ -1065,17 +1114,17 @@ export class CafeSimulation {
   }
 
   private beginWaiting(guest: Guest): void {
-    const seat = this.findAvailable(SEATS);
-    const waitingPlace = this.findAvailable(WAIT_PLACES);
-    if (!seat || !waitingPlace) {
+    const activitySpot = this.findAvailableActivitySpot(guest);
+    const waitingPlace = this.findAvailable(this.layout.waitPlaces);
+    if (!activitySpot || !waitingPlace) {
       guest.stateDuration += this.duration(1.2);
       return;
     }
 
-    this.reservations.reserve(seat.id, guest.id);
+    this.reservations.reserve(activitySpot.id, guest.id);
     this.reservations.reserve(waitingPlace.id, guest.id);
     if (guest.destinationId) this.reservations.release(guest.destinationId, guest.id);
-    guest.seatId = seat.id;
+    guest.activitySpotId = activitySpot.id;
     guest.state = 'waiting';
     guest.stateTime = 0;
     guest.stateDuration = this.duration(this.random.range(4.5, 7.5));
@@ -1101,17 +1150,17 @@ export class CafeSimulation {
       guest.stateDuration = this.duration(2);
       return;
     }
-    if (guest.seatId) this.reservations.release(guest.seatId, guest.id);
-    guest.seatId = undefined;
-    this.transition(guest, 'walking-to-exit', ENTRANCE);
+    if (guest.activitySpotId) this.reservations.release(guest.activitySpotId, guest.id);
+    guest.activitySpotId = undefined;
+    this.transition(guest, 'walking-to-exit', this.layout.entrance);
     guest.destinationId = 'exit-lane';
   }
 
   private promoteQueue(guest: Guest): void {
-    if (guest.destinationId === 'queue-0' || distance(guest.position, guest.target) > 0.5) return;
-    const currentIndex = QUEUE_PLACES.findIndex((place) => place.id === guest.destinationId);
+    if (guest.destinationId === this.layout.queuePlaces[0]?.id || distance(guest.position, guest.target) > 0.5) return;
+    const currentIndex = this.layout.queuePlaces.findIndex((place) => place.id === guest.destinationId);
     if (currentIndex <= 0) return;
-    const closer = QUEUE_PLACES[currentIndex - 1];
+    const closer = this.layout.queuePlaces[currentIndex - 1];
     if (!closer || !this.reservations.reserve(closer.id, guest.id)) return;
     if (guest.destinationId) this.reservations.release(guest.destinationId, guest.id);
     guest.destinationId = closer.id;
@@ -1137,7 +1186,7 @@ export class CafeSimulation {
       : this.desiredGuestCount <= 2
         ? this.random.pick(['wiping', 'restocking', 'polishing', 'polishing', 'tasting'] as const)
         : this.random.pick(['machine', 'grinding', 'wiping', 'restocking'] as const);
-    barista.target = copyPoint(BARISTA_PLACES[barista.task]);
+    barista.target = copyPoint(this.layout.staffPlaces[barista.task]);
     barista.taskDuration = this.random.range(6, 11);
   }
 
@@ -1147,73 +1196,14 @@ export class CafeSimulation {
   }
 
   private planRoute(start: Point, target: Point): Point[] {
-    if (segmentIsClear(start, target)) return [];
-
-    const columns = Math.floor((NAVIGATION_MAX_X - NAVIGATION_MIN_X) / NAVIGATION_STEP) + 1;
-    const rows = Math.floor((NAVIGATION_MAX_Y - NAVIGATION_MIN_Y) / NAVIGATION_STEP) + 1;
-    const pointFor = (column: number, row: number): Point => ({
-      x: NAVIGATION_MIN_X + column * NAVIGATION_STEP,
-      y: NAVIGATION_MIN_Y + row * NAVIGATION_STEP,
-    });
-    const keyFor = (column: number, row: number): string => `${column}:${row}`;
-    const parseKey = (key: string): readonly [number, number] => key.split(':').map(Number) as [number, number];
-    const nearestVisibleNode = (origin: Point): string | undefined => {
-      const candidates: Array<{ key: string; point: Point; distance: number }> = [];
-      for (let row = 0; row < rows; row += 1) {
-        for (let column = 0; column < columns; column += 1) {
-          const point = pointFor(column, row);
-          if (pointHitsCafeCollider(point) || !segmentIsClear(origin, point)) continue;
-          candidates.push({ key: keyFor(column, row), point, distance: distance(origin, point) });
-        }
-      }
-      candidates.sort((left, right) => left.distance - right.distance);
-      return candidates[0]?.key;
-    };
-
-    const startKey = nearestVisibleNode(start);
-    const endKey = nearestVisibleNode(target);
-    if (!startKey || !endKey) return [];
-
-    const queue = [startKey];
-    const visited = new Set(queue);
-    const previous = new Map<string, string>();
-    while (queue.length > 0) {
-      const current = queue.shift();
-      if (!current || current === endKey) break;
-      const [column, row] = parseKey(current);
-      for (const [offsetX, offsetY] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-        const nextColumn = column + offsetX;
-        const nextRow = row + offsetY;
-        if (nextColumn < 0 || nextColumn >= columns || nextRow < 0 || nextRow >= rows) continue;
-        const nextKey = keyFor(nextColumn, nextRow);
-        const nextPoint = pointFor(nextColumn, nextRow);
-        if (visited.has(nextKey) || pointHitsCafeCollider(nextPoint) || !segmentIsClear(pointFor(column, row), nextPoint)) continue;
-        visited.add(nextKey);
-        previous.set(nextKey, current);
-        queue.push(nextKey);
-      }
-    }
-    if (!visited.has(endKey)) return [];
-
-    const pathKeys = [endKey];
-    while (pathKeys[0] !== startKey) {
-      const predecessor = previous.get(pathKeys[0] ?? '');
-      if (!predecessor) return [];
-      pathKeys.unshift(predecessor);
-    }
-    return pathKeys
-      .map((key) => {
-        const [column, row] = parseKey(key);
-        return pointFor(column, row);
-      })
-      .filter((point) => distance(point, start) > 0.2 && distance(point, target) > 0.2);
+    return planVenueRoute(this.layout, start, target);
   }
 
   private canOccupy(guest: Guest, candidate: Point): boolean {
-    if (pointHitsCafeCollider(candidate)) return false;
+    if (pointHitsVenueCollider(this.layout, candidate)) return false;
     // Draußen vor der Tür dürfen sich Gäste kurz überblenden; sonst könnte eine
     // eintretende Person den Ausgang dauerhaft versperren.
-    if (guest.state === 'exiting' || candidate.x <= 0) return true;
+    if (guest.state === 'exiting' || this.isOutside(candidate)) return true;
     return !this.guests.some((other) => (
       other !== guest
       && other.state !== 'exiting'
@@ -1248,7 +1238,7 @@ export class CafeSimulation {
       y: guest.position.y + (dy / remaining) * step,
     };
     if (!this.canOccupy(guest, candidate)) {
-      if (pointHitsCafeCollider(candidate)) {
+      if (pointHitsVenueCollider(this.layout, candidate)) {
         const reroute = this.planRoute(guest.position, guest.target);
         if (reroute.length > 0) {
           guest.waypoints = reroute;
@@ -1279,13 +1269,27 @@ export class CafeSimulation {
     return true;
   }
 
-  private findAvailable(places: readonly Place[]): Place | undefined {
+  private findAvailable<T extends Place>(places: readonly T[]): T | undefined {
     const open = places.filter((place) => !this.reservations.ownerOf(place.id));
     return open.length > 0 ? this.random.pick(open) : undefined;
   }
 
   private placeById(placeId?: string): Place | undefined {
-    return [...QUEUE_PLACES, ...WAIT_PLACES, ...SEATS].find((place) => place.id === placeId);
+    return [...this.layout.queuePlaces, ...this.layout.waitPlaces, ...this.layout.activitySpots]
+      .find((place) => place.id === placeId);
+  }
+
+  private isOutside(point: Point): boolean {
+    if (this.layout.entryFlow === 'left') return point.x <= 0;
+    if (this.layout.entryFlow === 'right') return point.x >= WORLD_WIDTH;
+    return point.y <= 126;
+  }
+
+  private applyVenueLimits(): void {
+    const capacity = this.layout.activitySpots.length;
+    this.minGuests = Math.max(0, Math.min(capacity, this.configuredMinGuests ?? this.layout.population.min));
+    this.maxGuests = Math.max(this.minGuests, Math.min(capacity, this.configuredMaxGuests ?? this.layout.population.max));
+    this.initialGuests = Math.max(0, Math.min(this.maxGuests, this.configuredInitialGuests ?? this.layout.population.min));
   }
 
   private duration(seconds: number): number {

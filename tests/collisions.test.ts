@@ -1,39 +1,39 @@
 import { describe, expect, it } from 'vitest';
 import { CafeSimulation } from '../src/simulation/cafeSimulation';
-import { CAFE_COLLIDERS, GUEST_RADIUS, pointHitsCafeCollider } from '../src/simulation/layout';
+import {
+  GUEST_RADIUS,
+  VENUE_LAYOUTS,
+  pointHitsVenueCollider,
+  routeIsClear,
+} from '../src/simulation/layout';
+import type { VenueKind } from '../src/venue';
 
-describe('Café-Kollisionen', () => {
-  it('markiert große Möbel als feste Hindernisse und lässt Zugänge frei', () => {
-    expect(CAFE_COLLIDERS.map((collider) => collider.id)).toEqual(expect.arrayContaining([
-      'left-wall', 'door', 'window-bench', 'window-table-left', 'window-table-right', 'counter',
-    ]));
-    expect(pointHitsCafeCollider({ x: 320, y: 170 })).toBe(true);
-    expect(pointHitsCafeCollider({ x: 270, y: 173 })).toBe(false);
-    expect(pointHitsCafeCollider({ x: 320, y: 120 })).toBe(false);
-    expect(pointHitsCafeCollider({ x: 24, y: 90 })).toBe(true);
-    expect(pointHitsCafeCollider({ x: 24, y: 188 })).toBe(false);
+describe('Venue-Kollisionen und Laufwege', () => {
+  it.each(['cafe', 'ramen', 'arcade'] as const)('%s hält Eingang, Laufziele und Aktivitätsplätze frei', (venue) => {
+    const layout = VENUE_LAYOUTS[venue];
+    expect(pointHitsVenueCollider(layout, layout.entrance)).toBe(false);
+    for (const place of [...layout.queuePlaces, ...layout.waitPlaces, ...layout.activitySpots]) {
+      expect(pointHitsVenueCollider(layout, place, GUEST_RADIUS)).toBe(false);
+      expect(routeIsClear(layout, layout.entrance, place)).toBe(true);
+    }
   });
 
-  it('führt einen Gast um Möbel herum und bis vor die Tür', () => {
+  it.each(['cafe', 'ramen', 'arcade'] as const)('%s führt einen Gast vollständig hinein und kollisionsfrei wieder hinaus', (venue: VenueKind) => {
     const simulation = new CafeSimulation({
-      seed: 42,
-      initialGuests: 0,
-      minGuests: 0,
-      maxGuests: 1,
-      durationScale: 0.01,
-      accidents: false,
-      moments: false,
-      stories: false,
+      venue, seed: 42, initialGuests: 0, minGuests: 0, maxGuests: 1, durationScale: 0.01,
+      accidents: false, moments: false, stories: false,
     });
     simulation.start();
-    simulation.spawnGuest();
-
-    for (let index = 0; index < 10_000 && simulation.stats.departures === 0; index += 1) {
+    const guest = simulation.spawnGuest();
+    const states = new Set<string>();
+    for (let index = 0; index < 14_000 && simulation.stats.departures === 0; index += 1) {
+      if (guest) states.add(guest.state);
       simulation.update(0.1);
-      for (const guest of simulation.guests) {
-        expect(pointHitsCafeCollider(guest.position, GUEST_RADIUS)).toBe(false);
+      for (const current of simulation.guests) {
+        expect(pointHitsVenueCollider(VENUE_LAYOUTS[venue], current.position, GUEST_RADIUS)).toBe(false);
       }
     }
+    expect(states).toContain('activity');
     expect(simulation.stats.departures).toBe(1);
   });
 });

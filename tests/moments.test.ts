@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CafeSimulation } from '../src/simulation/cafeSimulation';
 import type { CafeMomentKind } from '../src/simulation/types';
+import { VENUE_LAYOUTS, activitySpotById } from '../src/simulation/layout';
 
 function updateUntil(simulation: CafeSimulation, predicate: () => boolean, limit = 2_000): void {
   for (let index = 0; index < limit && !predicate(); index += 1) simulation.update(0.1);
@@ -119,5 +120,14 @@ describe('Café-Momente', () => {
       const participants = simulation.activeMoment?.participantIds ?? [];
       expect(participants.every((id) => simulation.guests.find((guest) => guest.id === id)?.state === 'activity')).toBe(true);
     }
+    const cafeGuest = cafe.guests.find((guest) => cafe.activeMoment?.participantIds.includes(guest.id));
+    const ramenGuest = ramen.guests.find((guest) => ramen.activeMoment?.participantIds.includes(guest.id));
+    const arcadeGuests = arcade.guests.filter((guest) => arcade.activeMoment?.participantIds.includes(guest.id));
+    expect(activitySpotById(VENUE_LAYOUTS.cafe, cafeGuest?.activitySpotId)?.tags).toContain('table-pair');
+    expect(activitySpotById(VENUE_LAYOUTS.ramen, ramenGuest?.activitySpotId)?.tags).toContain('counter-adjacent');
+    expect(arcadeGuests.map((guest) => activitySpotById(VENUE_LAYOUTS.arcade, guest.activitySpotId)?.tags)).toEqual([
+      expect.arrayContaining(['cabinet-pair']), expect.arrayContaining(['cabinet-pair']),
+    ]);
+    expect(new Set(arcadeGuests.map((guest) => activitySpotById(VENUE_LAYOUTS.arcade, guest.activitySpotId)?.groupId)).size).toBe(1);
   });
 });

@@ -30,15 +30,24 @@ async function reactionTarget(page: Page, preferredId?: string): Promise<{ id: s
   return target;
 }
 
-async function expectFocusFraming(page: Page, source: 'conversation' | 'story' | 'accident' | 'moment' | 'reaction'): Promise<void> {
+async function expectFocusFraming(
+  page: Page,
+  source: 'conversation' | 'story' | 'accident' | 'moment' | 'reaction',
+  expectOccluder = false,
+): Promise<void> {
   const canvas = page.locator('#cafe');
   await expect(canvas).toHaveAttribute('data-camera-focus-source', source, { timeout: 10_000 });
   await expect(canvas).toHaveAttribute('data-camera-focus-target', /^\d+\.\d,-?\d+\.\d,\d+\.\d{2}$/);
   await expect(canvas).toHaveAttribute('data-focus-participants', /^(?!none$).+/);
   await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-fov'))).toBeLessThanOrEqual(24.01);
   await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-fov'))).toBeGreaterThanOrEqual(21.99);
-  await expect(canvas).toHaveAttribute('data-focus-occluders', /^(?!none$).+/);
-  await expect.poll(async () => Number(await canvas.getAttribute('data-focus-occluder-opacity'))).toBeLessThanOrEqual(0.49);
+  if (expectOccluder) {
+    await expect(canvas).toHaveAttribute('data-focus-occluders', /^(?!none$).+/);
+    await expect.poll(async () => Number(await canvas.getAttribute('data-focus-occluder-opacity'))).toBeLessThanOrEqual(0.49);
+  } else {
+    await expect(canvas).toHaveAttribute('data-focus-occluders', /^(none|.+)$/);
+    await expect.poll(async () => Number(await canvas.getAttribute('data-focus-occluder-opacity'))).toBeGreaterThanOrEqual(0.48);
+  }
   await expect(canvas).toHaveAttribute('data-visible-emotes', /^(?!none$).+/);
 }
 
@@ -78,6 +87,11 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
   await expect(canvas).toHaveAttribute('data-navigation', 'collision-aware');
   await expect(canvas).toHaveAttribute('data-proportion-check', 'pass');
   await expect(canvas).toHaveAttribute('data-layout-score', '100');
+  await expect(canvas).toHaveAttribute('data-venue-layout', 'cafe');
+  await expect(canvas).toHaveAttribute('data-entry-flow', 'left');
+  await expect(canvas).toHaveAttribute('data-layout-capacity', '4-6');
+  await expect(canvas).toHaveAttribute('data-layout-check', 'pass');
+  await expect(canvas).toHaveAttribute('data-activity-spots', /cafe-window-a:bench:seated/);
   await expect(canvas).toHaveAttribute('data-scale-model', '32px-adult');
   await expect(canvas).toHaveAttribute('data-character-variation', '12-silhouettes');
   await expect(canvas).toHaveAttribute('data-character-diversity', '100');
@@ -152,8 +166,8 @@ test('betritt das Café auf fallback und schaltet den Ton', async ({ page }) => 
 });
 
 for (const venue of [
-  { kind: 'ramen', label: 'Ramen', entry: 'Ramen-Restaurant betreten', canvas: /Ramen-Restaurant/i, frame: 'rgb(224, 96, 79)' },
-  { kind: 'arcade', label: 'Arcade', entry: 'Arcade-Halle betreten', canvas: /Arcade-Halle/i, frame: 'rgb(92, 218, 224)' },
+  { kind: 'ramen', label: 'Ramen', entry: 'Ramen-Restaurant betreten', canvas: /Ramen-Restaurant/i, frame: 'rgb(224, 96, 79)', flow: 'right', capacity: '5-7', spot: /ramen-counter-1:counter-stool:seated/ },
+  { kind: 'arcade', label: 'Arcade', entry: 'Arcade-Halle betreten', canvas: /Arcade-Halle/i, frame: 'rgb(92, 218, 224)', flow: 'rear', capacity: '4-7', spot: /arcade-left-1:arcade-cabinet:standing/ },
 ] as const) {
   test(`wechselt vor dem Eintritt in die ${venue.kind}-Szene`, async ({ page }) => {
     await openCafe(page, '/?time=20:30&weather=rain');
@@ -162,6 +176,11 @@ for (const venue of [
     const canvas = page.locator('#cafe');
     await expect(page.locator('body')).toHaveAttribute('data-venue', venue.kind);
     await expect(canvas).toHaveAttribute('data-venue', venue.kind);
+    await expect(canvas).toHaveAttribute('data-venue-layout', venue.kind);
+    await expect(canvas).toHaveAttribute('data-entry-flow', venue.flow);
+    await expect(canvas).toHaveAttribute('data-layout-capacity', venue.capacity);
+    await expect(canvas).toHaveAttribute('data-layout-check', 'pass');
+    await expect(canvas).toHaveAttribute('data-activity-spots', venue.spot);
     await expect(canvas).toHaveAccessibleName(venue.canvas);
     await expect(page.getByRole('button', { name: venue.entry })).toBeVisible();
     await expect(page.locator('.welcome__card')).toHaveCSS('border-color', venue.frame);
@@ -169,6 +188,7 @@ for (const venue of [
     await page.getByRole('button', { name: venue.entry }).click();
     await expect(page.locator('body')).toHaveAttribute('data-entered', 'true');
     await expect(canvas).toHaveAttribute('data-venue', venue.kind);
+    await expect(canvas).toHaveAttribute('data-occupied-spots', /^(?!none$).+/);
   });
 }
 
@@ -312,6 +332,21 @@ test('respektiert reduzierte Bewegung ohne automatische Kamerafahrt', async ({ p
   await expect(canvas).toHaveAttribute('data-camera-x', position ?? '0.0');
 });
 
+for (const venue of ['cafe', 'ramen', 'arcade'] as const) {
+  test(`hält ${venue} mobil mit Reduced Motion layouttreu und statisch`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openCafe(page, '/?time=20:30&weather=rain');
+    if (venue !== 'cafe') await page.getByRole('radio', { name: new RegExp(venue, 'i') }).click();
+    const canvas = page.locator('#cafe');
+    await expect(canvas).toHaveAttribute('data-venue-layout', venue);
+    await expect(canvas).toHaveAttribute('data-layout-check', 'pass');
+    await expect(canvas).toHaveAttribute('data-camera-mode', 'still');
+    await expect(canvas).toHaveAttribute('data-particles', 'low');
+    await page.getByTestId('enter').click();
+    await expect(canvas).toHaveAttribute('data-occupied-spots', /^(?!none$).+/);
+  });
+}
+
 test('reagiert nach Mausverweildauer genau einmal mit Emote, Fokus und leisem Akzent', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 810 });
   await openCafe(page, '/?time=12:30&weather=clear');
@@ -416,7 +451,7 @@ for (const scenario of [
       const target = await reactionTarget(page);
       await page.mouse.move(target.x, target.y);
     }
-    await expectFocusFraming(page, scenario.source);
+    await expectFocusFraming(page, scenario.source, scenario.source === 'conversation' || scenario.source === 'moment');
     await expectFocusRestoredByReducedMotion(page);
   });
 }

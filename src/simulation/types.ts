@@ -91,7 +91,7 @@ export interface Guest {
   stateDuration: number;
   animation: number;
   activityRounds: number;
-  seatId?: string;
+  activitySpotId?: string;
   destinationId?: string;
   accessory?: GuestAccessory;
   palette: GuestPalette;

@@ -130,7 +130,7 @@ export function calculateDialogue(
     const pair = closestPair(talkers);
     const speaker = pair[cycle % Math.max(1, pair.length)];
     if (speaker && !lines.some((line) => line.speakerId === speaker.id)) {
-      lines.push(withAnimation(speaker.id, venue, 'conversation', elapsed + 1.17, reducedMotion, speaker.seatId ?? speaker.id, snapshot));
+      lines.push(withAnimation(speaker.id, venue, 'conversation', elapsed + 1.17, reducedMotion, speaker.activitySpotId ?? speaker.id, snapshot));
     }
   }
   return lines.filter((line) => line.opacity > 0.01 && line.visibleEmotes.length > 0);

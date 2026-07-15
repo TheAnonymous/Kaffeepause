@@ -1,7 +1,9 @@
 import type { Barista, CafeAccident, CafeMoment, CafeStoryKind, Guest, RegularId } from '../simulation/types';
+import type { VenueKind } from '../venue';
 
 // Der Renderer erhält nur diese Momentaufnahme und greift nie direkt in die Simulation ein.
 export interface SceneSnapshot {
+  readonly venue: VenueKind;
   readonly guests: readonly Guest[];
   readonly barista: Barista;
   readonly accident?: CafeAccident;

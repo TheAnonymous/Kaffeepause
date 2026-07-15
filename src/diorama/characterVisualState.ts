@@ -1,4 +1,5 @@
 import type { Barista, CafeAccident, CafeMoment, Guest } from '../simulation/types';
+import type { ActivityPose, ActivitySpotKind } from '../simulation/layout';
 
 export const CHARACTER_FRAME_COUNT = 4 as const;
 
@@ -28,6 +29,7 @@ export interface CharacterVisualState {
   readonly offsetX: number;
   readonly offsetY: number;
   readonly seated: boolean;
+  readonly activitySpotKind?: ActivitySpotKind;
 }
 
 export interface GuestVisualStateInput {
@@ -39,6 +41,9 @@ export interface GuestVisualStateInput {
   readonly frameRate: number;
   readonly reducedMotion?: boolean;
   readonly participantCenterX?: number;
+  readonly activityPose?: ActivityPose;
+  readonly activitySpotKind?: ActivitySpotKind;
+  readonly activityFacing?: -1 | 1;
 }
 
 export interface BaristaVisualStateInput {
@@ -121,7 +126,7 @@ export function calculateGuestVisualState(input: GuestVisualStateInput): Charact
   const frame = characterFrameAt(input.time, input.frameRate, `${guest.id}:${pose}`, reducedMotion, keyFrame);
   const participant = Boolean(moment?.participantIds.includes(guest.id));
   const accidentParticipant = accident?.guestId === guest.id || accident?.witnessId === guest.id;
-  let facing = guest.facing;
+  let facing = guest.state === 'activity' ? input.activityFacing ?? guest.facing : guest.facing;
   let expression: CharacterExpression = pose === 'talking' ? 'smile' : pose === 'typing' ? 'focused' : 'neutral';
   let gesture: CharacterGesture = 'none';
   let offsetX = 0;
@@ -150,7 +155,11 @@ export function calculateGuestVisualState(input: GuestVisualStateInput): Charact
     offsetX = facing * (frame % 2 === 0 ? 0.025 : 0);
   }
 
-  return { pose, frame, facing, expression, gesture, offsetX, offsetY, seated: guest.state === 'activity' };
+  return {
+    pose, frame, facing, expression, gesture, offsetX, offsetY,
+    seated: guest.state === 'activity' && input.activityPose !== 'standing',
+    activitySpotKind: input.activitySpotKind,
+  };
 }
 
 export function calculateBaristaVisualState(input: BaristaVisualStateInput): CharacterVisualState {
@@ -181,5 +190,6 @@ export function calculateBaristaVisualState(input: BaristaVisualStateInput): Cha
     offsetX: 0,
     offsetY,
     seated: false,
+    activitySpotKind: undefined,
   };
 }

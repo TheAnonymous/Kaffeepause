@@ -151,6 +151,14 @@ function activityProp(context: PixelContext, description: SpriteDescription, cen
   y += frameLift;
   const ink = '#211923';
   const paper = '#f2dfb5';
+  if (description.visual.activitySpotKind === 'arcade-cabinet') {
+    pixel(context, '#18243a', centerX - 27, y - 8, 54, 24);
+    pixel(context, description.venue === 'arcade' ? '#56dce1' : '#84a9a5', centerX - 20, y - 4, 40, 7);
+    pixel(context, '#d35ca9', centerX - 14, y + 7, 8, 6);
+    pixel(context, '#f1d477', centerX + 8, y + 6, 7, 7);
+    pixel(context, '#6ed6c6', centerX + 18, y + 8, 5, 5);
+    return;
+  }
   switch (description.activity) {
     case 'reading':
       pixel(context, paper, centerX - 25, y, 23, 18);
@@ -186,9 +194,17 @@ function activityProp(context: PixelContext, description: SpriteDescription, cen
       break;
     case 'drinking':
     case 'tasting':
-      pixel(context, '#ead9bb', centerX + 9, y - 5, 16, 16);
-      pixel(context, '#9d5b48', centerX + 12, y - 2, 10, 4);
-      pixel(context, '#ead9bb', centerX + 24, y, 5, 9);
+      if (description.venue === 'ramen' && description.visual.activitySpotKind === 'counter-stool') {
+        pixel(context, '#ead9bb', centerX - 16, y + 1, 34, 7);
+        pixel(context, '#c9584b', centerX - 13, y + 7, 28, 9);
+        pixel(context, '#f0bc65', centerX - 9, y + 1, 20, 3);
+        pixel(context, '#e6dac0', centerX + 20, y - 15, 3, 24);
+        pixel(context, '#e6dac0', centerX + 25, y - 16, 3, 24);
+      } else {
+        pixel(context, '#ead9bb', centerX + 9, y - 5, 16, 16);
+        pixel(context, '#9d5b48', centerX + 12, y - 2, 10, 4);
+        pixel(context, '#ead9bb', centerX + 24, y, 5, 9);
+      }
       break;
     case 'machine':
       pixel(context, '#6d7680', centerX + 13, y - 4, 22, 23);
@@ -327,7 +343,7 @@ function spriteKey(description: SpriteDescription): string {
     description.palette.accent, description.palette.trousers, description.palette.shoes,
     description.appearance.body, description.appearance.face, description.appearance.hair,
     description.appearance.outfit, description.appearance.detail, description.appearance.maturity,
-    description.seated, description.activity, description.accessory, description.regular, description.barista,
+    description.seated, description.activity, description.visual.activitySpotKind, description.accessory, description.regular, description.barista,
     description.visual.frame, description.visual.expression, description.visual.gesture].join('|');
 }
 
@@ -412,7 +428,7 @@ export class SpriteTextureLibrary {
     return this.texture({
       palette: guest.palette,
       appearance: guest.appearance,
-      seated: guest.state === 'activity',
+      seated: visual.seated,
       activity: visual.pose,
       accessory: guest.accessory,
       regular: Boolean(guest.regularId),

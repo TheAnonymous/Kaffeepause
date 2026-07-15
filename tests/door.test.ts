@@ -26,7 +26,7 @@ function guest(id: string, overrides: Partial<Guest>): Guest {
 describe('Eingangstür', () => {
   it('öffnet vollständig für Gäste am tatsächlichen Eingang', () => {
     expect(doorTargetForGuests([
-      guest('arrival', { state: 'entering', position: { x: 24, y: 188 } }),
+      guest('arrival', { state: 'entering', position: { x: 20, y: 184 } }),
     ])).toBe(1);
   });
 
@@ -44,5 +44,17 @@ describe('Eingangstür', () => {
     expect(approaching).toBeGreaterThan(0);
     expect(seated).toBe(0);
     expect(wrongLane).toBe(0);
+  });
+
+  it('folgt den tatsächlichen Eingängen von Ramen und Arcade', () => {
+    expect(doorTargetForGuests([
+      guest('ramen-arrival', { state: 'entering', position: { x: 368, y: 190 } }),
+    ], 'ramen')).toBe(1);
+    expect(doorTargetForGuests([
+      guest('arcade-arrival', { state: 'entering', position: { x: 192, y: 136 } }),
+    ], 'arcade')).toBe(1);
+    expect(doorTargetForGuests([
+      guest('wrong-door', { state: 'entering', position: { x: 20, y: 184 } }),
+    ], 'ramen')).toBe(0);
   });
 });

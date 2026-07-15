@@ -1,6 +1,7 @@
 import type { Barista, Guest } from '../simulation/types';
 import type { VenueKind } from '../venue';
 import { SCENE_PROPORTIONS } from './proportions';
+import { VENUE_LAYOUTS, activitySpotById } from '../simulation/layout';
 
 type Rect = (context: CanvasRenderingContext2D, color: string, x: number, y: number, width: number, height: number) => void;
 
@@ -25,22 +26,23 @@ interface ActivityFrame {
   readonly state: VenueActivityState;
 }
 
-function tableFor(guest: Guest): 'window' | 'left' | 'right' | undefined {
-  if (guest.state !== 'activity' || !guest.seatId) return undefined;
-  if (guest.seatId.includes('window')) return 'window';
-  if (guest.seatId.includes('table-a')) return 'left';
-  if (guest.seatId.includes('table-b')) return 'right';
+function tableFor(guest: Guest, venue: VenueKind): 'window' | 'left' | 'right' | undefined {
+  if (guest.state !== 'activity' || !guest.activitySpotId) return undefined;
+  const spot = activitySpotById(VENUE_LAYOUTS[venue], guest.activitySpotId);
+  if (spot?.tags.includes('window')) return 'window';
+  if (spot?.groupId.endsWith('a') || spot?.groupId.endsWith('1')) return 'left';
+  if (spot) return 'right';
   return undefined;
 }
 
-export function calculateVenueActivityState(guests: readonly Guest[]): VenueActivityState {
+export function calculateVenueActivityState(guests: readonly Guest[], venue: VenueKind = 'cafe'): VenueActivityState {
   const tables = { window: 0, left: 0, right: 0 };
   let waiting = 0;
   let drinking = 0;
   for (const guest of guests) {
     if (guest.state === 'queueing' || guest.state === 'ordering' || guest.state === 'waiting') waiting += 1;
     if (guest.state === 'activity' && guest.activity === 'drinking') drinking += 1;
-    const table = tableFor(guest);
+    const table = tableFor(guest, venue);
     if (table) tables[table] += 1;
   }
   return {

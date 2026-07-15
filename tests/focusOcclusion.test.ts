@@ -53,10 +53,10 @@ describe('gezielte Fokus-Sichtblocker', () => {
     expect(material.depthWrite).toBe(true);
   });
 
-  it('veröffentlicht in jeder Venue Tische, Stühle, Tresen und vorhandene Automaten als Fokusmöbel', () => {
+  it('veröffentlicht alle ortstypischen Möbel als Fokusblocker', () => {
     for (const venue of ['cafe', 'ramen', 'arcade'] as const) {
       const set = buildVenue(venue);
-      expect(set.focusOccluders.some((entry) => entry.kind === 'table')).toBe(true);
+      if (venue !== 'arcade') expect(set.focusOccluders.some((entry) => entry.kind === 'table')).toBe(true);
       expect(set.focusOccluders.some((entry) => entry.kind === 'chair')).toBe(true);
       expect(set.focusOccluders.some((entry) => entry.kind === 'counter')).toBe(true);
       if (venue !== 'ramen') expect(set.focusOccluders.some((entry) => entry.kind === 'machine')).toBe(true);

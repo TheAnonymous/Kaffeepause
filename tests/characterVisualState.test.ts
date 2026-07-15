@@ -52,5 +52,11 @@ describe('zentraler Figurenstatus', () => {
     });
     expect(state).toMatchObject({ expression: 'sorry', gesture: 'swap' });
   });
-});
 
+  it('unterscheidet sitzende Plätze von stehenden Arcade-Automaten samt Blickrichtung', () => {
+    const seated = calculateGuestVisualState({ guest: guest(), time: 0, frameRate: 6, activityPose: 'seated', activitySpotKind: 'counter-stool', activityFacing: -1 });
+    const standing = calculateGuestVisualState({ guest: guest(), time: 0, frameRate: 6, activityPose: 'standing', activitySpotKind: 'arcade-cabinet', activityFacing: 1 });
+    expect(seated).toMatchObject({ seated: true, facing: -1, activitySpotKind: 'counter-stool' });
+    expect(standing).toMatchObject({ seated: false, facing: 1, activitySpotKind: 'arcade-cabinet' });
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAFE_LAYOUT_REPORT, validateCafeLayout } from '../src/simulation/layout';
+import { VENUE_LAYOUTS, VENUE_LAYOUT_REPORTS, validateVenueLayout } from '../src/simulation/layout';
 import {
   SCENE_PROPORTIONS,
   SCENE_PROPORTION_REPORT,
@@ -28,9 +28,9 @@ describe('Szenenproportionen', () => {
     expect(report.issues.map((issue) => issue.code)).toContain('counter-height');
   });
 
-  it('prüft auch Kollider, Sitzplätze und Laufziele gegen das sichtbare Layout', () => {
-    expect(CAFE_LAYOUT_REPORT).toEqual(validateCafeLayout());
-    expect(CAFE_LAYOUT_REPORT.valid).toBe(true);
-    expect(CAFE_LAYOUT_REPORT.score).toBe(100);
+  it.each(['cafe', 'ramen', 'arcade'] as const)('prüft Kollider, Plätze und Laufziele für %s', (venue) => {
+    expect(VENUE_LAYOUT_REPORTS[venue]).toEqual(validateVenueLayout(VENUE_LAYOUTS[venue]));
+    expect(VENUE_LAYOUT_REPORTS[venue].valid).toBe(true);
+    expect(VENUE_LAYOUT_REPORTS[venue].score).toBe(100);
   });
 });
