@@ -33,6 +33,8 @@ jobs:
         run: npm test
       - name: Build site
         run: npm run build
+      - name: Install media budget tooling
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
       - name: Verify production budgets
         run: npm run verify:budgets
       - name: Install Chromium
