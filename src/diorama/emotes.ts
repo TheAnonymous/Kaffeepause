@@ -27,6 +27,24 @@ const MOMENT_EMOTES: Readonly<Record<CafeMoment['kind'], readonly EmoteSymbol[]>
   'chopstick-drop': ['surprise', 'apology'],
   'ticket-stream': ['game', 'star', 'surprise'],
   'button-mash-sync': ['game', 'music', 'spark'],
+  'pastry-restock': ['order', 'tool', 'spark'],
+  'table-reset': ['tool', 'spark'],
+  'window-rain-trace': ['steam', 'heart'],
+  'pencil-return': ['tool', 'heart'],
+  'warm-cup-offer': ['drink', 'heart'],
+  'doorway-greeting': ['conversation', 'heart'],
+  'broth-lid-lift': ['steam', 'noodle', 'spark'],
+  'bowl-pass': ['noodle', 'steam'],
+  'noren-gust': ['steam', 'surprise'],
+  'condiment-pass': ['noodle', 'heart'],
+  'last-gyoza-offer': ['noodle', 'heart'],
+  'napkin-save': ['apology', 'heart'],
+  'attract-mode-wave': ['game', 'music', 'spark'],
+  'token-hopper-refill': ['game', 'tool'],
+  'cabinet-reboot': ['tool', 'game', 'spark'],
+  'ticket-trade': ['game', 'heart'],
+  'coop-rescue': ['game', 'heart', 'spark'],
+  'lounge-prize-share': ['star', 'heart'],
 };
 
 const STORY_EMOTES: Readonly<Record<NonNullable<CafeMoment['story']>, readonly (readonly EmoteSymbol[])[]>> = {
@@ -85,4 +103,3 @@ export function emoteForReaction(venue: VenueKind, gesture: 'wave' | 'nod' | 'la
   if (gesture === 'nod') return [venue === 'ramen' ? 'noodle' : venue === 'arcade' ? 'game' : 'drink', 'heart'];
   return ['conversation', venue === 'arcade' ? 'spark' : 'heart'];
 }
-

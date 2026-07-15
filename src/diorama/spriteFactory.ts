@@ -10,6 +10,7 @@ import type { Barista, Guest, GuestAppearance, GuestPalette } from '../simulatio
 import type { VenueKind } from '../venue';
 import type { CharacterPose, CharacterVisualState } from './characterVisualState';
 import { DIORAMA } from './types';
+import { VENUE_VISUAL_PROFILES } from './visualProfiles';
 
 type PixelContext = CanvasRenderingContext2D;
 
@@ -151,6 +152,90 @@ function activityProp(context: PixelContext, description: SpriteDescription, cen
   y += frameLift;
   const ink = '#211923';
   const paper = '#f2dfb5';
+  const moment = description.visual.momentKind;
+  if (moment) {
+    if (moment === 'pastry-restock') {
+      pixel(context, '#6d4a3d', centerX - 27, y + 4, 54, 8);
+      for (const x of [-18, 0, 18]) {
+        pixel(context, '#e6b56e', centerX + x - 6, y - 3, 12, 8);
+        pixel(context, '#f4d28b', centerX + x - 3, y - 5, 6, 3);
+      }
+      return;
+    }
+    if (moment === 'table-reset' || moment === 'napkin-save') {
+      pixel(context, '#8ad0c1', centerX - 24, y, 48, 15);
+      pixel(context, '#dff5e8', centerX - 18, y + 3, 36, 3);
+      return;
+    }
+    if (moment === 'window-rain-trace') {
+      for (const x of [-17, -5, 8, 19]) pixel(context, '#8fc8d7', centerX + x, y - 17 + Math.abs(x % 5), 3, 19);
+      pixel(context, description.palette.skin, centerX + 8, y - 10, 8, 24);
+      return;
+    }
+    if (moment === 'pencil-return') {
+      pixel(context, '#efc55f', centerX - 25, y + 4, 50, 4);
+      pixel(context, '#2a2934', centerX + 22, y + 4, 6, 4);
+      return;
+    }
+    if (moment === 'warm-cup-offer') {
+      pixel(context, '#f0dfbd', centerX - 12, y - 5, 24, 20);
+      pixel(context, '#9c6049', centerX - 7, y, 14, 5);
+      pixel(context, '#f0dfbd', centerX + 10, y, 7, 10);
+      return;
+    }
+    if (moment === 'broth-lid-lift') {
+      pixel(context, '#6f777a', centerX - 27, y + 6, 54, 13);
+      pixel(context, '#aeb7b5', centerX - 22, y - 5, 44, 7);
+      for (const x of [-12, 0, 12]) pixel(context, '#e9d7ae', centerX + x, y - 20, 3, 13);
+      return;
+    }
+    if (moment === 'bowl-pass') {
+      pixel(context, '#ead9bb', centerX - 23, y + 2, 46, 7);
+      pixel(context, '#c9584b', centerX - 18, y + 8, 36, 10);
+      pixel(context, '#f0bc65', centerX - 13, y + 2, 26, 3);
+      return;
+    }
+    if (moment === 'noren-gust') {
+      pixel(context, '#c7544c', centerX - 27, y - 16, 54, 8);
+      for (const x of [-22, -8, 6, 20]) pixel(context, '#d96155', centerX + x, y - 8, 10, 25 + ((x + 22) % 3) * 3);
+      return;
+    }
+    if (moment === 'condiment-pass') {
+      pixel(context, '#d9c6a4', centerX - 8, y - 12, 16, 30);
+      pixel(context, '#c74f47', centerX - 10, y - 16, 20, 8);
+      pixel(context, '#f0bd68', centerX - 5, y - 5, 10, 6);
+      return;
+    }
+    if (moment === 'last-gyoza-offer') {
+      pixel(context, '#e9ddc4', centerX - 25, y + 5, 50, 7);
+      for (const x of [-13, 0, 13]) pixel(context, '#dda86a', centerX + x - 6, y - 3, 12, 9);
+      return;
+    }
+    if (moment === 'token-hopper-refill') {
+      pixel(context, '#27384d', centerX - 24, y - 4, 48, 23);
+      for (const x of [-14, -5, 5, 14]) pixel(context, '#f1d477', centerX + x - 4, y + 3 + Math.abs(x % 3), 8, 8);
+      return;
+    }
+    if (moment === 'cabinet-reboot') {
+      pixel(context, '#17243a', centerX - 24, y - 12, 48, 31);
+      pixel(context, '#5bdce1', centerX - 17, y - 6, 34, 12);
+      pixel(context, '#d35ca9', centerX - 3, y + 9, 6, 6);
+      return;
+    }
+    if (moment === 'ticket-trade' || moment === 'lounge-prize-share') {
+      pixel(context, '#f2d787', centerX - 28, y, 56, 12);
+      for (let x = -24; x < 25; x += 8) pixel(context, '#c65ca6', centerX + x, y + 3, 3, 6);
+      if (moment === 'lounge-prize-share') pixel(context, '#64dbe0', centerX - 7, y - 14, 14, 14);
+      return;
+    }
+    if (moment === 'coop-rescue' || moment === 'attract-mode-wave') {
+      pixel(context, '#18243a', centerX - 27, y - 8, 54, 25);
+      pixel(context, '#56dce1', centerX - 20, y - 4, 40, 8);
+      pixel(context, '#d35ca9', centerX - 14, y + 8, 9, 7);
+      pixel(context, '#f1d477', centerX + 7, y + 8, 9, 7);
+      return;
+    }
+  }
   if (description.visual.activitySpotKind === 'arcade-cabinet') {
     pixel(context, '#18243a', centerX - 27, y - 8, 54, 24);
     pixel(context, description.venue === 'arcade' ? '#56dce1' : '#84a9a5', centerX - 20, y - 4, 40, 7);
@@ -338,13 +423,40 @@ function configureTexture(canvas: HTMLCanvasElement): CanvasTexture {
   return texture;
 }
 
+/** Adds a hard one-source-pixel contour without changing any filled sprite pixel. */
+export function applyOneTexelSilhouette(context: PixelContext, venue: VenueKind): void {
+  const { width, height } = context.canvas;
+  const image = context.getImageData(0, 0, width, height);
+  const source = new Uint8ClampedArray(image.data);
+  const dark = [27, 22, 29, 255] as const;
+  const rimHex = VENUE_VISUAL_PROFILES[venue].lights.characterRim.slice(1);
+  const rim = [0, 2, 4].map((offset) => Number.parseInt(rimHex.slice(offset, offset + 2), 16));
+  const alphaAt = (x: number, y: number): number => source[(y * width + x) * 4 + 3] ?? 0;
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = (y * width + x) * 4;
+      if ((source[index + 3] ?? 0) !== 0) continue;
+      const left = alphaAt(x - 1, y) > 0;
+      const below = alphaAt(x, y + 1) > 0;
+      const touches = left || below || alphaAt(x + 1, y) > 0 || alphaAt(x, y - 1) > 0;
+      if (!touches) continue;
+      const color = left || below ? [...rim, 255] : dark;
+      image.data[index] = color[0]!;
+      image.data[index + 1] = color[1]!;
+      image.data[index + 2] = color[2]!;
+      image.data[index + 3] = color[3]!;
+    }
+  }
+  context.putImageData(image, 0, 0);
+}
+
 function spriteKey(description: SpriteDescription): string {
   return [description.venue, description.palette.skin, description.palette.hair, description.palette.coat,
     description.palette.accent, description.palette.trousers, description.palette.shoes,
     description.appearance.body, description.appearance.face, description.appearance.hair,
     description.appearance.outfit, description.appearance.detail, description.appearance.maturity,
     description.seated, description.activity, description.visual.activitySpotKind, description.accessory, description.regular, description.barista,
-    description.visual.frame, description.visual.expression, description.visual.gesture].join('|');
+    description.visual.frame, description.visual.expression, description.visual.gesture, description.visual.momentKind].join('|');
 }
 
 interface DisposableTexture {
@@ -464,6 +576,7 @@ export class SpriteTextureLibrary {
       const context = canvas.getContext('2d', { alpha: true, colorSpace: 'srgb' });
       if (!context) throw new Error('Pixelsprites können in diesem Browser nicht erzeugt werden.');
       drawSprite(context, description);
+      applyOneTexelSilhouette(context, description.venue);
       const texture = configureTexture(canvas);
       texture.name = `character:${key}`;
       return texture;

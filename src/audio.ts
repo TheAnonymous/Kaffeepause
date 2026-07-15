@@ -2,6 +2,8 @@ import { SeededRandom } from './simulation/random';
 import type { AccidentKind, CafeMomentKind } from './simulation/types';
 import type { CafeEnvironmentSnapshot } from './environment/types';
 import type { VenueKind } from './venue';
+import { loadVenueSamplePack, samplesForVenue, type VenueSampleState } from './audioSamples';
+import { momentDefinition } from './simulation/momentRegistry';
 
 export type AudioState = 'idle' | 'playing' | 'muted' | 'unavailable';
 export const REACTION_ACCENT_MAX_GAIN = 0.008;
@@ -49,6 +51,11 @@ export class CafeAudio {
   private musicBus?: GainNode;
   private bedBus?: GainNode;
   private effectsBus?: GainNode;
+  private sampleBus?: GainNode;
+  private sampleAtmosphere?: AudioBufferSourceNode;
+  private readonly sampleBuffers = new Map<string, AudioBuffer>();
+  private sampleState: VenueSampleState = 'idle';
+  private sampleGeneration = 0;
   private reverbReturn?: GainNode;
   private scheduler?: number;
   private detailTimer?: number;
@@ -93,6 +100,7 @@ export class CafeAudio {
     this.state = 'playing';
     this.applyAtmosphere();
     this.applyVolume(0.9);
+    void this.loadSelectedVenueSamples();
     return this.getState();
   }
 
@@ -146,6 +154,7 @@ export class CafeAudio {
       this.scheduleNextDetail();
     }
     this.applyAtmosphere();
+    if (this.context) void this.loadSelectedVenueSamples();
   }
 
   playAccident(kind: AccidentKind): void {
@@ -177,6 +186,8 @@ export class CafeAudio {
     if (!context || !this.master || this.muted || this.state !== 'playing') return;
     const start = context.currentTime + 0.02;
     this.duckBed(0.76, 0.14);
+    const cue = momentDefinition(kind)?.audioCue;
+    if (cue && this.playSample(cue, start)) return;
     if (kind === 'shared-cake') {
       this.playEffectTone(1_380, 1_720, start, 0.12, 0.024, 'sine');
       this.playEffectTone(1_660, 1_980, start + 0.05, 0.1, 0.019, 'sine');
@@ -243,11 +254,16 @@ export class CafeAudio {
     return this.state;
   }
 
+  getSampleState(): VenueSampleState {
+    return this.sampleState;
+  }
+
   async destroy(): Promise<void> {
     if (this.scheduler !== undefined) window.clearInterval(this.scheduler);
     if (this.detailTimer !== undefined) window.clearTimeout(this.detailTimer);
     this.rain?.stop();
     this.wind?.stop();
+    this.sampleAtmosphere?.stop();
     if (this.context && this.context.state !== 'closed') await this.context.close();
     this.context = undefined;
     this.master = undefined;
@@ -257,6 +273,9 @@ export class CafeAudio {
     this.musicBus = undefined;
     this.bedBus = undefined;
     this.effectsBus = undefined;
+    this.sampleBus = undefined;
+    this.sampleBuffers.clear();
+    this.sampleState = 'idle';
     this.reverbReturn = undefined;
     this.rainLowpass = undefined;
     this.rainPan = undefined;
@@ -275,15 +294,69 @@ export class CafeAudio {
     this.musicBus = context.createGain();
     this.bedBus = context.createGain();
     this.effectsBus = context.createGain();
+    this.sampleBus = context.createGain();
     this.rainBus.gain.value = 0.0001;
     this.windBus.gain.value = 0.0001;
     this.roomBus.gain.value = 0.32;
     this.musicBus.gain.value = 0.8;
     this.bedBus.gain.value = 1;
     this.effectsBus.gain.value = 0.82;
+    this.sampleBus.gain.value = 0.0001;
     for (const bus of [this.rainBus, this.windBus, this.roomBus, this.musicBus]) bus.connect(this.bedBus);
     this.bedBus.connect(master);
     this.effectsBus.connect(master);
+    this.sampleBus.connect(master);
+  }
+
+  private async loadSelectedVenueSamples(): Promise<void> {
+    const context = this.context;
+    const sampleBus = this.sampleBus;
+    if (!context || !sampleBus) return;
+    const venue = this.venue;
+    const generation = ++this.sampleGeneration;
+    this.sampleState = 'loading';
+    const pack = await loadVenueSamplePack(context, venue);
+    if (generation !== this.sampleGeneration || venue !== this.venue || !this.context) return;
+    this.sampleAtmosphere?.stop();
+    this.sampleAtmosphere = undefined;
+    this.sampleBuffers.clear();
+    for (const [id, buffer] of pack.buffers) this.sampleBuffers.set(id, buffer);
+    this.sampleState = pack.state;
+    if (pack.state === 'fallback') return;
+    const atmosphere = this.sampleBuffers.get(`${venue}-atmosphere`);
+    if (!atmosphere) {
+      this.sampleState = 'fallback';
+      return;
+    }
+    const entry = samplesForVenue(venue).find((sample) => sample.cue === 'atmosphere');
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    source.buffer = atmosphere;
+    source.loop = true;
+    gain.gain.value = entry?.level ?? 0.15;
+    source.connect(gain).connect(sampleBus);
+    const now = context.currentTime;
+    sampleBus.gain.cancelScheduledValues(now);
+    sampleBus.gain.setValueAtTime(0.0001, now);
+    sampleBus.gain.linearRampToValueAtTime(1, now + 2.5);
+    source.start(now);
+    this.sampleAtmosphere = source;
+  }
+
+  private playSample(cue: string, start: number): boolean {
+    const context = this.context;
+    const sampleBus = this.sampleBus;
+    if (!context || !sampleBus || (this.sampleState !== 'ready' && this.sampleState !== 'partial')) return false;
+    const entry = samplesForVenue(this.venue).find((sample) => sample.cue === cue);
+    const buffer = entry ? this.sampleBuffers.get(entry.id) : undefined;
+    if (!entry || !buffer) return false;
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    gain.gain.value = entry.level;
+    source.connect(gain).connect(sampleBus);
+    source.start(start);
+    return true;
   }
 
   private createRain(): void {

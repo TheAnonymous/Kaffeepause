@@ -138,7 +138,27 @@ export type CafeMomentKind =
   | 'steam-glasses'
   | 'chopstick-drop'
   | 'ticket-stream'
-  | 'button-mash-sync';
+  | 'button-mash-sync'
+  | 'pastry-restock'
+  | 'table-reset'
+  | 'window-rain-trace'
+  | 'pencil-return'
+  | 'warm-cup-offer'
+  | 'doorway-greeting'
+  | 'broth-lid-lift'
+  | 'bowl-pass'
+  | 'noren-gust'
+  | 'condiment-pass'
+  | 'last-gyoza-offer'
+  | 'napkin-save'
+  | 'attract-mode-wave'
+  | 'token-hopper-refill'
+  | 'cabinet-reboot'
+  | 'ticket-trade'
+  | 'coop-rescue'
+  | 'lounge-prize-share';
+
+export type MomentPhase = 'enter' | 'hold' | 'return';
 
 export interface CafeMoment {
   readonly id: number;
@@ -147,6 +167,7 @@ export interface CafeMoment {
   readonly participantIds: readonly string[];
   elapsed: number;
   duration: number;
+  phase?: MomentPhase;
   readonly story?: CafeStoryKind;
   readonly storyStep?: 1 | 2 | 3;
 }

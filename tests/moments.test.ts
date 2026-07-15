@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { CafeSimulation } from '../src/simulation/cafeSimulation';
 import type { CafeMomentKind } from '../src/simulation/types';
 import { VENUE_LAYOUTS, activitySpotById } from '../src/simulation/layout';
+import { MOMENT_REGISTRY } from '../src/simulation/momentRegistry';
+import { observationForOverride } from '../src/environment/weather';
+import type { CafeEnvironmentSnapshot } from '../src/environment/types';
 
 function updateUntil(simulation: CafeSimulation, predicate: () => boolean, limit = 2_000): void {
   for (let index = 0; index < limit && !predicate(); index += 1) simulation.update(0.1);
@@ -37,8 +40,8 @@ describe('Café-Momente', () => {
     right.start();
 
     const delay = left.getSecondsUntilNextMoment();
-    expect(delay).toBeGreaterThanOrEqual(22);
-    expect(delay).toBeLessThanOrEqual(50);
+    expect(delay).toBeGreaterThanOrEqual(75);
+    expect(delay).toBeLessThanOrEqual(115);
     expect(right.getSecondsUntilNextMoment()).toBe(delay);
   });
 
@@ -130,4 +133,75 @@ describe('Café-Momente', () => {
     ]);
     expect(new Set(arcadeGuests.map((guest) => activitySpotById(VENUE_LAYOUTS.arcade, guest.activitySpotId)?.groupId)).size).toBe(1);
   });
+
+  it.each(MOMENT_REGISTRY.map((entry) => [entry.kind, entry] as const))(
+    '%s besitzt Eintritt, Halt und Rückkehr und stellt alle Simulationsressourcen wieder her',
+    (kind, definition) => {
+      const localTime = new Date('2026-07-15T12:30:00Z');
+      const weatherKind = definition.weather === 'rain' ? 'rain' : 'clear';
+      const environment: CafeEnvironmentSnapshot = {
+        localTime, localTimeText: '12:30', minuteOfDay: 750, dayPhase: 'midday',
+        solar: { elevation: 45, azimuth: 220, isDay: true, isCivilTwilight: false, polarState: 'normal' },
+        weather: {
+          ...observationForOverride(weatherKind, localTime),
+          windSpeed: definition.weather === 'wind' ? 24 : 5,
+          windGusts: definition.weather === 'wind' ? 36 : 9,
+        },
+        weatherSource: 'override', locationState: 'override',
+        targetCrowd: VENUE_LAYOUTS[definition.venue].population.max,
+      };
+      const simulation = new CafeSimulation({
+        seed: 81,
+        venue: definition.venue,
+        initialGuests: VENUE_LAYOUTS[definition.venue].population.max,
+        minGuests: 0,
+        maxGuests: VENUE_LAYOUTS[definition.venue].population.max,
+        accidents: false,
+        stories: false,
+        moments: { seed: 23, minDelaySeconds: 0, maxDelaySeconds: 0, kinds: [kind], durationScale: 0.12 },
+      });
+      simulation.setEnvironment(environment);
+      simulation.start();
+      const guestState = (guest: (typeof simulation.guests)[number]) => ({
+        id: guest.id,
+        state: guest.state,
+        activity: guest.activity,
+        position: { ...guest.position },
+        target: { ...guest.target },
+        waypoints: guest.waypoints?.map((point) => ({ ...point })),
+        facing: guest.facing,
+        stateTime: guest.stateTime,
+        stateDuration: guest.stateDuration,
+        animation: guest.animation,
+        activityRounds: guest.activityRounds,
+        activitySpotId: guest.activitySpotId,
+        destinationId: guest.destinationId,
+      });
+      const guestsBefore = new Map(simulation.guests.map((guest) => [guest.id, guestState(guest)]));
+      const reservationsBefore = simulation.guests.map((guest) => [guest.id, simulation.reservations.resourcesOf(guest.id)] as const);
+      const baristaBefore = structuredClone(simulation.barista);
+
+      simulation.update(0);
+      expect(simulation.activeMoment?.kind).toBe(kind);
+      expect(simulation.activeMoment?.phase).toBe('enter');
+      expect(simulation.activeMoment?.participantIds).toHaveLength(definition.guestCount + Number(definition.includesStaff));
+      const guestParticipantIds = simulation.activeMoment?.participantIds.filter((id) => id !== 'barista') ?? [];
+      if (definition.anchorTags.includes('cabinet-pair') && guestParticipantIds.length === 2) {
+        const [first, second] = guestParticipantIds.map((id) => simulation.guests.find((guest) => guest.id === id)!);
+        expect(Math.hypot(first!.position.x - second!.position.x, first!.position.y - second!.position.y)).toBeLessThanOrEqual(60);
+      }
+      updateUntil(simulation, () => simulation.activeMoment?.phase === 'hold');
+      updateUntil(simulation, () => simulation.activeMoment?.phase === 'return');
+      updateUntil(simulation, () => simulation.stats.momentsCompleted === 1);
+
+      for (const id of guestParticipantIds) {
+        expect(guestState(simulation.guests.find((guest) => guest.id === id)!)).toEqual(guestsBefore.get(id));
+      }
+      const reservationsByGuest = new Map(reservationsBefore);
+      expect(guestParticipantIds.map((id) => [id, simulation.reservations.resourcesOf(id)] as const)).toEqual(
+        guestParticipantIds.map((id) => [id, reservationsByGuest.get(id)] as const),
+      );
+      expect(simulation.barista).toEqual(baristaBefore);
+    },
+  );
 });

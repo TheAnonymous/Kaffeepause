@@ -83,6 +83,7 @@ export interface RenderQualityGovernorOptions {
   readonly warmupMs?: number;
   readonly sampleFrames?: number;
   readonly slowFrameThresholdMs?: number;
+  readonly slowFrameP95ThresholdMs?: number;
   readonly cooldownMs?: number;
 }
 
@@ -93,6 +94,7 @@ export interface RenderQualityGovernorOptions {
 export class RenderQualityGovernor {
   private readonly sampleFrames: number;
   private readonly slowFrameThresholdMs: number;
+  private readonly slowFrameP95ThresholdMs: number;
   private readonly cooldownMs: number;
   private remainingDelayMs: number;
   private samples: number[] = [];
@@ -104,7 +106,8 @@ export class RenderQualityGovernor {
   ) {
     this.remainingDelayMs = Math.max(0, options.warmupMs ?? 3_000);
     this.sampleFrames = Math.max(1, Math.round(options.sampleFrames ?? 120));
-    this.slowFrameThresholdMs = Math.max(0, options.slowFrameThresholdMs ?? 28);
+    this.slowFrameThresholdMs = Math.max(0, options.slowFrameThresholdMs ?? 16.7);
+    this.slowFrameP95ThresholdMs = Math.max(0, options.slowFrameP95ThresholdMs ?? 25);
     this.cooldownMs = Math.max(0, options.cooldownMs ?? 5_000);
   }
 
@@ -123,8 +126,12 @@ export class RenderQualityGovernor {
     if (this.samples.length < this.sampleFrames) return undefined;
 
     const median = medianOf(this.samples);
+    const sorted = [...this.samples].sort((left, right) => left - right);
+    const p95 = sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)] ?? 0;
     this.samples = [];
-    const lowerTier = median > this.slowFrameThresholdMs ? lowerQualityTier(this.tier) : undefined;
+    const lowerTier = median > this.slowFrameThresholdMs || p95 > this.slowFrameP95ThresholdMs
+      ? lowerQualityTier(this.tier)
+      : undefined;
     if (!lowerTier) {
       this.finished = true;
       return undefined;
@@ -143,4 +150,48 @@ function medianOf(values: readonly number[]): number {
   const upper = sorted[middle] ?? 0;
   const lower = sorted[Math.max(0, middle - 1)] ?? upper;
   return sorted.length % 2 === 0 ? (lower + upper) / 2 : upper;
+}
+
+export interface FrameBudgetReport {
+  readonly valid: boolean;
+  readonly median: number;
+  readonly p95: number;
+  readonly samples: number;
+  readonly profile: 'desktop' | 'mobile';
+}
+
+export class FrameBudgetProbe {
+  private warmupRemainingMs: number;
+  private measurementRemainingMs: number;
+  private samples: number[] = [];
+  private report?: FrameBudgetReport;
+
+  constructor(warmupMs = 3_000, measurementMs = 60_000) {
+    this.warmupRemainingMs = Math.max(0, warmupMs);
+    this.measurementRemainingMs = Math.max(1, measurementMs);
+  }
+
+  observe(durationMs: number, mobile: boolean): FrameBudgetReport | undefined {
+    if (this.report || !Number.isFinite(durationMs) || durationMs < 0) return this.report;
+    if (this.warmupRemainingMs > 0) {
+      this.warmupRemainingMs = Math.max(0, this.warmupRemainingMs - durationMs);
+      return undefined;
+    }
+    this.samples.push(durationMs);
+    this.measurementRemainingMs -= durationMs;
+    if (this.measurementRemainingMs > 0) return undefined;
+    const sorted = [...this.samples].sort((left, right) => left - right);
+    const median = medianOf(sorted);
+    const p95 = sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)] ?? 0;
+    const profile = mobile ? 'mobile' : 'desktop';
+    this.report = {
+      valid: mobile ? p95 <= 33 : median <= 16.7 && p95 <= 25,
+      median,
+      p95,
+      samples: sorted.length,
+      profile,
+    };
+    this.samples = [];
+    return this.report;
+  }
 }

@@ -39,6 +39,7 @@ import {
 } from './types';
 import { PixelSurfaceLibrary } from './pixelSurfaceLibrary';
 import { VENUE_VISUAL_PROFILES, type SurfaceKind, type VenueVisualProfile } from './visualProfiles';
+import { countSelectiveBloomSurfaces, registerSelectiveBloomSurface } from './selectiveBloom';
 
 interface BuildContext {
   readonly geometries: Set<BufferGeometry>;
@@ -270,13 +271,15 @@ function glowPanel(
   position: readonly [number, number, number],
   color: ColorRepresentation,
 ): Mesh<BoxGeometry, MeshStandardMaterial> {
-  return box(context, parent, size, position, {
+  const panel = box(context, parent, size, position, {
     color,
     emissive: color,
     emissiveIntensity: 1.8,
     roughness: 0.35,
     surface: 'emissive',
   });
+  registerSelectiveBloomSurface(panel);
+  return panel;
 }
 
 function markFocusOccluder(context: BuildContext, object: Object3D, kind: FocusOccluderKind): void {
@@ -638,6 +641,7 @@ function buildArcade(context: BuildContext, root: Group, animated: AnimatedProp[
     color: '#5cdade', emissive: '#5cdade', emissiveIntensity: 0.28, roughness: 0.5, castShadow: false, surface: 'emissive',
   });
   loungeEdge.name = 'seat-edge:arcade-lounge';
+  registerSelectiveBloomSurface(loungeEdge);
   addContactShadow(context, lounge, 3.1, 0.72, 0, 2.18);
   const loungeSpot = VENUE_LAYOUTS.arcade.activitySpots.find((spot) => spot.id === 'arcade-lounge');
   if (loungeSpot?.pose === 'seated') {
@@ -707,6 +711,7 @@ export function buildVenue(venue: VenueKind): DioramaSet {
     theme,
     surfaceTextureCount: surfaces.size,
     surfaceKinds: [...availableSurfaceKinds].sort(),
+    bloomSurfaceCount: countSelectiveBloomSurfaces(root),
     dispose(): void {
       for (const geometry of geometries) geometry.dispose();
       for (const entry of materials) entry.dispose();

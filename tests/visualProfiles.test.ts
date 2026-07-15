@@ -15,9 +15,10 @@ describe('VenueVisualProfile-Registry', () => {
       'emissive', 'floor', 'glass', 'metal', 'plaster', 'tile', 'wood',
     ]);
     expect(profile.camera.focusFov).toEqual([22, 26]);
-    expect(profile.camera.safeArea).toMatchObject({ left: 0.08, top: 0.08, right: 0.92, bottom: 0.94 });
+    expect(profile.camera.safeArea).toMatchObject({ left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 });
     expect(profile.bloom.minimum).toBeLessThan(profile.bloom.maximum);
-    expect(profile.bloom.maximum).toBeLessThanOrEqual(0.68);
+    expect(profile.bloom.maximum).toBeLessThanOrEqual(venue === 'arcade' ? 0.42 : 0.3);
+    expect(profile.bloom.threshold).toBe(0.86);
     expect(profile.contrast.minimumShadowLift).toBeGreaterThanOrEqual(0.045);
     expect(colorLuminance(profile.palette.ink)).toBeGreaterThan(0.009);
     expect(colorContrast(profile.palette.ink, profile.lights.characterRim))

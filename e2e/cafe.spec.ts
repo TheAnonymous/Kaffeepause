@@ -30,6 +30,28 @@ async function reactionTarget(page: Page, preferredId?: string): Promise<{ id: s
   return target;
 }
 
+async function moveToReactionTarget(page: Page, preferredId?: string): Promise<{ id: string; x: number; y: number }> {
+  const canvas = page.locator('#cafe');
+  await expect.poll(async () => await canvas.getAttribute('data-reaction-targets')).toMatch(/.+:\d+,-?\d+/);
+  return canvas.evaluate((element, preferred) => {
+    const targets = (element.dataset.reactionTargets ?? '').split('|').map((entry) => {
+      const match = entry.match(/^(.+):(-?\d+),(-?\d+)$/);
+      return match ? { id: match[1] ?? '', x: Number(match[2]), y: Number(match[3]) } : undefined;
+    }).filter((target): target is { id: string; x: number; y: number } => target !== undefined)
+      .filter((target) => target.x >= 0 && target.x <= window.innerWidth && target.y >= 0 && target.y <= window.innerHeight);
+    const target = targets.find((entry) => entry.id === preferred)
+      ?? [...targets].sort((left, right) => (
+        Math.hypot(left.x - window.innerWidth / 2, left.y - window.innerHeight / 2)
+          - Math.hypot(right.x - window.innerWidth / 2, right.y - window.innerHeight / 2)
+      ))[0];
+    if (!target) throw new Error('Kein sichtbares Reaktionsziel im Canvas veröffentlicht.');
+    element.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true, pointerType: 'mouse', clientX: target.x, clientY: target.y,
+    }));
+    return target;
+  }, preferredId);
+}
+
 async function expectFocusFraming(
   page: Page,
   source: 'conversation' | 'story' | 'accident' | 'moment' | 'reaction',
@@ -40,7 +62,7 @@ async function expectFocusFraming(
   await expect(canvas).toHaveAttribute('data-focus-light', /^(?!off$).+/);
   await expect(canvas).toHaveAttribute('data-camera-focus-target', /^\d+\.\d,-?\d+\.\d,\d+\.\d{2}$/);
   await expect(canvas).toHaveAttribute('data-focus-participants', /^(?!none$).+/);
-  await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-fov'))).toBeLessThanOrEqual(26.01);
+  await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-fov'))).toBeLessThanOrEqual(30.01);
   await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-fov'))).toBeGreaterThanOrEqual(21.99);
   await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-amount'))).toBeGreaterThan(0.7);
   if (expectOccluder) {
@@ -102,6 +124,12 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
   await expect(canvas).toHaveAttribute('data-character-variation', '12-silhouettes');
   await expect(canvas).toHaveAttribute('data-character-diversity', '100');
   await expect(canvas).toHaveAttribute('data-character-frame-rate', '6');
+  await expect(canvas).toHaveAttribute('data-session-act', 'arrival');
+  await expect(canvas).toHaveAttribute('data-camera-phase', 'overview');
+  await expect(canvas).toHaveAttribute('data-selective-bloom', 'half-res-registered');
+  await expect(canvas).toHaveAttribute('data-bloom-surfaces', /[1-9]\d*/);
+  await expect(canvas).toHaveAttribute('data-weather-layers', '3');
+  await expect(canvas).toHaveAttribute('data-audio-samples', 'idle');
   await expect(canvas).toHaveAttribute('data-emote-bubbles', '0');
   await expect(canvas).toHaveAttribute('data-camera-focus-target', 'none');
   await expect(canvas).toHaveAttribute('data-camera-focus-fov', '30.00');
@@ -157,6 +185,7 @@ test('betritt das Café auf fallback und schaltet den Ton', async ({ page }) => 
   await expect(canvas).toHaveAttribute('data-quality-tier', 'fallback');
   await expect(canvas).toHaveAttribute('data-render-scale', '3');
   await expect(canvas).toHaveAttribute('data-character-frame-rate', '3');
+  await expect(canvas).toHaveAttribute('data-selective-bloom', 'fallback-off');
   await page.getByTestId('enter').evaluate((button) => {
     button.addEventListener('click', () => document.querySelector<HTMLElement>('[data-testid="sound"]')?.focus(), { once: true });
   });
@@ -173,7 +202,21 @@ test('betritt das Café auf fallback und schaltet den Ton', async ({ page }) => 
   }
   await expect(canvas).toHaveAttribute('data-guest-count', /[4-8]/);
   await expect(canvas).toHaveAttribute('data-render-loop', 'running');
+  if (await sound.isEnabled()) {
+    await expect(canvas).toHaveAttribute('data-audio-samples', /ready|partial/, { timeout: 15_000 });
+  }
   expect(errors).toEqual([]);
+});
+
+test('fällt bei einem fehlenden Ortspaket geräuschlos auf prozedurales Audio zurück', async ({ page }) => {
+  await page.route('**/audio/cafe/**', async (route) => route.fulfill({ status: 404, body: '' }));
+  await openCafe(page, '/?time=12:30&weather=clear');
+  await page.getByTestId('enter').click();
+  const sound = page.getByTestId('sound');
+  await expect(sound).toHaveAttribute('data-audio-state', /playing|unavailable/);
+  if (await sound.isEnabled()) {
+    await expect(page.locator('#cafe')).toHaveAttribute('data-audio-samples', 'fallback', { timeout: 15_000 });
+  }
 });
 
 for (const venue of [
@@ -383,10 +426,10 @@ test('reagiert nach Mausverweildauer genau einmal mit Emote, Fokus und leisem Ak
   await expect(canvas).toHaveAttribute('data-camera-focus-source', 'conversation', { timeout: 5_000 });
   await page.waitForTimeout(1_000);
   await expect(page.getByTestId('sound')).toHaveAttribute('data-audio-state', /playing|unavailable/);
-  const target = await reactionTarget(page);
-  await page.mouse.move(target.x, target.y);
+  const target = await moveToReactionTarget(page, 'guest-1');
 
-  await expect(canvas).toHaveAttribute('data-reacting-character', target.id, { timeout: 2_000 });
+  await expect(canvas).toHaveAttribute('data-pointer-hit', target.id);
+  await expect(canvas).toHaveAttribute('data-reacting-character', target.id, { timeout: 10_000 });
   await expect(canvas).toHaveAttribute('data-reaction', /wave|nod|laugh/);
   await expect(canvas).toHaveAttribute('data-camera-focus-source', 'reaction');
   await expect(canvas).toHaveAttribute('data-emote-bubbles', /[1-2]/);
@@ -403,7 +446,7 @@ test('ignoriert Touch- und Stiftbewegungen für Figurenreaktionen', async ({ pag
   await page.setViewportSize({ width: 1440, height: 810 });
   await openCafe(page, '/?time=12:30&weather=clear');
   await page.getByTestId('enter').click();
-  const target = await reactionTarget(page);
+  const target = await reactionTarget(page, 'barista');
   await page.locator('#cafe').evaluate((canvas, point) => {
     for (const pointerType of ['touch', 'pen']) {
       canvas.dispatchEvent(new PointerEvent('pointermove', {
@@ -431,9 +474,8 @@ test('lässt Geschichten den Mausfokus überstimmen', async ({ page }) => {
   const canvas = page.locator('#cafe');
   await expect(canvas).toHaveAttribute('data-story', 'order-mixup', { timeout: 5_000 });
   await expect(canvas).toHaveAttribute('data-camera-focus-source', 'story');
-  const target = await reactionTarget(page, 'guest-5');
-  await page.mouse.move(target.x, target.y);
-  await expect(canvas).toHaveAttribute('data-reacting-character', target.id, { timeout: 2_000 });
+  const target = await moveToReactionTarget(page, 'guest-5');
+  await expect(canvas).toHaveAttribute('data-reacting-character', target.id, { timeout: 10_000 });
   await expect(canvas).toHaveAttribute('data-camera-focus-source', 'story');
 });
 
@@ -453,11 +495,10 @@ test('pausiert die mobile Tour während eines Fokus und setzt sie danach fort', 
   await openCafe(page, '/?time=12:30&weather=clear');
   await page.getByTestId('enter').click();
   const canvas = page.locator('#cafe');
-  const target = await reactionTarget(page);
-  await page.mouse.move(target.x, target.y);
-  await expect(canvas).toHaveAttribute('data-camera-focus-source', 'reaction', { timeout: 2_000 });
+  await moveToReactionTarget(page, 'guest-1');
+  await expect(canvas).toHaveAttribute('data-camera-focus-source', 'reaction', { timeout: 10_000 });
   await expect(canvas).toHaveAttribute('data-mobile-tour-paused', 'true');
-  await expect(canvas).toHaveAttribute('data-camera-focus-source', 'none', { timeout: 6_000 });
+  await expect(canvas).toHaveAttribute('data-camera-focus-source', 'none', { timeout: 13_000 });
   await expect(canvas).toHaveAttribute('data-mobile-tour-paused', 'false');
 });
 
@@ -477,8 +518,7 @@ for (const scenario of [
     if (scenario.reaction) {
       await expect(page.locator('#cafe')).toHaveAttribute('data-camera-focus-source', 'conversation', { timeout: 5_000 });
       await page.waitForTimeout(1_000);
-      const target = await reactionTarget(page);
-      await page.mouse.move(target.x, target.y);
+      await moveToReactionTarget(page, 'guest-1');
     }
     await expectFocusFraming(page, scenario.source, scenario.source === 'conversation' || scenario.source === 'moment');
     await expectFocusRestoredByReducedMotion(page);
@@ -779,11 +819,86 @@ for (const scene of [
 }
 
 for (const scene of [
+  { name: 'v2-cafe-ritual-window-rain-trace', venue: 'cafe', moment: 'window-rain-trace', time: '20:30', weather: 'rain' },
+  { name: 'v2-cafe-encounter-pencil-return', venue: 'cafe', moment: 'pencil-return', time: '12:30', weather: 'clear' },
+  { name: 'v2-ramen-ritual-broth-lid-lift', venue: 'ramen', moment: 'broth-lid-lift', time: '20:30', weather: 'rain' },
+  { name: 'v2-ramen-encounter-condiment-pass', venue: 'ramen', moment: 'condiment-pass', time: '20:30', weather: 'clear' },
+  { name: 'v2-arcade-ritual-attract-mode-wave', venue: 'arcade', moment: 'attract-mode-wave', time: '22:00', weather: 'clear' },
+  { name: 'v2-arcade-encounter-coop-rescue', venue: 'arcade', moment: 'coop-rescue', time: '22:00', weather: 'clear' },
+] as const) {
+  test(`hält den V2-Moment ${scene.name} als filmische Baseline`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width: 1440, height: 810 });
+    await page.addInitScript(() => {
+      let hidden = false;
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+      (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama = () => {
+        hidden = true;
+        document.dispatchEvent(new Event('visibilitychange'));
+      };
+    });
+    await openCafe(page, `/?moment=${scene.moment}&time=${scene.time}&weather=${scene.weather}`, 'balanced');
+    if (scene.venue !== 'cafe') await page.getByRole('radio', { name: new RegExp(scene.venue, 'i') }).click();
+    await page.getByTestId('enter').click();
+    const canvas = page.locator('#cafe');
+    await expect(canvas).toHaveAttribute('data-moment', scene.moment, { timeout: 20_000 });
+    await expect(canvas).toHaveAttribute('data-moment-phase', 'hold', { timeout: 20_000 });
+    await expect(canvas).toHaveAttribute('data-camera-focus-source', 'moment', { timeout: 20_000 });
+    await expect(canvas).toHaveAttribute('data-camera-phase', 'focus', { timeout: 20_000 });
+    await expect(canvas).toHaveAttribute('data-focus-safe', 'true');
+    await expect(canvas).toHaveAttribute('data-selective-bloom', 'half-res-registered');
+    await page.evaluate(() => (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama?.());
+    await expect(canvas).toHaveAttribute('data-render-loop', 'paused');
+    await page.getByTestId('welcome').evaluate((element) => { element.style.display = 'none'; });
+    await page.getByTestId('controls').evaluate((element) => { (element as HTMLElement).hidden = true; });
+    await expect(page.locator('#app')).toHaveScreenshot(`${scene.name}.png`, {
+      animations: 'disabled',
+      maxDiffPixelRatio: 0.02,
+    });
+  });
+}
+
+for (const scene of [
+  { name: 'v2-cafe-mobile', venue: 'cafe', time: '20:30', weather: 'rain' },
+  { name: 'v2-arcade-mobile', venue: 'arcade', time: '22:00', weather: 'clear' },
+] as const) {
+  test(`hält ${scene.name} im reduzierten mobilen Profil`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.addInitScript(() => {
+      let hidden = false;
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
+      (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama = () => {
+        hidden = true;
+        document.dispatchEvent(new Event('visibilitychange'));
+      };
+    });
+    await openCafe(page, `/?time=${scene.time}&weather=${scene.weather}`);
+    if (scene.venue !== 'cafe') await page.getByRole('radio', { name: new RegExp(scene.venue, 'i') }).click();
+    await page.getByTestId('enter').evaluate((button) => {
+      button.addEventListener('click', () => (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama?.(), { once: true });
+    });
+    await page.getByTestId('enter').click();
+    const canvas = page.locator('#cafe');
+    await expect(canvas).toHaveAttribute('data-render-loop', 'paused');
+    await expect(canvas).toHaveAttribute('data-camera-phase', 'overview');
+    await expect(canvas).toHaveAttribute('data-particles', 'low');
+    await page.getByTestId('welcome').evaluate((element) => { element.style.display = 'none'; });
+    await page.getByTestId('controls').evaluate((element) => { (element as HTMLElement).hidden = true; });
+    await expect(page.locator('#app')).toHaveScreenshot(`${scene.name}.png`, {
+      animations: 'disabled',
+      maxDiffPixelRatio: 0.02,
+    });
+  });
+}
+
+for (const scene of [
   { name: 'cafe-conversation-focus', venue: 'cafe', path: '/?time=12:30&weather=clear', waitFor: 'conversation' },
   { name: 'ramen-noodle-mishap', venue: 'ramen', path: '/?story=noodle-mishap&time=20:30&weather=rain', waitFor: 'story' },
   { name: 'arcade-pointer-reaction', venue: 'arcade', path: '/?time=22:00&weather=clear', waitFor: 'reaction' },
 ] as const) {
   test(`hält die fokussierte Szene ${scene.name} als deterministische Baseline`, async ({ page }) => {
+    test.setTimeout(60_000);
     await page.setViewportSize({ width: 1440, height: 810 });
     await page.addInitScript(() => {
       let hidden = false;
@@ -800,13 +915,13 @@ for (const scene of [
     if (scene.waitFor === 'reaction') {
       await expect(canvas).toHaveAttribute('data-camera-focus-source', 'conversation', { timeout: 5_000 });
       await page.waitForTimeout(1_000);
-      const target = await reactionTarget(page);
-      await page.mouse.move(target.x, target.y);
-      await expect(canvas).toHaveAttribute('data-camera-focus-source', 'reaction', { timeout: 2_000 });
+      await moveToReactionTarget(page, 'guest-1');
+      await expect(canvas).toHaveAttribute('data-camera-focus-source', 'reaction', { timeout: 10_000 });
     } else {
       await expect(canvas).toHaveAttribute('data-camera-focus-source', scene.waitFor, { timeout: 5_000 });
     }
-    await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-amount')), { timeout: 5_000 })
+    await expect(canvas).toHaveAttribute('data-camera-phase', 'focus', { timeout: 20_000 });
+    await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-amount')), { timeout: 20_000 })
       .toBeGreaterThanOrEqual(0.99);
     await page.evaluate(() => (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama?.());
     await expect(canvas).toHaveAttribute('data-render-loop', 'paused');

@@ -76,12 +76,12 @@ const surface = (
 ): SurfaceRecipe => ({ kind, size, base, detail, highlight, roughness, metalness, repeat });
 
 const SAFE_AREA: FocusFrameBounds = {
-  left: 0.08,
-  top: 0.08,
-  right: 0.92,
-  bottom: 0.94,
-  width: 0.84,
-  height: 0.86,
+  left: 0.1,
+  top: 0.1,
+  right: 0.9,
+  bottom: 0.9,
+  width: 0.8,
+  height: 0.8,
 };
 
 export const VENUE_VISUAL_PROFILES: Readonly<Record<VenueKind, VenueVisualProfile>> = {
@@ -103,7 +103,7 @@ export const VENUE_VISUAL_PROFILES: Readonly<Record<VenueKind, VenueVisualProfil
       floor: surface('floor', '#d8c0a9', '#81563f', '#f2dec3', 0.58, 0.05, [7, 4]),
       emissive: surface('emissive', '#ffffff', '#e9c27d', '#ffffff', 0.24, 0.02, [2, 2]),
     },
-    bloom: { minimum: 0.18, maximum: 0.58, threshold: 0.8, radius: 0.42 },
+    bloom: { minimum: 0.18, maximum: 0.3, threshold: 0.86, radius: 0.42 },
     contrast: { minimumShadowLift: 0.045, maximumShadowLift: 0.16, minimumCharacterContrast: 2.3, saturation: [1.04, 1.13] },
     camera: { focusFov: [22, 26], safeArea: SAFE_AREA },
   },
@@ -125,7 +125,7 @@ export const VENUE_VISUAL_PROFILES: Readonly<Record<VenueKind, VenueVisualProfil
       floor: surface('floor', '#c3c4c0', '#63656a', '#e8e9df', 0.5, 0.12, [8, 5]),
       emissive: surface('emissive', '#ffffff', '#e8a35d', '#ffffff', 0.22, 0.02, [2, 2]),
     },
-    bloom: { minimum: 0.18, maximum: 0.56, threshold: 0.82, radius: 0.4 },
+    bloom: { minimum: 0.18, maximum: 0.3, threshold: 0.86, radius: 0.4 },
     contrast: { minimumShadowLift: 0.055, maximumShadowLift: 0.17, minimumCharacterContrast: 2.35, saturation: [1.01, 1.09] },
     camera: { focusFov: [22, 26], safeArea: SAFE_AREA },
   },
@@ -147,7 +147,7 @@ export const VENUE_VISUAL_PROFILES: Readonly<Record<VenueKind, VenueVisualProfil
       floor: surface('floor', '#9db4c8', '#355878', '#d2f4f4', 0.31, 0.28, [8, 5]),
       emissive: surface('emissive', '#ffffff', '#68dfe5', '#ffffff', 0.18, 0.08, [2, 2]),
     },
-    bloom: { minimum: 0.22, maximum: 0.68, threshold: 0.86, radius: 0.36 },
+    bloom: { minimum: 0.22, maximum: 0.42, threshold: 0.86, radius: 0.36 },
     contrast: { minimumShadowLift: 0.075, maximumShadowLift: 0.2, minimumCharacterContrast: 2.5, saturation: [1.08, 1.18] },
     camera: { focusFov: [22, 26], safeArea: SAFE_AREA },
   },

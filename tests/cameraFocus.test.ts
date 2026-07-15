@@ -37,27 +37,45 @@ describe('sanfte Kameraregie', () => {
     });
   });
 
-  it('fährt in 0,9 Sekunden auf 22 Grad und in 1,2 Sekunden zurück', () => {
+  it('fährt in 2,2 Sekunden auf 22 Grad, hält und kehrt in 2,8 Sekunden zurück', () => {
     const director = new CameraFocusDirector();
     const candidates = [candidate('reaction', '1', 100)];
     director.update(0, candidates);
-    expect(director.update(0.9, candidates).fieldOfView).toBeCloseTo(22);
-    expect(director.update(2, candidates).fieldOfView).toBeCloseTo(22);
-    expect(director.update(3.2, []).active).toBe(false);
+    expect(director.update(1.1, candidates).phase).toBe('approach');
+    expect(director.update(2.2, candidates).fieldOfView).toBeCloseTo(22);
+    expect(director.update(5.4, candidates).phase).toBe('recover');
+    expect(director.update(8.2, []).active).toBe(false);
+    expect(director.update(8.2, []).fieldOfView).toBe(30);
     expect(cameraFocusEase(0.5)).toBe(0.5);
   });
 
-  it('fokussiert Gespräche höchstens einmal in 18 Sekunden', () => {
+  it('übergibt weich an ein höher priorisiertes Ereignis, ohne die Rig-Position springen zu lassen', () => {
+    const director = new CameraFocusDirector();
+    const conversation = [candidate('conversation', 'c', 80)];
+    const before = director.update(1.1, conversation);
+    const handedOver = director.update(1.1, [...conversation, candidate('story', 's', 180)]);
+    expect(handedOver).toMatchObject({ source: 'story', phase: 'approach' });
+    expect(handedOver.amount).toBeCloseTo(before.amount);
+    expect(handedOver.target).toEqual(before.target);
+    expect(handedOver.fieldOfView).toBeCloseTo(before.fieldOfView);
+    expect(director.update(3.31, [candidate('story', 's', 180)])).toMatchObject({
+      source: 'story', phase: 'focus', amount: 1, target: { x: 180, y: 170 }, fieldOfView: 22,
+    });
+  });
+
+  it('hält nach der identischen Rückkehr mindestens 20 Sekunden Übersicht', () => {
     const director = new CameraFocusDirector();
     director.update(0, [candidate('conversation', '1', 80)]);
-    expect(director.update(6, [candidate('conversation', '2', 100)]).active).toBe(false);
-    expect(director.update(18, [candidate('conversation', '3', 120)]).source).toBe('conversation');
+    expect(director.update(6, [candidate('conversation', '2', 100)]).active).toBe(true);
+    expect(director.update(10, [candidate('conversation', '2', 100)]).active).toBe(false);
+    expect(director.update(29.1, [candidate('conversation', '2', 100)]).active).toBe(false);
+    expect(director.update(30, [candidate('conversation', '3', 120)]).source).toBe('conversation');
   });
 
   it('deaktiviert Fokus vollständig bei Reduced Motion und berechnet Teilnehmermittelpunkte', () => {
     const director = new CameraFocusDirector();
     expect(director.update(0, [candidate('story', '1', 80)], true)).toEqual({
-      active: false, participantIds: [], amount: 0, fieldOfView: 30,
+      active: false, phase: 'overview', participantIds: [], amount: 0, fieldOfView: 30,
     });
     expect(participantMidpoint([{ x: 40, y: 150 }, { x: 80, y: 180 }, { x: 120, y: 210 }])).toEqual({ x: 80, y: 180 });
     expect(participantMidpoint([])).toBeUndefined();

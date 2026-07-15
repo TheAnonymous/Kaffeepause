@@ -13,6 +13,7 @@ export const REACTION_CHARACTER_COOLDOWN_SECONDS = 12;
 export interface PointerSample {
   readonly x: number;
   readonly y: number;
+  readonly targetId?: string | 'barista';
 }
 
 export interface ReactionTarget {
@@ -53,10 +54,12 @@ export class PointerReactionController {
   private readonly characterCooldowns = new Map<string, number>();
   private current?: ActivePointerReaction;
   private serial = 0;
+  private lastPointer?: PointerSample;
 
   clearPointer(): void {
     this.hoveredId = undefined;
     this.dwellStartedAt = 0;
+    this.lastPointer = undefined;
   }
 
   update(
@@ -71,40 +74,53 @@ export class PointerReactionController {
       return { active: this.current };
     }
 
-    const nearest = [...targets].sort((left, right) => distance(pointer, left) - distance(pointer, right))[0];
+    const hintedTarget = pointer.targetId
+      ? targets.find((target) => target.id === pointer.targetId)
+      : undefined;
+    const nearest = hintedTarget
+      ?? [...targets].sort((left, right) => distance(pointer, left) - distance(pointer, right))[0];
     if (!nearest) return { active: this.current };
-    const nearestDistance = distance(pointer, nearest);
-    const continuing = this.hoveredId === nearest.id;
-    const withinRadius = continuing ? nearestDistance <= REACTION_RESET_RADIUS : nearestDistance <= REACTION_ACTIVATION_RADIUS;
+    const hoveredTarget = targets.find((target) => target.id === this.hoveredId);
+    const continuing = hoveredTarget !== undefined;
+    const target = hoveredTarget ?? nearest;
+    const targetDistance = distance(pointer, target);
+    const pointerMoved = this.lastPointer
+      ? Math.hypot(pointer.x - this.lastPointer.x, pointer.y - this.lastPointer.y) > 1
+      : false;
+    const withinRadius = continuing
+      ? !pointerMoved || targetDistance <= REACTION_RESET_RADIUS
+      : hintedTarget !== undefined || targetDistance <= REACTION_ACTIVATION_RADIUS;
     if (!withinRadius) {
       this.clearPointer();
       return { active: this.current };
     }
 
     if (!continuing) {
-      this.hoveredId = nearest.id;
+      this.hoveredId = target.id;
       this.dwellStartedAt = now;
+      this.lastPointer = { ...pointer };
       return { active: this.current };
     }
+    this.lastPointer = { ...pointer };
     if (this.current || now - this.dwellStartedAt < REACTION_DWELL_SECONDS) return { active: this.current };
     if (now - this.lastGlobalReactionAt < REACTION_GLOBAL_COOLDOWN_SECONDS) return {};
-    const lastCharacterReaction = this.characterCooldowns.get(nearest.id) ?? Number.NEGATIVE_INFINITY;
+    const lastCharacterReaction = this.characterCooldowns.get(target.id) ?? Number.NEGATIVE_INFINITY;
     if (now - lastCharacterReaction < REACTION_CHARACTER_COOLDOWN_SECONDS) return {};
 
     this.serial += 1;
-    const gesture = gestureFor(nearest.id, this.serial);
+    const gesture = gestureFor(target.id, this.serial);
     const reaction: ActivePointerReaction = {
       serial: this.serial,
-      characterId: nearest.id,
+      characterId: target.id,
       gesture,
       emotes: emoteForReaction(venue, gesture),
       startedAt: now,
       endsAt: now + REACTION_DURATION_SECONDS,
-      facing: pointer.x < nearest.x ? -1 : 1,
+      facing: pointer.x < target.x ? -1 : 1,
     };
     this.current = reaction;
     this.lastGlobalReactionAt = now;
-    this.characterCooldowns.set(nearest.id, now);
+    this.characterCooldowns.set(target.id, now);
     return { active: reaction, started: reaction };
   }
 }

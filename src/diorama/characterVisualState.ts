@@ -30,6 +30,7 @@ export interface CharacterVisualState {
   readonly offsetY: number;
   readonly seated: boolean;
   readonly activitySpotKind?: ActivitySpotKind;
+  readonly momentKind?: CafeMoment['kind'];
 }
 
 export interface GuestVisualStateInput {
@@ -48,6 +49,7 @@ export interface GuestVisualStateInput {
 
 export interface BaristaVisualStateInput {
   readonly barista: Barista;
+  readonly moment?: Readonly<CafeMoment>;
   readonly accident?: Readonly<CafeAccident>;
   readonly reaction?: Readonly<CharacterReactionVisual>;
   readonly time: number;
@@ -116,6 +118,13 @@ function momentGesture(moment: Readonly<CafeMoment>): Pick<CharacterVisualState,
     return { expression: 'laugh', gesture: 'toast' };
   }
   if (moment.kind === 'coffee-tasting' || moment.kind === 'first-date-toast') return { expression: 'smile', gesture: 'toast' };
+  if (['pencil-return', 'warm-cup-offer', 'bowl-pass', 'condiment-pass', 'last-gyoza-offer',
+    'ticket-trade', 'coop-rescue', 'lounge-prize-share'].includes(moment.kind)) {
+    return { expression: 'smile', gesture: 'swap' };
+  }
+  if (['doorway-greeting', 'attract-mode-wave'].includes(moment.kind)) return { expression: 'smile', gesture: 'wave' };
+  if (['noren-gust', 'napkin-save', 'cabinet-reboot'].includes(moment.kind)) return { expression: 'surprised', gesture: 'startle' };
+  if (['window-rain-trace', 'broth-lid-lift'].includes(moment.kind)) return { expression: 'focused', gesture: 'compare' };
   return { expression: 'smile', gesture: 'compare' };
 }
 
@@ -159,17 +168,19 @@ export function calculateGuestVisualState(input: GuestVisualStateInput): Charact
     pose, frame, facing, expression, gesture, offsetX, offsetY,
     seated: guest.state === 'activity' && input.activityPose !== 'standing',
     activitySpotKind: input.activitySpotKind,
+    momentKind: participant ? moment?.kind : undefined,
   };
 }
 
 export function calculateBaristaVisualState(input: BaristaVisualStateInput): CharacterVisualState {
-  const { barista, accident, reaction, reducedMotion = false } = input;
+  const { barista, moment, accident, reaction, reducedMotion = false } = input;
   const frame = characterFrameAt(input.time, input.frameRate, `barista:${barista.task}`, reducedMotion, barista.task === 'serving' ? 2 : 0);
   let facing = barista.facing;
   let expression: CharacterExpression = barista.task === 'tasting' ? 'smile' : 'focused';
   let gesture: CharacterGesture = 'none';
   let offsetY = 0;
 
+  const momentParticipant = Boolean(moment?.participantIds.includes('barista'));
   if (accident?.kind === 'tray-drop') {
     expression = accident.phase === 'cleanup' ? 'focused' : 'surprised';
     gesture = accident.phase === 'cleanup' ? 'clean' : 'startle';
@@ -179,6 +190,8 @@ export function calculateBaristaVisualState(input: BaristaVisualStateInput): Cha
     expression = reaction.gesture === 'laugh' ? 'laugh' : 'smile';
     gesture = reaction.gesture;
     offsetY = reaction.gesture === 'nod' && !reducedMotion ? (frame === 1 || frame === 2 ? -0.025 : 0) : 0;
+  } else if (moment && momentParticipant) {
+    ({ expression, gesture } = momentGesture(moment));
   }
 
   return {
@@ -191,5 +204,6 @@ export function calculateBaristaVisualState(input: BaristaVisualStateInput): Cha
     offsetY,
     seated: false,
     activitySpotKind: undefined,
+    momentKind: momentParticipant ? moment?.kind : undefined,
   };
 }

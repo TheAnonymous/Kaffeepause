@@ -32,6 +32,13 @@ import type {
   SimulationStats,
 } from './types';
 import type { SceneSnapshot } from '../scene/types';
+import {
+  MOMENT_REGISTRY,
+  momentDefinition,
+  momentDurationSeconds,
+  type MomentDefinition,
+} from './momentRegistry';
+import { SessionPacingDirector } from './sessionPacing';
 
 const NAMES = ['Fritzi', 'Eli', 'Jun', 'Pia', 'Mika', 'Romy', 'Ari', 'Bo', 'Cleo', 'Dani', 'Emi', 'Flo'] as const;
 const ACTIVITIES: readonly GuestActivity[] = [
@@ -136,7 +143,7 @@ const ACCIDENT_PHASE_DURATIONS: Readonly<Record<AccidentPhase, number>> = {
   chaos: 1.8,
   cleanup: 2.6,
 };
-const MOMENT_DURATIONS: Readonly<Record<CafeMomentKind, number>> = {
+const MOMENT_DURATIONS: Readonly<Partial<Record<CafeMomentKind, number>>> = {
   'shared-cake': 13,
   'card-game': 16,
   'window-gaze': 10,
@@ -278,6 +285,8 @@ export class CafeSimulation {
   private readonly momentMaxDelay: number;
   private readonly momentKinds: readonly CafeMomentKind[];
   private readonly momentDurationScale: number;
+  private readonly sessionPacing: SessionPacingDirector;
+  private readonly usesSessionPacing: boolean;
   private readonly storyRandom: SeededRandom;
   private readonly storyEnabled: boolean;
   private readonly storyMinDelay: number;
@@ -352,7 +361,14 @@ export class CafeSimulation {
     this.momentRandom = new SeededRandom(momentOptions.seed ?? ((options.seed ?? 0x4b41_4646) ^ 0xcafe_2026));
     this.momentMinDelay = Math.max(0, momentOptions.minDelaySeconds ?? 22);
     this.momentMaxDelay = Math.max(this.momentMinDelay, momentOptions.maxDelaySeconds ?? 50);
-    this.momentKinds = momentOptions.kinds?.length ? [...new Set(momentOptions.kinds)] : MOMENT_KINDS;
+    this.usesSessionPacing = momentOptions.enabled !== false
+      && momentOptions.kinds === undefined
+      && momentOptions.minDelaySeconds === undefined
+      && momentOptions.maxDelaySeconds === undefined;
+    this.sessionPacing = new SessionPacingDirector(momentOptions.seed ?? ((options.seed ?? 0x4b41_4646) ^ 0x5e55_2026));
+    this.momentKinds = momentOptions.kinds?.length
+      ? [...new Set(momentOptions.kinds)]
+      : [...MOMENT_KINDS, ...MOMENT_REGISTRY.map((entry) => entry.kind)];
     this.momentDurationScale = Math.max(0.001, momentOptions.durationScale ?? 1);
 
     const storyOptions = options.stories === false ? { enabled: false } : (options.stories ?? {});
@@ -413,6 +429,7 @@ export class CafeSimulation {
         .map((guest) => guest.regularId)
         .filter((regularId): regularId is RegularId => regularId !== undefined)),
       storyStages: Object.freeze({ ...this.storyProgress }),
+      sessionAct: this.sessionPacing.state(this.stats.elapsed, this.venue).act,
     });
   }
 
@@ -606,7 +623,9 @@ export class CafeSimulation {
   }
 
   private scheduleNextMoment(): void {
-    this.momentCountdown = this.momentRandom.range(this.momentMinDelay, this.momentMaxDelay);
+    this.momentCountdown = this.usesSessionPacing
+      ? this.sessionPacing.nextDelay(this.stats.elapsed)
+      : this.momentRandom.range(this.momentMinDelay, this.momentMaxDelay);
   }
 
   private scheduleNextStory(retrySoon = false): void {
@@ -619,12 +638,17 @@ export class CafeSimulation {
     const moment = this.currentMoment;
     if (moment) {
       moment.elapsed += delta;
+      const definition = momentDefinition(moment.kind);
+      const enterEnd = (definition?.duration.enter ?? moment.duration * 0.2) * this.momentDurationScale;
+      const returnStart = moment.duration - (definition?.duration.return ?? moment.duration * 0.2) * this.momentDurationScale;
+      moment.phase = moment.elapsed < enterEnd ? 'enter' : moment.elapsed < returnStart ? 'hold' : 'return';
       if (moment.elapsed < moment.duration) return;
       this.restoreMomentParticipants();
       this.stats.momentsCompleted += 1;
       this.lastMomentKind = moment.kind;
       this.currentMoment = undefined;
       if (moment.story) this.finishStoryBeat(moment);
+      else if (definition) this.sessionPacing.completed(this.stats.elapsed, definition.category);
       if (this.momentEnabled) this.scheduleNextMoment();
       return;
     }
@@ -644,6 +668,22 @@ export class CafeSimulation {
   }
 
   private beginMoment(): boolean {
+    if (this.usesSessionPacing) {
+      // Existing quiet interludes remain in the session, but V2 pacing owns three out of four beats.
+      if (this.stats.momentsCompleted > 0 && this.stats.momentsCompleted % 4 === 3 && this.beginLegacyMoment()) return true;
+      const seated = this.guests.filter((guest) => guest.state === 'activity');
+      const definitions = MOMENT_REGISTRY.filter((entry) => this.canStageDefinition(entry, seated));
+      const selected = this.sessionPacing.choose(this.stats.elapsed, this.venue, definitions);
+      if (selected && this.stageDefinition(selected, seated)) return true;
+      return this.beginLegacyMoment();
+    }
+    const requestedDefinition = MOMENT_REGISTRY.find((entry) => this.momentKinds.includes(entry.kind)
+      && this.canStageDefinition(entry, this.guests.filter((guest) => guest.state === 'activity')));
+    if (requestedDefinition && this.stageDefinition(requestedDefinition, this.guests.filter((guest) => guest.state === 'activity'))) return true;
+    return this.beginLegacyMoment();
+  }
+
+  private beginLegacyMoment(): boolean {
     const seated = this.guests.filter((guest) => guest.state === 'activity');
     const rainy = isWetWeather(this.environment);
     const late = isLateDay(this.environment);
@@ -675,6 +715,73 @@ export class CafeSimulation {
     const participants = this.pickMomentParticipants(kind, seated);
     if (participants.length === 0) return false;
     this.createMoment(kind, participants);
+    return true;
+  }
+
+  private canStageDefinition(definition: MomentDefinition, seated: readonly Guest[]): boolean {
+    if (definition.venue !== this.venue || !this.momentKinds.includes(definition.kind)) return false;
+    const weather = this.environment?.weather;
+    if (definition.weather === 'rain' && !['rain', 'storm'].includes(weather?.kind ?? 'clear')) return false;
+    if (definition.weather === 'wet' && !isWetWeather(this.environment)) return false;
+    if (definition.weather === 'wind' && Math.max(weather?.windSpeed ?? 0, weather?.windGusts ?? 0) < 18) return false;
+    const anchored = this.guestsForDefinition(definition, seated);
+    if (definition.guestCount === 2 && definition.anchorTags.includes('cabinet-pair')) {
+      return anchored.some((first, index) => anchored.slice(index + 1)
+        .some((second) => distance(first.position, second.position) <= 60));
+    }
+    return anchored.length >= definition.guestCount;
+  }
+
+  private guestsForDefinition(definition: MomentDefinition, seated: readonly Guest[]): Guest[] {
+    if (definition.guestCount === 0) return [];
+    if (definition.anchorTags.length === 0) return [...seated];
+    const anchored = seated.filter((guest) => definition.anchorTags.every((tag) => this.guestHasTag(guest, tag)));
+    if (anchored.length >= definition.guestCount) return anchored;
+    if (anchored.length > 0 && definition.guestCount === 2) {
+      const partner = seated
+        .filter((guest) => guest.id !== anchored[0]?.id)
+        .sort((left, right) => distance(left.position, anchored[0]!.position) - distance(right.position, anchored[0]!.position))[0];
+      return partner ? [anchored[0]!, partner] : anchored;
+    }
+    return anchored;
+  }
+
+  private stageDefinition(definition: MomentDefinition, seated: readonly Guest[]): boolean {
+    const candidates = this.guestsForDefinition(definition, seated);
+    let participants: Guest[] = [];
+    if (definition.guestCount === 1) {
+      const selected = candidates.length > 0 ? this.momentRandom.pick(candidates) : undefined;
+      participants = selected ? [selected] : [];
+    } else if (definition.guestCount === 2) {
+      const pairs: Array<readonly [Guest, Guest]> = [];
+      for (let left = 0; left < candidates.length; left += 1) {
+        for (let right = left + 1; right < candidates.length; right += 1) {
+          const first = candidates[left];
+          const second = candidates[right];
+          if (!first || !second) continue;
+          const cabinetMoment = definition.anchorTags.includes('cabinet-pair');
+          const spatialPair = cabinetMoment
+            ? distance(first.position, second.position) <= 60
+            : definition.anchorTags.includes('lounge') || this.sameActivityGroup(first, second);
+          if (spatialPair) {
+            pairs.push([first, second]);
+          }
+        }
+      }
+      pairs.sort(([a, b], [c, d]) => distance(a.position, b.position) - distance(c.position, d.position));
+      const selected = pairs.length > 0 ? this.momentRandom.pick(pairs.slice(0, 3)) : undefined;
+      participants = selected ? [...selected] : candidates.slice(0, 2);
+    }
+    if (participants.length !== definition.guestCount) return false;
+    this.createMoment(definition.kind, participants, undefined, undefined, definition.includesStaff);
+    if (definition.includesStaff && definition.staffTask) {
+      const anchor = this.layout.staffPlaces[definition.staffTask];
+      this.barista.task = definition.staffTask;
+      this.barista.position = copyPoint(anchor);
+      this.barista.target = copyPoint(anchor);
+      this.barista.taskTime = 0;
+      this.barista.taskDuration = momentDurationSeconds(definition) * this.momentDurationScale;
+    }
     return true;
   }
 
@@ -761,17 +868,20 @@ export class CafeSimulation {
     participants: readonly Guest[],
     story?: CafeStoryKind,
     storyStep?: 1 | 2 | 3,
+    includeBarista = false,
   ): void {
     this.momentGuestSnapshots.clear();
     for (const participant of participants) this.momentGuestSnapshots.set(participant.id, this.snapshotGuest(participant));
     this.momentBaristaSnapshot = this.snapshotBarista();
+    const definition = momentDefinition(kind);
     this.currentMoment = {
       id: this.nextMomentId,
       kind,
       startedAt: this.stats.elapsed,
-      participantIds: participants.map((guest) => guest.id),
+      participantIds: [...participants.map((guest) => guest.id), ...(includeBarista ? ['barista'] : [])],
       elapsed: 0,
-      duration: MOMENT_DURATIONS[kind] * this.momentDurationScale,
+      duration: (definition ? momentDurationSeconds(definition) : (MOMENT_DURATIONS[kind] ?? 11)) * this.momentDurationScale,
+      phase: 'enter',
       story,
       storyStep,
     };

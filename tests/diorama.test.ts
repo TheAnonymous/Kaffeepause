@@ -88,7 +88,7 @@ describe('diorama look direction', () => {
   it('caps arcade bloom peaks and character emissive light', () => {
     const look = calculateDioramaLook('arcade', environment('night', 'storm', 'storm', 1, 100));
 
-    expect(look.bloom).toBeCloseTo(0.6616, 4);
+    expect(look.bloom).toBeCloseTo(0.42, 4);
     expect(look.characterEmissive).toBeLessThanOrEqual(0.31);
     expect(look.characterEmissive).toBeGreaterThan(0.26);
   });

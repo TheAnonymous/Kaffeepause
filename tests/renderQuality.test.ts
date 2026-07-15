@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FrameBudgetProbe,
   lowerQualityTier,
   parseRenderQualityOverride,
   RENDER_QUALITY,
@@ -68,15 +69,40 @@ describe('HD-2D-Masterauflösung', () => {
     expect(governor.currentTier).toBe('fallback');
   });
 
-  it('behält eine Stufe dauerhaft bei, wenn der Median die Schwelle nicht überschreitet', () => {
+  it('senkt bei einem P95-Ausreißer trotz gutem Median ab und behält eine stabile Stufe', () => {
     const governor = new RenderQualityGovernor('master', {
-      warmupMs: 0, sampleFrames: 3, slowFrameThresholdMs: 28,
+      warmupMs: 0, sampleFrames: 3, slowFrameThresholdMs: 28, slowFrameP95ThresholdMs: 25,
     });
-    governor.observeVisibleFrame(20);
-    governor.observeVisibleFrame(28);
-    expect(governor.observeVisibleFrame(40)).toBeUndefined();
-    expect(governor.currentTier).toBe('master');
-    for (let index = 0; index < 120; index += 1) expect(governor.observeVisibleFrame(60)).toBeUndefined();
-    expect(governor.currentTier).toBe('master');
+    governor.observeVisibleFrame(16);
+    governor.observeVisibleFrame(16);
+    expect(governor.observeVisibleFrame(33)).toBe('balanced');
+    expect(governor.currentTier).toBe('balanced');
+
+    const stable = new RenderQualityGovernor('master', {
+      warmupMs: 0, sampleFrames: 3, slowFrameThresholdMs: 28, slowFrameP95ThresholdMs: 25,
+    });
+    stable.observeVisibleFrame(16);
+    stable.observeVisibleFrame(18);
+    expect(stable.observeVisibleFrame(24)).toBeUndefined();
+    expect(stable.currentTier).toBe('master');
+  });
+
+  it('prüft nach der Aufwärmung Desktop-Median/P95 und das reduzierte Mobile-Profil getrennt', () => {
+    const desktop = new FrameBudgetProbe(0, 1_000);
+    let desktopReport;
+    for (let index = 0; index < 63; index += 1) desktopReport = desktop.observe(index === 62 ? 24 : 16, false) ?? desktopReport;
+    expect(desktopReport).toMatchObject({ valid: true, profile: 'desktop', median: 16, p95: 16 });
+
+    const mobile = new FrameBudgetProbe(0, 1_000);
+    let mobileReport;
+    for (let index = 0; index < 40; index += 1) mobileReport = mobile.observe(index === 39 ? 32 : 26, true) ?? mobileReport;
+    expect(mobileReport).toMatchObject({ valid: true, profile: 'mobile', p95: 26 });
+  });
+
+  it('meldet auch extrem langsame Software-Frames ehrlich als Budgetverletzung', () => {
+    const probe = new FrameBudgetProbe(0, 1_000);
+    expect(probe.observe(1_250, false)).toMatchObject({
+      valid: false, profile: 'desktop', median: 1_250, p95: 1_250, samples: 1,
+    });
   });
 });

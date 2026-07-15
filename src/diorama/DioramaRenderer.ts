@@ -67,6 +67,7 @@ import {
 } from './characterVisualState';
 import {
   PointerReactionController,
+  REACTION_ACTIVATION_RADIUS,
   type ActivePointerReaction,
   type PointerSample,
   type ReactionTarget,
@@ -81,6 +82,7 @@ import {
   type FocusFrameElement,
 } from './cameraFocus';
 import { resolveBubblePlacements, type BubbleBounds } from './bubbleLayout';
+import { SELECTIVE_BLOOM_LAYER } from './selectiveBloom';
 import {
   fadeFocusOccluder,
   focusOccluderOpacity,
@@ -186,9 +188,12 @@ function seeded(index: number, salt: number): number {
 export class DioramaRenderer {
   private readonly webgl: WebGLRenderer;
   private readonly scene = new Scene();
+  private readonly bloomBackground = new Color('#000000');
   private readonly perspective = new PerspectiveCamera(30, 16 / 9, 0.1, 80);
   private readonly composer: EffectComposer;
+  private readonly bloomComposer: EffectComposer;
   private readonly bloom: UnrealBloomPass;
+  private readonly selectiveBloomComposite: ShaderPass;
   private readonly miniature: ShaderPass;
   private readonly hemisphere = new HemisphereLight('#bad7df', '#2a2028', 1.1);
   private readonly keyLight = new DirectionalLight('#fff0cc', 3.1);
@@ -196,7 +201,7 @@ export class DioramaRenderer {
   private readonly spriteTextures = new SpriteTextureLibrary();
   private readonly guestNodes = new Map<string, CharacterNode>();
   private readonly baristaNode: CharacterNode;
-  private readonly rain: Points<BufferGeometry, PointsMaterial>;
+  private readonly weatherLayers: readonly Points<BufferGeometry, PointsMaterial>[];
   private readonly eventAccent: Mesh<RingGeometry, MeshBasicMaterial>;
   private venueSet: DioramaSet;
   private venue: VenueKind = 'cafe';
@@ -212,7 +217,7 @@ export class DioramaRenderer {
   private activeReaction?: ActivePointerReaction;
   private reactionTargets: readonly ReactionTarget[] = [];
   private readonly focusDirector = new CameraFocusDirector();
-  private focusState: CameraFocusState = { active: false, participantIds: [], amount: 0, fieldOfView: 30 };
+  private focusState: CameraFocusState = { active: false, phase: 'overview', participantIds: [], amount: 0, fieldOfView: 30 };
   private focusFrameBounds?: FocusFrameBounds;
   private focusFrameSafe = true;
   private focusFovLift = 0;
@@ -263,20 +268,38 @@ export class DioramaRenderer {
     this.scene.add(this.venueSet.root);
     this.baristaNode = this.createCharacterNode('barista');
     this.scene.add(this.baristaNode.root);
-    this.rain = this.createWeatherParticles();
-    this.scene.add(this.rain);
+    this.weatherLayers = [
+      this.createWeatherParticles(0, -3.43, 0.72),
+      this.createWeatherParticles(1, -3.36, 1),
+      this.createWeatherParticles(2, -3.29, 1.32),
+    ];
+    this.scene.add(...this.weatherLayers);
     this.eventAccent = this.createEventAccent();
     this.scene.add(this.eventAccent);
 
     this.perspective.position.set(0, 6.7, 15.8);
     this.perspective.lookAt(0, 2.55, -0.2);
     const renderPass = new RenderPass(this.scene, this.perspective);
+    const bloomRenderPass = new RenderPass(this.scene, this.perspective);
     const initialBloom = VENUE_VISUAL_PROFILES[this.venue].bloom;
-    this.bloom = new UnrealBloomPass(new Vector2(2304, 1296), this.look.bloom, initialBloom.radius, initialBloom.threshold);
+    this.bloom = new UnrealBloomPass(new Vector2(1152, 648), this.look.bloom, initialBloom.radius, initialBloom.threshold);
+    this.bloomComposer = new EffectComposer(this.webgl);
+    this.bloomComposer.renderToScreen = false;
+    this.bloomComposer.addPass(bloomRenderPass);
+    this.bloomComposer.addPass(this.bloom);
+    this.selectiveBloomComposite = new ShaderPass({
+      uniforms: {
+        tDiffuse: { value: null },
+        tBloom: { value: this.bloomComposer.renderTarget2.texture },
+        bloomMix: { value: 1 },
+      },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader: 'uniform sampler2D tDiffuse; uniform sampler2D tBloom; uniform float bloomMix; varying vec2 vUv; void main(){ vec4 base=texture2D(tDiffuse,vUv); vec3 glow=texture2D(tBloom,vUv).rgb; gl_FragColor=vec4(base.rgb+glow*bloomMix,base.a); }',
+    });
     this.miniature = new ShaderPass(MINIATURE_SHADER);
     this.composer = new EffectComposer(this.webgl);
     this.composer.addPass(renderPass);
-    this.composer.addPass(this.bloom);
+    this.composer.addPass(this.selectiveBloomComposite);
     this.composer.addPass(this.miniature);
     this.applyQualityProfile();
 
@@ -301,12 +324,14 @@ export class DioramaRenderer {
     canvas.dataset.speechBubbleResolution = SPEECH_BUBBLE_RESOLUTION;
     canvas.dataset.renderCount = '0';
     canvas.dataset.reactingCharacter = 'none';
+    canvas.dataset.pointerHit = 'none';
     canvas.dataset.reaction = 'none';
     canvas.dataset.cameraFocus = 'none';
     canvas.dataset.cameraFocusSource = 'none';
     canvas.dataset.cameraFocusTarget = 'none';
     canvas.dataset.cameraFocusFov = '30.00';
     canvas.dataset.cameraFocusAmount = '0.00';
+    canvas.dataset.cameraPhase = 'overview';
     canvas.dataset.focusParticipants = 'none';
     canvas.dataset.focusOccluders = 'none';
     canvas.dataset.focusOccluderOpacity = '1.00';
@@ -317,6 +342,8 @@ export class DioramaRenderer {
     canvas.dataset.focusLight = 'off';
     canvas.dataset.visibleEmotes = 'none';
     canvas.dataset.emoteBubbles = '0';
+    canvas.dataset.bloomSurfaces = String(this.venueSet.bloomSurfaceCount);
+    canvas.dataset.weatherLayers = '3';
     this.applyLayoutDatasets(this.venue);
   }
 
@@ -325,12 +352,21 @@ export class DioramaRenderer {
   }
 
   setPointerSample(sample: PointerSample): void {
-    this.pointerSample = sample;
+    const hit = [...this.reactionTargets]
+      .sort((left, right) => (
+        Math.hypot(sample.x - left.x, sample.y - left.y) - Math.hypot(sample.x - right.x, sample.y - right.y)
+      ))[0];
+    const targetId = hit && Math.hypot(sample.x - hit.x, sample.y - hit.y) <= REACTION_ACTIVATION_RADIUS
+      ? hit.id
+      : undefined;
+    this.pointerSample = { ...sample, targetId };
+    this.canvas.dataset.pointerHit = targetId ?? 'none';
   }
 
   clearPointerSample(): void {
     this.pointerSample = undefined;
     this.pointerReactions.clearPointer();
+    this.canvas.dataset.pointerHit = 'none';
   }
 
   setQualityTier(tier: RenderQualityTier): void {
@@ -359,6 +395,7 @@ export class DioramaRenderer {
     this.canvas.dataset.venue = venue;
     this.canvas.dataset.visualProfile = profile.id;
     this.canvas.dataset.surfaceTextures = String(this.venueSet.surfaceTextureCount);
+    this.canvas.dataset.bloomSurfaces = String(this.venueSet.bloomSurfaceCount);
     this.applyLayoutDatasets(venue);
   }
 
@@ -384,6 +421,7 @@ export class DioramaRenderer {
     const height = WORLD_HEIGHT * this.qualityProfile.renderScale;
     this.webgl.setSize(width, height, false);
     this.composer.setSize(width, height);
+    this.bloomComposer.setSize(Math.max(1, Math.ceil(width / 2)), Math.max(1, Math.ceil(height / 2)));
     this.perspective.aspect = width / height;
     this.perspective.updateProjectionMatrix();
     this.miniature.uniforms.resolution!.value.set(width, height);
@@ -409,6 +447,14 @@ export class DioramaRenderer {
     this.updateFocusFrame(snapshot);
     this.updateWeather(time);
     this.updateEvent(snapshot, time);
+    if (this.qualityProfile.bloom !== 'off') {
+      const background = this.scene.background;
+      this.scene.background = this.bloomBackground;
+      this.perspective.layers.set(SELECTIVE_BLOOM_LAYER);
+      this.bloomComposer.render();
+      this.perspective.layers.set(0);
+      this.scene.background = background;
+    }
     this.composer.render();
     this.renderCount += 1;
     this.canvas.dataset.renderCount = String(this.renderCount);
@@ -421,11 +467,14 @@ export class DioramaRenderer {
     this.spriteTextures.dispose();
     for (const node of this.guestNodes.values()) this.disposeCharacterNode(node);
     this.disposeCharacterNode(this.baristaNode);
-    this.rain.geometry.dispose();
-    this.rain.material.dispose();
+    for (const layer of this.weatherLayers) {
+      layer.geometry.dispose();
+      layer.material.dispose();
+    }
     this.eventAccent.geometry.dispose();
     this.eventAccent.material.dispose();
     this.composer.dispose();
+    this.bloomComposer.dispose();
     this.webgl.dispose();
   }
 
@@ -469,6 +518,7 @@ export class DioramaRenderer {
   private applyQualityProfile(): void {
     const profile = this.qualityProfile;
     this.bloom.enabled = profile.bloom !== 'off';
+    this.selectiveBloomComposite.uniforms.bloomMix!.value = profile.bloom === 'off' ? 0 : 1;
     this.keyLight.shadow.map?.dispose();
     this.keyLight.shadow.map = null;
     this.keyLight.shadow.mapSize.set(profile.shadowMapSize, profile.shadowMapSize);
@@ -478,6 +528,7 @@ export class DioramaRenderer {
     this.canvas.dataset.renderQuality = `webgl-diorama-${profile.tier}`;
     this.canvas.dataset.shadowMapSize = String(profile.shadowMapSize);
     this.canvas.dataset.bloomPass = profile.bloom;
+    this.canvas.dataset.selectiveBloom = profile.bloom === 'off' ? 'fallback-off' : 'half-res-registered';
     this.canvas.dataset.miniatureBlur = profile.miniatureBlur;
     this.canvas.dataset.characterFrameRate = String(profile.characterFrameRate);
   }
@@ -623,9 +674,8 @@ export class DioramaRenderer {
     this.perspective.position.x = targetX;
     this.perspective.position.y = 6.7 + (5.7 - 6.7) * this.focusState.amount;
     this.perspective.position.z = 15.8 + ((mappedTarget?.z ?? -0.2) + 12.3 - 15.8) * this.focusState.amount;
-    const profile = VENUE_VISUAL_PROFILES[this.venue];
     const framedFov = this.focusState.active && this.focusState.amount > 0.7
-      ? Math.min(profile.camera.focusFov[1], this.focusState.fieldOfView + this.focusFovLift)
+      ? Math.min(30, this.focusState.fieldOfView + this.focusFovLift)
       : this.focusState.fieldOfView;
     if (Math.abs(this.perspective.fov - framedFov) > 0.001) {
       this.perspective.fov = framedFov;
@@ -703,6 +753,7 @@ export class DioramaRenderer {
     }
     const baristaVisual = calculateBaristaVisualState({
       barista: snapshot.barista,
+      moment: snapshot.moment,
       accident: snapshot.accident,
       reaction: this.activeReaction,
       time,
@@ -843,7 +894,7 @@ export class DioramaRenderer {
       return;
     }
 
-    const participantLift = Math.min(0.42, this.look.characterEmissive + 0.1);
+    const participantLift = this.look.characterEmissive * 1.1;
     for (const id of activeIds) {
       if (id === 'barista') this.baristaNode.plane.material.emissiveIntensity = participantLift;
       else {
@@ -860,7 +911,7 @@ export class DioramaRenderer {
         .multiplyScalar(1 / participantNodes.length);
       this.focusLight.position.set(center.x, 2.5, center.z + 1.15);
       this.focusLight.color.copy(this.look.focusColor);
-      this.focusLight.intensity = this.focusState.amount * (this.venue === 'arcade' ? 8 : 6.4);
+      this.focusLight.intensity = this.focusState.amount * (this.venue === 'arcade' ? 0.16 : 0.12);
     }
 
     const targets: FocusVisibilityTarget[] = [];
@@ -969,30 +1020,36 @@ export class DioramaRenderer {
         this.focusFrameBounds.bottom - safeArea.bottom,
       )
       : 0;
-    const targetLift = this.focusFrameSafe ? 0 : Math.min(4, 0.6 + overshoot * 18);
-    this.focusFovLift = Math.max(this.focusFovLift, targetLift);
+    if (!this.focusFrameSafe) {
+      const targetLift = Math.min(4, 0.8 + overshoot * 24);
+      this.focusFovLift = Math.min(4, Math.max(this.focusFovLift + 0.3, targetLift));
+    }
   }
 
   private updateWeather(time: number): void {
     const weather = this.environment?.weather.kind ?? 'clear';
     const visible = weather === 'rain' || weather === 'storm' || weather === 'snow';
-    this.rain.visible = visible;
+    for (const layer of this.weatherLayers) layer.visible = visible;
     if (!visible) return;
-    this.rain.material.color.set(weather === 'snow' ? '#e6edf0' : '#8eb3c5');
-    this.rain.material.size = weather === 'snow' ? 0.09 : 0.045;
-    this.rain.material.opacity = weather === 'storm' ? 0.8 : 0.62;
-    const positions = this.rain.geometry.getAttribute('position') as BufferAttribute;
-    const count = this.reducedMotion ? 72 : weather === 'storm' ? 260 : 180;
-    this.rain.geometry.setDrawRange(0, count);
-    if (this.reducedMotion) return;
-    for (let index = 0; index < count; index += 1) {
-      const base = seeded(index, 3);
-      const speed = weather === 'snow' ? 0.33 + seeded(index, 4) * 0.18 : 1.4 + seeded(index, 4) * 0.75;
-      const y = ((base * 8.5 - time * speed) % 8.5 + 8.5) % 8.5 + 0.4;
-      positions.setY(index, y);
-      if (weather === 'snow') positions.setX(index, -7.7 + seeded(index, 1) * 15.4 + Math.sin(time + index) * 0.12);
+    for (const [layerIndex, layer] of this.weatherLayers.entries()) {
+      layer.material.color.set(weather === 'snow' ? '#e6edf0' : '#8eb3c5');
+      layer.material.size = (weather === 'snow' ? 0.075 : 0.035) * (0.75 + layerIndex * 0.28);
+      layer.material.opacity = (weather === 'storm' ? 0.72 : 0.5) * (0.72 + layerIndex * 0.14);
+      const positions = layer.geometry.getAttribute('position') as BufferAttribute;
+      const baseCount = this.reducedMotion ? 18 : weather === 'storm' ? 86 : 60;
+      const count = Math.min(90, baseCount + layerIndex * (this.reducedMotion ? 3 : 9));
+      layer.geometry.setDrawRange(0, count);
+      if (this.reducedMotion) continue;
+      for (let index = 0; index < count; index += 1) {
+        const seedIndex = index + layerIndex * 97;
+        const base = seeded(seedIndex, 3);
+        const speed = weather === 'snow' ? 0.3 + seeded(seedIndex, 4) * 0.18 : 1.1 + layerIndex * 0.28 + seeded(seedIndex, 4) * 0.65;
+        const y = ((base * 8.5 - time * speed) % 8.5 + 8.5) % 8.5 + 0.4;
+        positions.setY(index, y);
+        if (weather === 'snow') positions.setX(index, -7.7 + seeded(seedIndex, 1) * 15.4 + Math.sin(time + seedIndex) * 0.12);
+      }
+      positions.needsUpdate = true;
     }
-    positions.needsUpdate = true;
   }
 
   private updateEvent(snapshot: SceneSnapshot, time: number): void {
@@ -1035,6 +1092,9 @@ export class DioramaRenderer {
     this.canvas.dataset.accident = accident?.kind ?? 'none';
     this.canvas.dataset.accidentPhase = accident?.phase ?? 'none';
     this.canvas.dataset.moment = moment?.kind ?? 'none';
+    this.canvas.dataset.momentPhase = moment?.phase ?? 'none';
+    this.canvas.dataset.sessionAct = snapshot.sessionAct ?? 'arrival';
+    this.canvas.dataset.cameraPhase = this.focusState.phase;
     this.canvas.dataset.story = moment?.story ?? 'none';
     this.canvas.dataset.storyStep = String(moment?.storyStep ?? 0);
     this.canvas.dataset.regulars = snapshot.regularIds.join(',');
@@ -1131,20 +1191,21 @@ export class DioramaRenderer {
     node.speech.dispose();
   }
 
-  private createWeatherParticles(): Points<BufferGeometry, PointsMaterial> {
-    const count = 260;
+  private createWeatherParticles(layer: number, z: number, scale: number): Points<BufferGeometry, PointsMaterial> {
+    const count = 90;
     const positions = new Float32Array(count * 3);
     for (let index = 0; index < count; index += 1) {
-      positions[index * 3] = -7.7 + seeded(index, 1) * 15.4;
-      positions[index * 3 + 1] = 0.3 + seeded(index, 2) * 8.5;
-      positions[index * 3 + 2] = -3.28 + seeded(index, 5) * 0.05;
+      const seedIndex = index + layer * 97;
+      positions[index * 3] = -7.7 + seeded(seedIndex, 1) * 15.4;
+      positions[index * 3 + 1] = 0.3 + seeded(seedIndex, 2) * 8.5;
+      positions[index * 3 + 2] = z + seeded(seedIndex, 5) * 0.025;
     }
     const geometry = new BufferGeometry();
     const attribute = new BufferAttribute(positions, 3);
     attribute.setUsage(DynamicDrawUsage);
     geometry.setAttribute('position', attribute);
     const material = new PointsMaterial({
-      color: '#8eb3c5', size: 0.045, transparent: true, opacity: 0.65,
+      color: '#8eb3c5', size: 0.04 * scale, transparent: true, opacity: 0.52,
       depthWrite: false, sizeAttenuation: true,
     });
     const particles = new Points(geometry, material);

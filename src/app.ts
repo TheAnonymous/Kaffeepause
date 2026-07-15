@@ -11,6 +11,7 @@ import {
   type RendererState,
 } from './scene/rendererLifecycle';
 import {
+  FrameBudgetProbe,
   parseRenderQualityOverride,
   RenderQualityGovernor,
   type RenderQualityTier,
@@ -42,6 +43,24 @@ const MOMENT_MESSAGES: Readonly<Record<CafeMomentKind, string>> = {
   'chopstick-drop': 'Ein Stäbchen fällt klappernd zu Boden und wird schnell aufgehoben.',
   'ticket-stream': 'Ein langer Ticketstreifen kringelt sich durch die Arcade-Halle.',
   'button-mash-sync': 'Zwei Gäste finden gleichzeitig denselben Arcade-Rhythmus.',
+  'pastry-restock': 'Die Auslage wird in ruhigen Handgriffen wieder aufgefüllt.',
+  'table-reset': 'Ein freier Tisch wird für den nächsten Besuch vorbereitet.',
+  'window-rain-trace': 'Ein Finger folgt für einen Moment den Regentropfen am Fenster.',
+  'pencil-return': 'Ein entliehener Stift findet wortlos zu seinem Platz zurück.',
+  'warm-cup-offer': 'Eine warme Tasse wird vorsichtig über den Tisch gereicht.',
+  'doorway-greeting': 'An der Tür wechseln zwei Menschen einen stillen Gruß.',
+  'broth-lid-lift': 'Der Deckel hebt sich und warmer Dampf füllt kurz den Tresen.',
+  'bowl-pass': 'Eine dampfende Schüssel wandert sicher über den Tresen.',
+  'noren-gust': 'Ein Windstoß bewegt den Vorhang und alle Blicke folgen ihm.',
+  'condiment-pass': 'Die Gewürzflasche wechselt mit einem kleinen Nicken den Platz.',
+  'last-gyoza-offer': 'Das letzte Gyoza wird geteilt, ohne dass ein Wort nötig ist.',
+  'napkin-save': 'Eine Serviette fängt einen kleinen Spritzer gerade noch auf.',
+  'attract-mode-wave': 'Das Leuchten der Automaten läuft wie eine Welle durch den Raum.',
+  'token-hopper-refill': 'Neue Münzen klimpern ruhig in den Hopper.',
+  'cabinet-reboot': 'Ein Automat startet neu und findet sein vertrautes Leuchten wieder.',
+  'ticket-trade': 'Zwei Ticketstreifen wechseln gegen ein dankbares Lächeln den Besitzer.',
+  'coop-rescue': 'Ein zweites Paar Hände rettet wortlos die gemeinsame Runde.',
+  'lounge-prize-share': 'Ein kleiner Gewinn wird auf der Lounge-Bank geteilt.',
 };
 
 const STORY_MESSAGES: Readonly<Record<CafeStoryKind, readonly string[]>> = {
@@ -113,9 +132,13 @@ function simulationOptions(): CafeSimulationOptions {
     'ramen-slurp', 'arcade-duel', 'arcade-high-score', 'umbrella-handoff',
     'foam-moustache', 'sugar-packet-domino', 'steam-glasses', 'chopstick-drop',
     'ticket-stream', 'button-mash-sync',
+    'pastry-restock', 'table-reset', 'window-rain-trace', 'pencil-return', 'warm-cup-offer', 'doorway-greeting',
+    'broth-lid-lift', 'bowl-pass', 'noren-gust', 'condiment-pass', 'last-gyoza-offer', 'napkin-save',
+    'attract-mode-wave', 'token-hopper-refill', 'cabinet-reboot', 'ticket-trade', 'coop-rescue', 'lounge-prize-share',
   ];
   if (momentKinds.includes(requestedMoment as CafeMomentKind)) {
-    options.initialGuests = Math.max(options.initialGuests ?? 0, requestedMoment === 'window-gaze' ? 2 : 4);
+    options.initialGuests = Math.max(options.initialGuests ?? 0,
+      requestedMoment === 'lounge-prize-share' ? 7 : requestedMoment === 'window-gaze' ? 2 : 4);
     options.moments = {
       seed: 0x51ce_2026,
       minDelaySeconds: 0.35,
@@ -172,6 +195,7 @@ export class KaffeepauseApp {
     ? undefined
     : new RenderQualityGovernor('master');
   private qualityTier: RenderQualityTier = this.forcedQualityTier ?? 'master';
+  private readonly frameBudget = new FrameBudgetProbe();
   private lifecycle?: RendererLifecycle;
   private rendererState: RendererState = 'loading';
   private rendererGeneration = 0;
@@ -189,6 +213,8 @@ export class KaffeepauseApp {
 
   start(): void {
     this.setRendererState('loading');
+    this.canvas.dataset.audioSamples = this.audio.getSampleState();
+    this.canvas.dataset.performanceBudget = 'warming-up';
     this.updateMotionPreference();
     this.environmentUnsubscribe = this.environment.subscribe((snapshot) => this.applyEnvironment(snapshot));
     this.environment.start();
@@ -466,6 +492,7 @@ export class KaffeepauseApp {
       this.audio.playMoment(moment.kind);
     }
     this.lifecycle.renderOnce(this.elapsed, scene);
+    this.canvas.dataset.audioSamples = this.audio.getSampleState();
     const reactionToken = Number(this.canvas.dataset.reactionToken ?? 0);
     if (reactionToken > this.lastReactionAudioToken) {
       this.lastReactionAudioToken = reactionToken;
@@ -477,6 +504,12 @@ export class KaffeepauseApp {
       this.qualityTier = reducedTier;
       this.lifecycle.setQualityTier(reducedTier);
       this.lifecycle.renderOnce(this.elapsed, scene);
+    }
+    const frameReport = this.frameBudget.observe(frameDurationMs, window.innerWidth < 700);
+    if (frameReport) {
+      this.canvas.dataset.frameMedian = frameReport.median.toFixed(2);
+      this.canvas.dataset.frameP95 = frameReport.p95.toFixed(2);
+      this.canvas.dataset.performanceBudget = frameReport.valid ? 'pass' : 'warning';
     }
     this.startFrameLoop();
   };

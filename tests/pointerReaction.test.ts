@@ -28,6 +28,21 @@ describe('Mausnähe-Reaktionen', () => {
     expect(reset.update(0.52, { x: 170, y: 100 }, targets, 'cafe').started?.characterId).toBe('guest-1');
   });
 
+  it('verliert den Hover nicht, wenn nur die filmische Kamera das Ziel verschiebt', () => {
+    const controller = new PointerReactionController();
+    controller.update(0, { x: 100, y: 100 }, [{ id: 'guest-1', x: 100, y: 100 }], 'cafe');
+    expect(controller.update(0.3, { x: 100, y: 100 }, [{ id: 'guest-1', x: 240, y: 100 }], 'cafe').started?.characterId)
+      .toBe('guest-1');
+  });
+
+  it('übernimmt das beim Pointer-Event getroffene Ziel trotz eines langsamen nächsten Frames', () => {
+    const controller = new PointerReactionController();
+    const movedTarget = [{ id: 'guest-1', x: 260, y: 100 }];
+    controller.update(0, { x: 100, y: 100, targetId: 'guest-1' }, movedTarget, 'cafe');
+    expect(controller.update(0.3, { x: 100, y: 100, targetId: 'guest-1' }, movedTarget, 'cafe').started?.characterId)
+      .toBe('guest-1');
+  });
+
   it('respektiert globale und figurenbezogene Cooldowns', () => {
     const controller = new PointerReactionController();
     const first = [{ id: 'guest-1', x: 100, y: 100 }];
@@ -45,4 +60,3 @@ describe('Mausnähe-Reaktionen', () => {
     expect(REACTION_CHARACTER_COOLDOWN_SECONDS).toBe(12);
   });
 });
-

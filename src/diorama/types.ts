@@ -152,6 +152,7 @@ export interface DioramaSet {
   readonly theme: DioramaTheme;
   readonly surfaceTextureCount: number;
   readonly surfaceKinds: readonly string[];
+  readonly bloomSurfaceCount: number;
   dispose(): void;
 }
 
