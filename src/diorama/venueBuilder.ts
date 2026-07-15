@@ -17,15 +17,24 @@ import {
   type Object3D,
 } from 'three';
 import type { VenueKind } from '../venue';
-import { VENUE_LAYOUTS } from '../simulation/layout';
+import {
+  VENUE_LAYOUTS,
+  type SeatedActivitySpot,
+  type SeatOrientation,
+  type VenueLayout,
+} from '../simulation/layout';
 import {
   DIORAMA,
   DIORAMA_THEMES,
   type AnimatedProp,
+  type DioramaPoint,
   type DioramaSet,
   type DioramaTheme,
   type FocusOccluder,
   type FocusOccluderKind,
+  type SeatAlignmentReport,
+  type SeatVisualBinding,
+  type SeatVisualKind,
   worldToDiorama,
 } from './types';
 import { PixelSurfaceLibrary } from './pixelSurfaceLibrary';
@@ -39,6 +48,7 @@ interface BuildContext {
   readonly surfaces: PixelSurfaceLibrary;
   readonly usedSurfaceKinds: Set<SurfaceKind>;
   readonly focusOccluders: FocusOccluder[];
+  readonly seatBindings: SeatVisualBinding[];
   focusOccluderSerial: number;
 }
 
@@ -62,6 +72,24 @@ interface BoxOptions {
   readonly castShadow?: boolean;
   readonly receiveShadow?: boolean;
   readonly surface?: SurfaceKind;
+}
+
+const SEAT_ROTATIONS: Readonly<Record<SeatOrientation, number>> = {
+  left: -Math.PI / 2,
+  right: Math.PI / 2,
+  front: 0,
+  radial: 0,
+};
+
+export function rotationForSeatOrientation(orientation: SeatOrientation): number {
+  return SEAT_ROTATIONS[orientation];
+}
+
+export function forwardAxisForSeatOrientation(orientation: SeatOrientation): DioramaPoint {
+  if (orientation === 'left') return { x: -1, z: 0 };
+  if (orientation === 'right') return { x: 1, z: 0 };
+  if (orientation === 'front') return { x: 0, z: 1 };
+  return { x: 0, z: 0 };
 }
 
 function material(context: BuildContext, options: BoxOptions): MeshStandardMaterial {
@@ -96,6 +124,123 @@ function box(
   mesh.receiveShadow = options.receiveShadow ?? true;
   parent.add(mesh);
   return mesh;
+}
+
+function addContactShadow(
+  context: BuildContext,
+  parent: Object3D,
+  width: number,
+  depth: number,
+  x = 0,
+  z = 0,
+): Mesh<PlaneGeometry, MeshBasicMaterial> {
+  const geometry = new PlaneGeometry(width * 1.08, depth * 1.08);
+  const shadowMaterial = new MeshBasicMaterial({
+    color: '#000000',
+    transparent: true,
+    opacity: 0.18,
+    depthWrite: false,
+    side: DoubleSide,
+  });
+  context.geometries.add(geometry);
+  context.materials.add(shadowMaterial);
+  const shadow = new Mesh(geometry, shadowMaterial);
+  shadow.name = 'seat-contact-shadow';
+  shadow.userData.overhang = 0.08;
+  shadow.position.set(x, 0.09, z);
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.renderOrder = 1;
+  parent.add(shadow);
+  return shadow;
+}
+
+function bindSeat(
+  context: BuildContext,
+  spot: SeatedActivitySpot,
+  object: Object3D,
+  kind: SeatVisualKind,
+  seatCenter: DioramaPoint,
+  backrestCenter?: DioramaPoint,
+): void {
+  context.seatBindings.push({
+    activitySpotId: spot.id,
+    kind,
+    orientation: spot.seatOrientation,
+    object,
+    rotation: rotationForSeatOrientation(spot.seatOrientation),
+    seatCenter,
+    forward: forwardAxisForSeatOrientation(spot.seatOrientation),
+    backrestCenter,
+  });
+}
+
+function rotationDelta(left: number, right: number): number {
+  return Math.abs(Math.atan2(Math.sin(left - right), Math.cos(left - right)));
+}
+
+export function validateSeatAlignment(
+  layout: VenueLayout,
+  bindings: readonly SeatVisualBinding[],
+): SeatAlignmentReport {
+  const issues: string[] = [];
+  const seatedSpots = layout.activitySpots.filter((spot): spot is SeatedActivitySpot => spot.pose === 'seated');
+  const bindingsBySpot = new Map<string, SeatVisualBinding[]>();
+  for (const binding of bindings) {
+    const entries = bindingsBySpot.get(binding.activitySpotId) ?? [];
+    entries.push(binding);
+    bindingsBySpot.set(binding.activitySpotId, entries);
+  }
+
+  for (const spot of seatedSpots) {
+    const matches = bindingsBySpot.get(spot.id) ?? [];
+    if (matches.length === 0) issues.push(`missing-binding:${spot.id}`);
+    if (matches.length > 1) issues.push(`duplicate-binding:${spot.id}`);
+  }
+
+  for (const binding of bindings) {
+    const spot = layout.activitySpots.find((entry) => entry.id === binding.activitySpotId);
+    if (!spot) {
+      issues.push(`unknown-binding:${binding.activitySpotId}`);
+      continue;
+    }
+    if (spot.pose !== 'seated') {
+      issues.push(`standing-binding:${binding.activitySpotId}`);
+      continue;
+    }
+    if (binding.orientation !== spot.seatOrientation) issues.push(`orientation:${spot.id}`);
+
+    const guestAnchor = worldToDiorama(spot);
+    if (Math.hypot(binding.seatCenter.x - guestAnchor.x, binding.seatCenter.z - guestAnchor.z) > 0.8) {
+      issues.push(`anchor-distance:${spot.id}`);
+    }
+
+    if (spot.seatOrientation === 'radial') continue;
+    const expectedRotation = rotationForSeatOrientation(spot.seatOrientation);
+    const expectedForward = forwardAxisForSeatOrientation(spot.seatOrientation);
+    if (rotationDelta(binding.rotation, expectedRotation) > 0.001) issues.push(`rotation:${spot.id}`);
+    if (rotationDelta(binding.object.rotation.y, expectedRotation) > 0.001) issues.push(`visual-rotation:${spot.id}`);
+    if (Math.hypot(binding.forward.x - expectedForward.x, binding.forward.z - expectedForward.z) > 0.001) {
+      issues.push(`forward-axis:${spot.id}`);
+    }
+    if (!binding.backrestCenter) {
+      issues.push(`missing-backrest:${spot.id}`);
+      continue;
+    }
+    const backrestOffsetX = binding.backrestCenter.x - guestAnchor.x;
+    const backrestOffsetZ = binding.backrestCenter.z - guestAnchor.z;
+    if (backrestOffsetX * expectedForward.x + backrestOffsetZ * expectedForward.z >= -0.05) {
+      issues.push(`backrest-position:${spot.id}`);
+    }
+  }
+
+  return {
+    venue: layout.venue,
+    valid: issues.length === 0,
+    score: Math.max(0, 100 - issues.length * 8),
+    bindingCount: bindings.length,
+    seatedSpotCount: seatedSpots.length,
+    issues,
+  };
 }
 
 function cylinder(
@@ -207,17 +352,31 @@ function addTable(context: BuildContext, root: Group, x: number, z: number, widt
   markFocusOccluder(context, table, 'table');
 }
 
-function addChair(context: BuildContext, root: Group, x: number, z: number, rotation = 0): void {
+function addChair(context: BuildContext, root: Group, spot: SeatedActivitySpot): void {
+  const point = worldToDiorama(spot);
+  const rotation = rotationForSeatOrientation(spot.seatOrientation);
+  const forward = forwardAxisForSeatOrientation(spot.seatOrientation);
   const chair = new Group();
-  chair.name = 'focus-occluder:chair';
-  chair.position.set(x, 0, z);
+  chair.name = `focus-occluder:chair:${spot.id}`;
+  chair.position.set(point.x, 0, point.z);
   chair.rotation.y = rotation;
   root.add(chair);
-  box(context, chair, [0.74, 0.12, 0.68], [0, 0.52, 0], { color: context.theme.wood });
-  box(context, chair, [0.74, 0.86, 0.12], [0, 0.92, -0.29], { color: context.theme.wood });
+  const seat = box(context, chair, [0.74, 0.12, 0.68], [0, 0.52, 0], { color: context.theme.wood });
+  seat.name = `seat-surface:${spot.id}`;
+  for (const x of [-0.27, 0.27]) {
+    const slat = box(context, chair, [0.1, 0.74, 0.1], [x, 0.94, -0.29], { color: context.theme.wood });
+    slat.name = `seat-backrest-slat:${spot.id}`;
+  }
+  const topRail = box(context, chair, [0.74, 0.12, 0.12], [0, 1.27, -0.29], { color: context.theme.wood });
+  topRail.name = `seat-backrest-rail:${spot.id}`;
   for (const dx of [-0.27, 0.27]) {
     for (const dz of [-0.23, 0.23]) box(context, chair, [0.09, 0.5, 0.09], [dx, 0.25, dz], { color: context.theme.ink });
   }
+  addContactShadow(context, chair, 0.74, 0.68);
+  bindSeat(context, spot, chair, 'chair', point, {
+    x: point.x - forward.x * 0.29,
+    z: point.z - forward.z * 0.29,
+  });
   markFocusOccluder(context, chair, 'chair');
 }
 
@@ -232,12 +391,16 @@ function addPlant(context: BuildContext, root: Group, x: number, y: number, z: n
   }
 }
 
-function addStool(context: BuildContext, root: Group, x: number, z: number): void {
+function addStool(context: BuildContext, root: Group, spot: SeatedActivitySpot): void {
+  const point = worldToDiorama(spot);
   const stool = new Group();
-  stool.name = 'focus-occluder:chair';
+  stool.name = `focus-occluder:chair:${spot.id}`;
   root.add(stool);
-  cylinder(context, stool, 0.36, 0.12, [x, 0.58, z], context.theme.woodLight, 12);
-  cylinder(context, stool, 0.08, 0.55, [x, 0.28, z], context.theme.ink, 8);
+  const seat = cylinder(context, stool, 0.36, 0.12, [point.x, 0.58, point.z], context.theme.woodLight, 12);
+  seat.name = `seat-surface:${spot.id}`;
+  cylinder(context, stool, 0.08, 0.55, [point.x, 0.28, point.z], context.theme.ink, 8);
+  addContactShadow(context, stool, 0.72, 0.72, point.x, point.z);
+  bindSeat(context, spot, stool, 'stool', point);
   markFocusOccluder(context, stool, 'chair');
 }
 
@@ -351,15 +514,23 @@ function buildShell(context: BuildContext, root: Group, venue: VenueKind): Shell
 
 function buildCafe(context: BuildContext, root: Group, animated: AnimatedProp[]): void {
   const bench = new Group();
-  bench.name = 'focus-occluder:chair';
+  bench.name = 'focus-occluder:chair:cafe-window';
   root.add(bench);
-  box(context, bench, [4.7, 0.22, 0.62], [-3.18, 0.56, -1.78], { color: context.theme.woodLight });
-  box(context, bench, [4.7, 0.92, 0.18], [-3.18, 1.04, -2.02], { color: context.theme.wood });
+  const benchSeat = box(context, bench, [4.7, 0.22, 0.62], [-3.18, 0.56, -1.78], { color: context.theme.woodLight });
+  benchSeat.name = 'seat-surface:cafe-window';
+  const benchBackrest = box(context, bench, [4.7, 0.92, 0.18], [-3.18, 1.04, -2.02], { color: context.theme.wood });
+  benchBackrest.name = 'seat-backrest:cafe-window';
+  addContactShadow(context, bench, 4.7, 0.62, -3.18, -1.78);
+  for (const spot of VENUE_LAYOUTS.cafe.activitySpots) {
+    if (spot.pose !== 'seated' || spot.kind !== 'bench') continue;
+    const point = worldToDiorama(spot);
+    bindSeat(context, spot, bench, 'bench', { x: point.x, z: -1.78 }, { x: point.x, z: -2.02 });
+  }
   markFocusOccluder(context, bench, 'chair');
   addTable(context, root, -2.96, 0.92, 2.45);
   addTable(context, root, 0.24, 1.67, 2.7);
-  for (const point of VENUE_LAYOUTS.cafe.activitySpots.filter((spot) => spot.kind === 'table').map(worldToDiorama)) {
-    addChair(context, root, point.x, point.z, point.x < 0 ? Math.PI / 2 : -Math.PI / 2);
+  for (const spot of VENUE_LAYOUTS.cafe.activitySpots) {
+    if (spot.pose === 'seated' && spot.kind === 'table') addChair(context, root, spot);
   }
   const counter = new Group();
   counter.name = 'focus-occluder:counter';
@@ -392,8 +563,9 @@ function buildRamen(context: BuildContext, root: Group, animated: AnimatedProp[]
   box(context, counter, [10.45, 0.16, 1.18], [-1.02, 1.25, -2.02], { color: context.theme.woodLight });
   markFocusOccluder(context, counter, 'counter');
   for (const spot of VENUE_LAYOUTS.ramen.activitySpots.filter((entry) => entry.kind === 'counter-stool')) {
+    if (spot.pose !== 'seated') continue;
     const point = worldToDiorama(spot);
-    addStool(context, root, point.x, point.z);
+    addStool(context, root, spot);
     const bowl = cylinder(context, root, 0.2, 0.17, [point.x, 1.45, -1.75], '#efe1bc', 12, 'tile');
     bowl.scale.y = 0.55;
     const steam = glowPanel(context, root, [0.035, 0.48, 0.035], [point.x, 1.84, -1.75], '#ffe5b3');
@@ -403,8 +575,7 @@ function buildRamen(context: BuildContext, root: Group, animated: AnimatedProp[]
   }
   addTable(context, root, 5.25, 0.58, 1.35);
   for (const spot of VENUE_LAYOUTS.ramen.activitySpots.filter((entry) => entry.kind === 'table')) {
-    const point = worldToDiorama(spot);
-    addChair(context, root, point.x, point.z, spot.facing > 0 ? Math.PI / 2 : -Math.PI / 2);
+    if (spot.pose === 'seated') addChair(context, root, spot);
   }
   box(context, root, [11.5, 0.2, 0.25], [-0.45, 4.35, -3.18], { color: context.theme.woodLight });
   box(context, root, [11.7, 1.55, 0.09], [-0.45, 2.75, -3.24], { color: '#8ba8ad', surface: 'tile', castShadow: false });
@@ -457,9 +628,21 @@ function buildArcade(context: BuildContext, root: Group, animated: AnimatedProp[
   for (const x of [2.55, 3.12, 3.69]) glowPanel(context, counter, [0.3, 0.22, 0.04], [x, 1.42, -2.43], x === 3.12 ? context.theme.accent : context.theme.neon);
   markFocusOccluder(context, counter, 'counter');
   const lounge = new Group();
+  lounge.name = 'focus-occluder:chair:arcade-lounge';
   root.add(lounge);
-  box(context, lounge, [3.1, 0.34, 0.72], [0, 0.26, 2.18], { color: context.theme.woodLight });
-  box(context, lounge, [3.1, 0.62, 0.18], [0, 0.56, 2.48], { color: context.theme.wood });
+  const loungeSeat = box(context, lounge, [3.1, 0.34, 0.72], [0, 0.26, 2.18], { color: context.theme.woodLight });
+  loungeSeat.name = 'seat-surface:arcade-lounge';
+  const loungeBackrest = box(context, lounge, [3.1, 0.62, 0.18], [0, 0.56, 1.88], { color: context.theme.wood });
+  loungeBackrest.name = 'seat-backrest:arcade-lounge';
+  const loungeEdge = box(context, lounge, [3.1, 0.055, 0.04], [0, 0.45, 2.55], {
+    color: '#5cdade', emissive: '#5cdade', emissiveIntensity: 0.28, roughness: 0.5, castShadow: false, surface: 'emissive',
+  });
+  loungeEdge.name = 'seat-edge:arcade-lounge';
+  addContactShadow(context, lounge, 3.1, 0.72, 0, 2.18);
+  const loungeSpot = VENUE_LAYOUTS.arcade.activitySpots.find((spot) => spot.id === 'arcade-lounge');
+  if (loungeSpot?.pose === 'seated') {
+    bindSeat(context, loungeSpot, lounge, 'bench', { x: 0, z: 2.18 }, { x: 0, z: 1.88 });
+  }
   markFocusOccluder(context, lounge, 'chair');
   for (const x of [-2.1, 0, 2.1]) glowPanel(context, root, [1.4, 0.035, 0.08], [x, 0.115, 0.35], x === 0 ? context.theme.accent : context.theme.neon);
   for (const [x, color] of [[-4.8, context.theme.neon], [4.8, context.theme.accent]] as const) {
@@ -487,8 +670,9 @@ export function buildVenue(venue: VenueKind): DioramaSet {
   const surfaces = new PixelSurfaceLibrary(profile.surfaces);
   const usedSurfaceKinds = new Set<SurfaceKind>();
   const focusOccluders: FocusOccluder[] = [];
+  const seatBindings: SeatVisualBinding[] = [];
   const context: BuildContext = {
-    geometries, materials, theme, profile, surfaces, usedSurfaceKinds, focusOccluders, focusOccluderSerial: 0,
+    geometries, materials, theme, profile, surfaces, usedSurfaceKinds, focusOccluders, seatBindings, focusOccluderSerial: 0,
   };
   const animatedProps: AnimatedProp[] = [];
   const shell = buildShell(context, root, venue);
@@ -519,6 +703,7 @@ export function buildVenue(venue: VenueKind): DioramaSet {
     lightPools: pendants.map((pendant) => pendant.pool),
     animatedProps,
     focusOccluders,
+    seatBindings,
     theme,
     surfaceTextureCount: surfaces.size,
     surfaceKinds: [...availableSurfaceKinds].sort(),

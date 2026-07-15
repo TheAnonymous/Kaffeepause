@@ -9,6 +9,7 @@ import type {
   SpotLight,
 } from 'three';
 import type { Point } from '../simulation/types';
+import type { SeatOrientation } from '../simulation/layout';
 import type { VenueKind } from '../venue';
 import { VENUE_VISUAL_PROFILES } from './visualProfiles';
 
@@ -116,6 +117,28 @@ export interface FocusOccluder {
   readonly materials: readonly FocusOccluderMaterialState[];
 }
 
+export type SeatVisualKind = 'chair' | 'stool' | 'bench';
+
+export interface SeatVisualBinding {
+  readonly activitySpotId: string;
+  readonly kind: SeatVisualKind;
+  readonly orientation: SeatOrientation;
+  readonly object: Object3D;
+  readonly rotation: number;
+  readonly seatCenter: DioramaPoint;
+  readonly forward: DioramaPoint;
+  readonly backrestCenter?: DioramaPoint;
+}
+
+export interface SeatAlignmentReport {
+  readonly venue: VenueKind;
+  readonly valid: boolean;
+  readonly score: number;
+  readonly bindingCount: number;
+  readonly seatedSpotCount: number;
+  readonly issues: readonly string[];
+}
+
 export interface DioramaSet {
   readonly root: Group;
   readonly doorPivot: Group;
@@ -125,6 +148,7 @@ export interface DioramaSet {
   readonly lightPools: readonly Mesh<CircleGeometry, MeshBasicMaterial>[];
   readonly animatedProps: readonly AnimatedProp[];
   readonly focusOccluders: readonly FocusOccluder[];
+  readonly seatBindings: readonly SeatVisualBinding[];
   readonly theme: DioramaTheme;
   readonly surfaceTextureCount: number;
   readonly surfaceKinds: readonly string[];

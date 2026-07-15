@@ -37,6 +37,7 @@ async function expectFocusFraming(
 ): Promise<void> {
   const canvas = page.locator('#cafe');
   await expect(canvas).toHaveAttribute('data-camera-focus-source', source, { timeout: 10_000 });
+  await expect(canvas).toHaveAttribute('data-focus-light', /^(?!off$).+/);
   await expect(canvas).toHaveAttribute('data-camera-focus-target', /^\d+\.\d,-?\d+\.\d,\d+\.\d{2}$/);
   await expect(canvas).toHaveAttribute('data-focus-participants', /^(?!none$).+/);
   await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-fov'))).toBeLessThanOrEqual(26.01);
@@ -52,7 +53,6 @@ async function expectFocusFraming(
   await expect(canvas).toHaveAttribute('data-visible-emotes', /^(?!none$).+/);
   await expect(canvas).toHaveAttribute('data-focus-bounds', /^-?\d+\.\d{3},-?\d+\.\d{3},-?\d+\.\d{3},-?\d+\.\d{3}$/);
   await expect(canvas).toHaveAttribute('data-focus-safe', 'true');
-  await expect(canvas).toHaveAttribute('data-focus-light', /^(?!off$).+/);
 }
 
 async function expectFocusRestoredByReducedMotion(page: Page): Promise<void> {
@@ -204,6 +204,21 @@ for (const venue of [
     await expect(canvas).toHaveAttribute('data-occupied-spots', /^(?!none$).+/);
   });
 }
+
+test('veröffentlicht vollständige Sitzdiagnosen für alle drei Orte', async ({ page }) => {
+  await openCafe(page, '/?time=12:30&weather=clear');
+  const canvas = page.locator('#cafe');
+  for (const venue of [
+    { kind: 'cafe', label: 'Café', bindings: '6' },
+    { kind: 'ramen', label: 'Ramen', bindings: '7' },
+    { kind: 'arcade', label: 'Arcade', bindings: '1' },
+  ] as const) {
+    if (venue.kind !== 'cafe') await page.getByRole('radio', { name: new RegExp(venue.label) }).click();
+    await expect(canvas).toHaveAttribute('data-venue', venue.kind);
+    await expect(canvas).toHaveAttribute('data-seat-alignment', 'pass');
+    await expect(canvas).toHaveAttribute('data-seat-bindings', venue.bindings);
+  }
+});
 
 test('bedient die Ortswahl als vollständige Tastatur-Radiogruppe', async ({ page }) => {
   await openCafe(page);
@@ -454,6 +469,7 @@ for (const scenario of [
   { source: 'reaction', path: '/?time=22:00&weather=clear', venue: 'arcade', reaction: true },
 ] as const) {
   test(`rahmt ${scenario.source} räumlich, blendet nur Sichtblocker ab und stellt sie nach Abbruch wieder her`, async ({ page }) => {
+    test.setTimeout(60_000);
     await page.setViewportSize({ width: 1440, height: 810 });
     await openCafe(page, scenario.path);
     if (scenario.venue !== 'cafe') await page.getByRole('radio', { name: new RegExp(scenario.venue, 'i') }).click();

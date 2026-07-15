@@ -96,7 +96,7 @@ import {
   type DioramaSet,
   type FocusOccluder,
 } from './types';
-import { buildVenue } from './venueBuilder';
+import { buildVenue, validateSeatAlignment } from './venueBuilder';
 import {
   VENUE_VISUAL_PROFILES,
   focusBoundsAreSafe,
@@ -1016,10 +1016,13 @@ export class DioramaRenderer {
 
   private applyLayoutDatasets(venue: VenueKind): void {
     const layout = VENUE_LAYOUTS[venue];
+    const seatReport = validateSeatAlignment(layout, this.venueSet.seatBindings);
     this.canvas.dataset.venueLayout = layout.venue;
     this.canvas.dataset.entryFlow = layout.entryFlow;
     this.canvas.dataset.layoutCapacity = `${layout.population.min}-${layout.population.max}`;
     this.canvas.dataset.layoutCheck = VENUE_LAYOUT_REPORTS[venue].valid ? 'pass' : 'warning';
+    this.canvas.dataset.seatAlignment = seatReport.valid ? 'pass' : 'warning';
+    this.canvas.dataset.seatBindings = String(seatReport.bindingCount);
     this.canvas.dataset.activitySpots = layout.activitySpots
       .map((spot) => `${spot.id}:${spot.kind}:${spot.pose}`)
       .join('|');

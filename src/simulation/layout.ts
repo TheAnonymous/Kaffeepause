@@ -20,17 +20,29 @@ export interface CollisionRect {
 export type ActivitySpotKind = 'bench' | 'table' | 'counter-stool' | 'arcade-cabinet' | 'lounge';
 export type ActivityPose = 'seated' | 'standing';
 export type ActivitySpotTag = 'window' | 'table-pair' | 'counter-adjacent' | 'cabinet-pair' | 'lounge';
+export type SeatOrientation = 'left' | 'right' | 'front' | 'radial';
 export type EntryFlow = 'left' | 'right' | 'rear';
 
-export interface ActivitySpot extends Place {
+interface ActivitySpotBase extends Place {
   readonly kind: ActivitySpotKind;
-  readonly pose: ActivityPose;
   readonly facing: -1 | 1;
   readonly groupId: string;
   readonly tags: readonly ActivitySpotTag[];
   readonly activities: readonly GuestActivity[];
   readonly focusHeight: number;
 }
+
+export interface SeatedActivitySpot extends ActivitySpotBase {
+  readonly pose: 'seated';
+  readonly seatOrientation: SeatOrientation;
+}
+
+export interface StandingActivitySpot extends ActivitySpotBase {
+  readonly pose: 'standing';
+  readonly seatOrientation?: never;
+}
+
+export type ActivitySpot = SeatedActivitySpot | StandingActivitySpot;
 
 export interface NavigationBounds {
   readonly minX: number;
@@ -89,12 +101,12 @@ const cafe: VenueLayout = {
     { id: 'cafe-wait-1', x: 240, y: 202 },
   ],
   activitySpots: [
-    { id: 'cafe-window-a', x: 86, y: 160, kind: 'bench', pose: 'seated', facing: 1, groupId: 'cafe-window', tags: ['window'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
-    { id: 'cafe-window-b', x: 145, y: 160, kind: 'bench', pose: 'seated', facing: -1, groupId: 'cafe-window', tags: ['window'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
-    { id: 'cafe-table-a1', x: 91, y: 180, kind: 'table', pose: 'seated', facing: 1, groupId: 'cafe-table-a', tags: ['table-pair'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
-    { id: 'cafe-table-a2', x: 151, y: 180, kind: 'table', pose: 'seated', facing: -1, groupId: 'cafe-table-a', tags: ['table-pair'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
-    { id: 'cafe-table-b1', x: 165, y: 198, kind: 'table', pose: 'seated', facing: 1, groupId: 'cafe-table-b', tags: ['table-pair'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
-    { id: 'cafe-table-b2', x: 231, y: 198, kind: 'table', pose: 'seated', facing: -1, groupId: 'cafe-table-b', tags: ['table-pair'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
+    { id: 'cafe-window-a', x: 86, y: 160, kind: 'bench', pose: 'seated', seatOrientation: 'front', facing: 1, groupId: 'cafe-window', tags: ['window'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
+    { id: 'cafe-window-b', x: 145, y: 160, kind: 'bench', pose: 'seated', seatOrientation: 'front', facing: -1, groupId: 'cafe-window', tags: ['window'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
+    { id: 'cafe-table-a1', x: 91, y: 180, kind: 'table', pose: 'seated', seatOrientation: 'right', facing: 1, groupId: 'cafe-table-a', tags: ['table-pair'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
+    { id: 'cafe-table-a2', x: 151, y: 180, kind: 'table', pose: 'seated', seatOrientation: 'left', facing: -1, groupId: 'cafe-table-a', tags: ['table-pair'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
+    { id: 'cafe-table-b1', x: 165, y: 198, kind: 'table', pose: 'seated', seatOrientation: 'right', facing: 1, groupId: 'cafe-table-b', tags: ['table-pair'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
+    { id: 'cafe-table-b2', x: 231, y: 198, kind: 'table', pose: 'seated', seatOrientation: 'left', facing: -1, groupId: 'cafe-table-b', tags: ['table-pair'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
   ],
   staffPlaces: {
     machine: { x: 329, y: 132 }, serving: { x: 294, y: 132 }, wiping: { x: 350, y: 132 },
@@ -125,13 +137,13 @@ const ramen: VenueLayout = {
     { id: 'ramen-wait-1', x: 256, y: 202 },
   ],
   activitySpots: [
-    { id: 'ramen-counter-1', x: 74, y: 166, kind: 'counter-stool', pose: 'seated', facing: 1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES, focusHeight: 1.62 },
-    { id: 'ramen-counter-2', x: 118, y: 166, kind: 'counter-stool', pose: 'seated', facing: 1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES, focusHeight: 1.62 },
-    { id: 'ramen-counter-3', x: 162, y: 166, kind: 'counter-stool', pose: 'seated', facing: 1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES, focusHeight: 1.62 },
-    { id: 'ramen-counter-4', x: 206, y: 166, kind: 'counter-stool', pose: 'seated', facing: -1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES, focusHeight: 1.62 },
-    { id: 'ramen-counter-5', x: 250, y: 166, kind: 'counter-stool', pose: 'seated', facing: -1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES, focusHeight: 1.62 },
-    { id: 'ramen-table-a', x: 293, y: 181, kind: 'table', pose: 'seated', facing: 1, groupId: 'ramen-table', tags: ['table-pair'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
-    { id: 'ramen-table-b', x: 343, y: 181, kind: 'table', pose: 'seated', facing: -1, groupId: 'ramen-table', tags: ['table-pair'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
+    { id: 'ramen-counter-1', x: 74, y: 166, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: 1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES, focusHeight: 1.62 },
+    { id: 'ramen-counter-2', x: 118, y: 166, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: 1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES, focusHeight: 1.62 },
+    { id: 'ramen-counter-3', x: 162, y: 166, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: 1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES, focusHeight: 1.62 },
+    { id: 'ramen-counter-4', x: 206, y: 166, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: -1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES, focusHeight: 1.62 },
+    { id: 'ramen-counter-5', x: 250, y: 166, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: -1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES, focusHeight: 1.62 },
+    { id: 'ramen-table-a', x: 293, y: 181, kind: 'table', pose: 'seated', seatOrientation: 'right', facing: 1, groupId: 'ramen-table', tags: ['table-pair'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
+    { id: 'ramen-table-b', x: 343, y: 181, kind: 'table', pose: 'seated', seatOrientation: 'left', facing: -1, groupId: 'ramen-table', tags: ['table-pair'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
   ],
   staffPlaces: {
     machine: { x: 228, y: 134 }, serving: { x: 188, y: 134 }, wiping: { x: 92, y: 134 },
@@ -154,7 +166,7 @@ const arcade: VenueLayout = {
     { id: 'arcade-right-cabinet-2', x: 320, y: 166, width: 22, height: 20 },
     { id: 'arcade-right-cabinet-3', x: 320, y: 192, width: 22, height: 20 },
     { id: 'arcade-token-counter', x: 238, y: 130, width: 58, height: 16 },
-    { id: 'arcade-lounge-bench', x: 150, y: 199, width: 84, height: 12 },
+    { id: 'arcade-lounge-bench', x: 150, y: 193, width: 84, height: 5 },
   ],
   queuePlaces: [
     { id: 'arcade-queue-0', x: 226, y: 150 },
@@ -173,7 +185,7 @@ const arcade: VenueLayout = {
     { id: 'arcade-right-1', x: 308, y: 150, kind: 'arcade-cabinet', pose: 'standing', facing: 1, groupId: 'arcade-pair-1', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES, focusHeight: 2.02 },
     { id: 'arcade-right-2', x: 308, y: 176, kind: 'arcade-cabinet', pose: 'standing', facing: 1, groupId: 'arcade-pair-2', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES, focusHeight: 2.02 },
     { id: 'arcade-right-3', x: 308, y: 202, kind: 'arcade-cabinet', pose: 'standing', facing: 1, groupId: 'arcade-pair-3', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES, focusHeight: 2.02 },
-    { id: 'arcade-lounge', x: 192, y: 190, kind: 'lounge', pose: 'seated', facing: 1, groupId: 'arcade-lounge', tags: ['lounge'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
+    { id: 'arcade-lounge', x: 192, y: 204, kind: 'lounge', pose: 'seated', seatOrientation: 'front', facing: 1, groupId: 'arcade-lounge', tags: ['lounge'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
   ],
   staffPlaces: {
     machine: { x: 268, y: 124 }, serving: { x: 246, y: 124 }, wiping: { x: 286, y: 124 },

@@ -36,4 +36,15 @@ describe('Venue-Kollisionen und Laufwege', () => {
     expect(states).toContain('activity');
     expect(simulation.stats.departures).toBe(1);
   });
+
+  it('hält den vorwärts gerichteten Arcade-Lounge-Anker vor dem flachen Collider erreichbar', () => {
+    const layout = VENUE_LAYOUTS.arcade;
+    const lounge = layout.activitySpots.find((spot) => spot.id === 'arcade-lounge');
+    const collider = layout.colliders.find((entry) => entry.id === 'arcade-lounge-bench');
+
+    expect(lounge).toMatchObject({ x: 192, y: 204, pose: 'seated', seatOrientation: 'front' });
+    expect(collider).toMatchObject({ x: 150, y: 193, width: 84, height: 5 });
+    expect(lounge && pointHitsVenueCollider(layout, lounge, GUEST_RADIUS)).toBe(false);
+    expect(lounge && routeIsClear(layout, layout.entrance, lounge)).toBe(true);
+  });
 });
