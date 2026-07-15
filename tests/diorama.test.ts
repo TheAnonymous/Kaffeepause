@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { calculateDioramaLook } from '../src/diorama/look';
-import { DIORAMA_SCALE_REPORT, validateDioramaScale, worldToDiorama } from '../src/diorama/types';
+import {
+  DIORAMA,
+  DIORAMA_SCALE_REPORT,
+  validateDioramaScale,
+  worldToCharacterDiorama,
+  worldToDiorama,
+} from '../src/diorama/types';
 import type { CafeEnvironmentSnapshot, DayPhase, WeatherKind } from '../src/environment/types';
 import { observationForOverride } from '../src/environment/weather';
 import type { VenueKind } from '../src/venue';
@@ -31,6 +37,7 @@ describe('physical diorama scale', () => {
     expect(DIORAMA_SCALE_REPORT.valid).toBe(true);
     expect(DIORAMA_SCALE_REPORT.score).toBe(100);
     expect(validateDioramaScale().issues).toEqual([]);
+    expect(DIORAMA).toMatchObject({ standingHeight: 2.14, seatedHeight: 1.67 });
   });
 
   it('maps simulation coordinates monotonically into the physical floor', () => {
@@ -38,6 +45,11 @@ describe('physical diorama scale', () => {
     const frontRight = worldToDiorama({ x: 384, y: 216 });
     expect(backLeft).toEqual({ x: -8, z: -3.6 });
     expect(frontRight).toEqual({ x: 8, z: 3.6 });
+  });
+
+  it('keeps service positions visually in front of the back wall without changing world mapping', () => {
+    expect(worldToDiorama({ x: 268, y: 124 }).z).toBeLessThan(-3.6);
+    expect(worldToCharacterDiorama({ x: 268, y: 124 }).z).toBe(-3.2);
   });
 });
 
@@ -54,31 +66,31 @@ describe('diorama look direction', () => {
     expect(look.ambientIntensity).toBeCloseTo(1.4, 6);
     expect(look.keyIntensity).toBeCloseTo(4.15, 6);
     expect(look.practicalIntensity).toBeCloseTo(18, 6);
-    expect(look.characterEmissive).toBeCloseTo(0.04, 6);
-    expect(look.shadowLift).toBeCloseTo(0.03, 6);
+    expect(look.characterEmissive).toBeCloseTo(0.045, 6);
+    expect(look.shadowLift).toBeCloseTo(0.045, 6);
     expect(look.vignette).toBeCloseTo(0.08, 6);
     expect(look.lightPoolOpacity).toBeCloseTo(0.06, 6);
   });
 
   it.each([
-    ['cafe', 1.08],
-    ['ramen', 1.12],
-    ['arcade', 1.18],
+    ['cafe', 1.04],
+    ['ramen', 1.01],
+    ['arcade', 1.08],
   ] as const)('uses the %s saturation and adds only the bounded night lift', (venue, base) => {
     const day = calculateDioramaLook(venue, environment('midday', 'clear'));
     const night = calculateDioramaLook(venue, environment('night', 'clear'));
 
     expect(day.saturation).toBeCloseTo(base, 6);
-    expect(night.saturation).toBeCloseTo(base + night.night * 0.04, 6);
-    expect(night.saturation).toBeLessThanOrEqual(base + 0.04);
+    expect(night.saturation).toBeCloseTo(base + night.night * 0.035, 6);
+    expect(night.saturation).toBeLessThanOrEqual(base + 0.035);
   });
 
   it('caps arcade bloom peaks and character emissive light', () => {
     const look = calculateDioramaLook('arcade', environment('night', 'storm', 'storm', 1, 100));
 
-    expect(look.bloom).toBe(0.78);
+    expect(look.bloom).toBeCloseTo(0.6616, 4);
     expect(look.characterEmissive).toBeLessThanOrEqual(0.31);
-    expect(look.characterEmissive).toBeGreaterThan(0.28);
+    expect(look.characterEmissive).toBeGreaterThan(0.26);
   });
 
   it('keeps weather transitions inside all rendering bounds', () => {
@@ -96,10 +108,10 @@ describe('diorama look direction', () => {
           expect(look.keyIntensity).toBeLessThanOrEqual(4.15);
           expect(look.practicalIntensity).toBeGreaterThanOrEqual(18);
           expect(look.practicalIntensity).toBeLessThanOrEqual(42);
-          expect(look.characterEmissive).toBeGreaterThanOrEqual(0.04);
-          expect(look.characterEmissive).toBeLessThanOrEqual(0.31);
-          expect(look.shadowLift).toBeGreaterThanOrEqual(0.03);
-          expect(look.shadowLift).toBeLessThanOrEqual(0.13);
+          expect(look.characterEmissive).toBeGreaterThanOrEqual(0.045);
+          expect(look.characterEmissive).toBeLessThanOrEqual(0.3);
+          expect(look.shadowLift).toBeGreaterThanOrEqual(0.045);
+          expect(look.shadowLift).toBeLessThanOrEqual(0.2);
           expect(look.vignette).toBeGreaterThanOrEqual(0.08);
           expect(look.vignette).toBeLessThanOrEqual(0.12);
           expect(look.lightPoolOpacity).toBeGreaterThanOrEqual(0.06);

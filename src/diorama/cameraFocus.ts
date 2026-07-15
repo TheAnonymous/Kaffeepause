@@ -1,4 +1,5 @@
 import type { Point } from '../simulation/types';
+import type { FocusFrameBounds } from './visualProfiles';
 
 export type CameraFocusSource = 'story' | 'accident' | 'reaction' | 'moment' | 'conversation';
 
@@ -43,7 +44,15 @@ export const CAMERA_FOCUS_EXIT_SECONDS = 1.2;
 export const CAMERA_CONVERSATION_COOLDOWN_SECONDS = 18;
 export const CAMERA_OVERVIEW_FOV = 30;
 export const CAMERA_SINGLE_FOCUS_FOV = 22;
-export const CAMERA_GROUP_FOCUS_FOV = 24;
+export const CAMERA_GROUP_FOCUS_FOV = 26;
+
+export interface FocusFrameElement {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly role: 'participant' | 'hands-prop' | 'speech-bubble';
+}
 
 interface ActiveFocus extends CameraFocusCandidate {
   readonly startedAt: number;
@@ -68,14 +77,24 @@ export function participantMidpoint(values: readonly Readonly<Point>[]): Point |
   };
 }
 
+/** Combines projected people, gesture/prop extents and speech bubbles into one normalized viewport frame. */
+export function calculateFocusFrameBounds(elements: readonly Readonly<FocusFrameElement>[]): FocusFrameBounds | undefined {
+  if (elements.length === 0) return undefined;
+  const left = Math.min(...elements.map((element) => element.left));
+  const top = Math.min(...elements.map((element) => element.top));
+  const right = Math.max(...elements.map((element) => element.right));
+  const bottom = Math.max(...elements.map((element) => element.bottom));
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
 /** Keeps solo scenes intimate while opening wider for larger or more spread-out groups. */
 export function focusFieldOfView(values: readonly Readonly<Point>[]): number {
   if (values.length <= 1) return CAMERA_SINGLE_FOCUS_FOV;
   const center = participantMidpoint(values);
   if (!center) return CAMERA_SINGLE_FOCUS_FOV;
   const spread = Math.max(...values.map((value) => Math.hypot(value.x - center.x, value.y - center.y)));
-  const groupLift = Math.min(2, (values.length - 1) * 0.6);
-  const spreadLift = Math.min(2, spread / 28);
+  const groupLift = Math.min(4, (values.length - 1) * 0.75);
+  const spreadLift = Math.min(4, spread / 22);
   return Math.min(CAMERA_GROUP_FOCUS_FOV, CAMERA_SINGLE_FOCUS_FOV + Math.max(groupLift, spreadLift));
 }
 

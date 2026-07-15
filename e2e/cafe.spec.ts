@@ -39,8 +39,9 @@ async function expectFocusFraming(
   await expect(canvas).toHaveAttribute('data-camera-focus-source', source, { timeout: 10_000 });
   await expect(canvas).toHaveAttribute('data-camera-focus-target', /^\d+\.\d,-?\d+\.\d,\d+\.\d{2}$/);
   await expect(canvas).toHaveAttribute('data-focus-participants', /^(?!none$).+/);
-  await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-fov'))).toBeLessThanOrEqual(24.01);
+  await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-fov'))).toBeLessThanOrEqual(26.01);
   await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-fov'))).toBeGreaterThanOrEqual(21.99);
+  await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-amount'))).toBeGreaterThan(0.7);
   if (expectOccluder) {
     await expect(canvas).toHaveAttribute('data-focus-occluders', /^(?!none$).+/);
     await expect.poll(async () => Number(await canvas.getAttribute('data-focus-occluder-opacity'))).toBeLessThanOrEqual(0.49);
@@ -49,6 +50,9 @@ async function expectFocusFraming(
     await expect.poll(async () => Number(await canvas.getAttribute('data-focus-occluder-opacity'))).toBeGreaterThanOrEqual(0.48);
   }
   await expect(canvas).toHaveAttribute('data-visible-emotes', /^(?!none$).+/);
+  await expect(canvas).toHaveAttribute('data-focus-bounds', /^-?\d+\.\d{3},-?\d+\.\d{3},-?\d+\.\d{3},-?\d+\.\d{3}$/);
+  await expect(canvas).toHaveAttribute('data-focus-safe', 'true');
+  await expect(canvas).toHaveAttribute('data-focus-light', /^(?!off$).+/);
 }
 
 async function expectFocusRestoredByReducedMotion(page: Page): Promise<void> {
@@ -57,6 +61,8 @@ async function expectFocusRestoredByReducedMotion(page: Page): Promise<void> {
   await expect(canvas).toHaveAttribute('data-camera-focus', 'none');
   await expect(canvas).toHaveAttribute('data-focus-occluders', 'none');
   await expect(canvas).toHaveAttribute('data-focus-occluder-opacity', '1.00');
+  await expect(canvas).toHaveAttribute('data-focus-bounds', 'none');
+  await expect(canvas).toHaveAttribute('data-focus-safe', 'true');
   await expect(canvas).toHaveAttribute('data-visible-emotes', /\+/);
 }
 
@@ -99,14 +105,19 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
   await expect(canvas).toHaveAttribute('data-emote-bubbles', '0');
   await expect(canvas).toHaveAttribute('data-camera-focus-target', 'none');
   await expect(canvas).toHaveAttribute('data-camera-focus-fov', '30.00');
+  await expect(canvas).toHaveAttribute('data-camera-focus-amount', '0.00');
   await expect(canvas).toHaveAttribute('data-focus-participants', 'none');
   await expect(canvas).toHaveAttribute('data-focus-occluders', 'none');
   await expect(canvas).toHaveAttribute('data-focus-occluder-opacity', '1.00');
   await expect(canvas).toHaveAttribute('data-visible-emotes', 'none');
+  await expect(canvas).toHaveAttribute('data-visual-profile', 'cafe');
+  await expect(canvas).toHaveAttribute('data-surface-textures', '7');
+  await expect(canvas).toHaveAttribute('data-focus-bounds', 'none');
+  await expect(canvas).toHaveAttribute('data-focus-safe', 'true');
   await expect(canvas).toHaveAttribute('data-exposure', '1.10');
-  await expect(canvas).toHaveAttribute('data-character-emissive', '0.04');
-  await expect(canvas).toHaveAttribute('data-shadow-lift', '0.03');
-  await expect(canvas).toHaveAttribute('data-saturation', '1.08');
+  await expect(canvas).toHaveAttribute('data-character-emissive', '0.05');
+  await expect(canvas).toHaveAttribute('data-shadow-lift', '0.05');
+  await expect(canvas).toHaveAttribute('data-saturation', '1.04');
   expect(await canvas.evaluate((element) => {
     const target = element as HTMLCanvasElement;
     return { width: target.width, height: target.height };
@@ -176,6 +187,8 @@ for (const venue of [
     const canvas = page.locator('#cafe');
     await expect(page.locator('body')).toHaveAttribute('data-venue', venue.kind);
     await expect(canvas).toHaveAttribute('data-venue', venue.kind);
+    await expect(canvas).toHaveAttribute('data-visual-profile', venue.kind);
+    await expect(canvas).toHaveAttribute('data-surface-textures', '7');
     await expect(canvas).toHaveAttribute('data-venue-layout', venue.kind);
     await expect(canvas).toHaveAttribute('data-entry-flow', venue.flow);
     await expect(canvas).toHaveAttribute('data-layout-capacity', venue.capacity);
@@ -777,9 +790,12 @@ for (const scene of [
     } else {
       await expect(canvas).toHaveAttribute('data-camera-focus-source', scene.waitFor, { timeout: 5_000 });
     }
-    await page.waitForTimeout(1_000);
+    await expect.poll(async () => Number(await canvas.getAttribute('data-camera-focus-amount')), { timeout: 5_000 })
+      .toBeGreaterThanOrEqual(0.99);
     await page.evaluate(() => (window as typeof window & { pauseDiorama?: () => void }).pauseDiorama?.());
     await expect(canvas).toHaveAttribute('data-render-loop', 'paused');
+    await expect(canvas).toHaveAttribute('data-focus-safe', 'true');
+    await expect(canvas).toHaveAttribute('data-focus-bounds', /^(?!none$).+/);
     await page.getByTestId('welcome').evaluate((element) => { element.style.display = 'none'; });
     await page.getByTestId('controls').evaluate((element) => { (element as HTMLElement).hidden = true; });
     await expect(page.locator('#app')).toHaveScreenshot(`${scene.name}.png`, {

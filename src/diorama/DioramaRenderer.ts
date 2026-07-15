@@ -16,6 +16,7 @@ import {
   PCFSoftShadowMap,
   PerspectiveCamera,
   PlaneGeometry,
+  PointLight,
   Points,
   PointsMaterial,
   RingGeometry,
@@ -72,10 +73,12 @@ import {
 } from './pointerReaction';
 import {
   CameraFocusDirector,
+  calculateFocusFrameBounds,
   focusFieldOfView,
   participantMidpoint,
   type CameraFocusCandidate,
   type CameraFocusState,
+  type FocusFrameElement,
 } from './cameraFocus';
 import { resolveBubblePlacements, type BubbleBounds } from './bubbleLayout';
 import {
@@ -89,11 +92,16 @@ import {
   DIORAMA,
   DIORAMA_SCALE_REPORT,
   cameraPanForWorldX,
-  worldToDiorama,
+  worldToCharacterDiorama,
   type DioramaSet,
   type FocusOccluder,
 } from './types';
 import { buildVenue } from './venueBuilder';
+import {
+  VENUE_VISUAL_PROFILES,
+  focusBoundsAreSafe,
+  type FocusFrameBounds,
+} from './visualProfiles';
 
 interface CharacterNode {
   readonly root: Group;
@@ -184,6 +192,7 @@ export class DioramaRenderer {
   private readonly miniature: ShaderPass;
   private readonly hemisphere = new HemisphereLight('#bad7df', '#2a2028', 1.1);
   private readonly keyLight = new DirectionalLight('#fff0cc', 3.1);
+  private readonly focusLight = new PointLight('#ffe0a6', 0, 5.2, 1.55);
   private readonly spriteTextures = new SpriteTextureLibrary();
   private readonly guestNodes = new Map<string, CharacterNode>();
   private readonly baristaNode: CharacterNode;
@@ -204,6 +213,10 @@ export class DioramaRenderer {
   private reactionTargets: readonly ReactionTarget[] = [];
   private readonly focusDirector = new CameraFocusDirector();
   private focusState: CameraFocusState = { active: false, participantIds: [], amount: 0, fieldOfView: 30 };
+  private focusFrameBounds?: FocusFrameBounds;
+  private focusFrameSafe = true;
+  private focusFovLift = 0;
+  private focusFramingKey?: string;
   private activeFocusOccluders: readonly FocusOccluder[] = [];
   private visibleDialogue: readonly DialogueLine[] = [];
   private qualityTier: RenderQualityTier;
@@ -234,7 +247,7 @@ export class DioramaRenderer {
     this.look = calculateDioramaLook(this.venue);
     this.scene.background = this.look.sky;
     this.scene.fog = new FogExp2(this.look.sky, 0.018);
-    this.scene.add(this.hemisphere, this.keyLight);
+    this.scene.add(this.hemisphere, this.keyLight, this.focusLight);
     this.keyLight.position.set(7, 11, 8);
     this.keyLight.target.position.set(0, 0, 0);
     this.keyLight.castShadow = true;
@@ -258,7 +271,8 @@ export class DioramaRenderer {
     this.perspective.position.set(0, 6.7, 15.8);
     this.perspective.lookAt(0, 2.55, -0.2);
     const renderPass = new RenderPass(this.scene, this.perspective);
-    this.bloom = new UnrealBloomPass(new Vector2(2304, 1296), this.look.bloom, 0.54, 0.78);
+    const initialBloom = VENUE_VISUAL_PROFILES[this.venue].bloom;
+    this.bloom = new UnrealBloomPass(new Vector2(2304, 1296), this.look.bloom, initialBloom.radius, initialBloom.threshold);
     this.miniature = new ShaderPass(MINIATURE_SHADER);
     this.composer = new EffectComposer(this.webgl);
     this.composer.addPass(renderPass);
@@ -292,9 +306,15 @@ export class DioramaRenderer {
     canvas.dataset.cameraFocusSource = 'none';
     canvas.dataset.cameraFocusTarget = 'none';
     canvas.dataset.cameraFocusFov = '30.00';
+    canvas.dataset.cameraFocusAmount = '0.00';
     canvas.dataset.focusParticipants = 'none';
     canvas.dataset.focusOccluders = 'none';
     canvas.dataset.focusOccluderOpacity = '1.00';
+    canvas.dataset.visualProfile = this.venue;
+    canvas.dataset.surfaceTextures = String(this.venueSet.surfaceTextureCount);
+    canvas.dataset.focusBounds = 'none';
+    canvas.dataset.focusSafe = 'true';
+    canvas.dataset.focusLight = 'off';
     canvas.dataset.visibleEmotes = 'none';
     canvas.dataset.emoteBubbles = '0';
     this.applyLayoutDatasets(this.venue);
@@ -332,7 +352,13 @@ export class DioramaRenderer {
       this.baristaNode.textureName = '';
     }
     this.look = calculateDioramaLook(this.venue, this.environment);
+    const profile = VENUE_VISUAL_PROFILES[venue];
+    this.bloom.threshold = profile.bloom.threshold;
+    this.bloom.radius = profile.bloom.radius;
+    this.applyCharacterRimColor();
     this.canvas.dataset.venue = venue;
+    this.canvas.dataset.visualProfile = profile.id;
+    this.canvas.dataset.surfaceTextures = String(this.venueSet.surfaceTextureCount);
     this.applyLayoutDatasets(venue);
   }
 
@@ -380,6 +406,7 @@ export class DioramaRenderer {
     this.updateDoor(snapshot.guests, snapshot.venue);
     this.updateCharacters(snapshot, time, dialogue);
     this.updateFocusEffects(snapshot);
+    this.updateFocusFrame(snapshot);
     this.updateWeather(time);
     this.updateEvent(snapshot, time);
     this.composer.render();
@@ -409,13 +436,17 @@ export class DioramaRenderer {
       this.scene.fog.density = 0.006 + this.look.fog * 0.038;
     }
     this.webgl.toneMappingExposure = this.look.exposure;
-    this.hemisphere.color.copy(this.look.ambient);
-    this.hemisphere.groundColor.copy(new Color(this.venueSet.theme.floor));
+    this.hemisphere.color.copy(this.look.fillColor).lerp(this.look.ambient, 0.28);
+    this.hemisphere.groundColor.copy(this.look.shadowColor);
     this.hemisphere.intensity = this.look.ambientIntensity;
-    this.keyLight.color.copy(this.look.sun);
+    this.keyLight.color.copy(this.look.keyColor).lerp(this.look.sun, 0.26);
     this.keyLight.intensity = this.look.keyIntensity;
     this.keyLight.position.x = this.look.fromRight ? 8 : -8;
-    for (const light of this.venueSet.practicalLights) light.intensity = this.look.practicalIntensity;
+    for (const light of this.venueSet.practicalLights) {
+      light.intensity = this.look.practicalIntensity;
+      const baseColor = new Color(light.userData.baseColor ?? this.look.practicalColor);
+      light.color.copy(baseColor).lerp(this.look.practicalColor, 0.32);
+    }
     for (const pool of this.venueSet.lightPools) pool.material.opacity = this.look.lightPoolOpacity;
     this.venueSet.floorMaterial.roughness = 0.55 - this.look.wetness * 0.2;
     this.venueSet.floorMaterial.metalness = 0.08 + this.look.wetness * 0.14;
@@ -463,7 +494,7 @@ export class DioramaRenderer {
   }
 
   private projectReactionTarget(id: string | 'barista', position: Guest['position']): ReactionTarget {
-    const point = worldToDiorama(position);
+    const point = worldToCharacterDiorama(position);
     const projected = new Vector3(point.x, id === 'barista' ? 1.55 : 1.35, point.z).project(this.perspective);
     const bounds = this.canvas.getBoundingClientRect();
     return {
@@ -586,14 +617,18 @@ export class DioramaRenderer {
   private updateCamera(): void {
     const worldCenter = this.camera.x + this.sceneWidth / 2;
     const overviewX = cameraPanForWorldX(worldCenter) - DIORAMA.width / 2;
-    const mappedTarget = this.focusState.target ? worldToDiorama(this.focusState.target) : undefined;
+    const mappedTarget = this.focusState.target ? worldToCharacterDiorama(this.focusState.target) : undefined;
     const focusX = mappedTarget?.x ?? overviewX;
     const targetX = overviewX + (focusX - overviewX) * this.focusState.amount;
     this.perspective.position.x = targetX;
     this.perspective.position.y = 6.7 + (5.7 - 6.7) * this.focusState.amount;
     this.perspective.position.z = 15.8 + ((mappedTarget?.z ?? -0.2) + 12.3 - 15.8) * this.focusState.amount;
-    if (Math.abs(this.perspective.fov - this.focusState.fieldOfView) > 0.001) {
-      this.perspective.fov = this.focusState.fieldOfView;
+    const profile = VENUE_VISUAL_PROFILES[this.venue];
+    const framedFov = this.focusState.active && this.focusState.amount > 0.7
+      ? Math.min(profile.camera.focusFov[1], this.focusState.fieldOfView + this.focusFovLift)
+      : this.focusState.fieldOfView;
+    if (Math.abs(this.perspective.fov - framedFov) > 0.001) {
+      this.perspective.fov = framedFov;
       this.perspective.updateProjectionMatrix();
     }
     const targetHeight = 2.55 + ((this.focusState.targetHeight ?? 2.55) - 2.55) * this.focusState.amount;
@@ -691,7 +726,7 @@ export class DioramaRenderer {
     dialogue?: DialogueLine,
     placement?: Readonly<SpeechBubblePlacement>,
   ): void {
-    const point = worldToDiorama(guest.position);
+    const point = worldToCharacterDiorama(guest.position);
     const seated = visual.seated;
     node.root.position.set(point.x + visual.offsetX, 0.07 + visual.offsetY, point.z);
     this.applySprite(node, this.spriteTextures.forGuest(guest, this.venue, visual), seated, visual.facing);
@@ -717,7 +752,7 @@ export class DioramaRenderer {
     dialogue?: DialogueLine,
     placement?: Readonly<SpeechBubblePlacement>,
   ): void {
-    const point = worldToDiorama(barista.position);
+    const point = worldToCharacterDiorama(barista.position);
     node.root.position.set(point.x + visual.offsetX, 0.07 + visual.offsetY, point.z);
     this.applySprite(node, this.spriteTextures.forBarista(barista, this.venue, visual), false, visual.facing);
     node.plane.rotation.copy(this.perspective.rotation);
@@ -760,7 +795,7 @@ export class DioramaRenderer {
     const guest = snapshot.guests.find((entry) => entry.id === line.speakerId);
     const participant = guest ?? (line.speakerId === 'barista' ? snapshot.barista : undefined);
     if (!participant) return undefined;
-    const point = worldToDiorama(participant.position);
+    const point = worldToCharacterDiorama(participant.position);
     const characterHeight = guest?.state === 'activity' ? DIORAMA.seatedHeight : DIORAMA.standingHeight;
     const tailLeft = point.x < -6 ? true : point.x > 6 ? false : participant.facing > 0;
     const center = new Vector3(
@@ -817,6 +852,17 @@ export class DioramaRenderer {
       }
     }
 
+    const participantNodes = [...activeIds]
+      .map((id) => id === 'barista' ? this.baristaNode : this.guestNodes.get(id))
+      .filter((node): node is CharacterNode => node !== undefined);
+    if (participantNodes.length > 0) {
+      const center = participantNodes.reduce((sum, node) => sum.add(node.root.position), new Vector3())
+        .multiplyScalar(1 / participantNodes.length);
+      this.focusLight.position.set(center.x, 2.5, center.z + 1.15);
+      this.focusLight.color.copy(this.look.focusColor);
+      this.focusLight.intensity = this.focusState.amount * (this.venue === 'arcade' ? 8 : 6.4);
+    }
+
     const targets: FocusVisibilityTarget[] = [];
     for (const id of activeIds) {
       const guest = snapshot.guests.find((entry) => entry.id === id);
@@ -844,6 +890,87 @@ export class DioramaRenderer {
     this.activeFocusOccluders = [];
     this.baristaNode.plane.material.emissiveIntensity = this.look.characterEmissive;
     for (const node of this.guestNodes.values()) node.plane.material.emissiveIntensity = this.look.characterEmissive;
+    this.focusLight.intensity = 0;
+    this.focusFrameBounds = undefined;
+    this.focusFrameSafe = true;
+    this.focusFovLift = 0;
+    this.focusFramingKey = undefined;
+  }
+
+  private updateFocusFrame(snapshot: SceneSnapshot): void {
+    if (!this.focusState.active || this.focusState.participantIds.length === 0) {
+      this.focusFrameBounds = undefined;
+      this.focusFrameSafe = true;
+      this.focusFovLift = 0;
+      this.focusFramingKey = undefined;
+      return;
+    }
+    const framingKey = `${this.focusState.source}:${this.focusState.key}`;
+    if (framingKey !== this.focusFramingKey) {
+      this.focusFramingKey = framingKey;
+      this.focusFovLift = 0;
+    }
+    this.perspective.updateMatrixWorld(true);
+    const elements: FocusFrameElement[] = [];
+    const aspect = DIORAMA.spriteWidth / DIORAMA.spriteHeight;
+    const project = (value: Vector3): { x: number; y: number } => {
+      const projected = value.clone().project(this.perspective);
+      return { x: (projected.x + 1) / 2, y: (1 - projected.y) / 2 };
+    };
+    for (const id of this.focusState.participantIds) {
+      const guest = snapshot.guests.find((entry) => entry.id === id);
+      const node = id === 'barista' ? this.baristaNode : this.guestNodes.get(id);
+      if (!node) continue;
+      const spot = activitySpotById(VENUE_LAYOUTS[snapshot.venue], guest?.activitySpotId);
+      const seated = guest?.state === 'activity' && spot?.pose === 'seated';
+      const height = seated ? DIORAMA.seatedHeight : DIORAMA.standingHeight;
+      const halfWidth = height * aspect * 0.56;
+      const bottomLeft = project(new Vector3(node.root.position.x - halfWidth, node.root.position.y, node.root.position.z));
+      const topRight = project(new Vector3(node.root.position.x + halfWidth, node.root.position.y + height, node.root.position.z));
+      elements.push({
+        left: Math.min(bottomLeft.x, topRight.x),
+        top: Math.min(bottomLeft.y, topRight.y),
+        right: Math.max(bottomLeft.x, topRight.x),
+        bottom: Math.max(bottomLeft.y, topRight.y),
+        role: 'participant',
+      });
+      const propReach = halfWidth * 1.28;
+      const handsLeft = project(new Vector3(node.root.position.x - propReach, node.root.position.y + height * 0.38, node.root.position.z + 0.03));
+      const handsRight = project(new Vector3(node.root.position.x + propReach, node.root.position.y + height * 0.7, node.root.position.z + 0.03));
+      elements.push({
+        left: Math.min(handsLeft.x, handsRight.x),
+        top: Math.min(handsLeft.y, handsRight.y),
+        right: Math.max(handsLeft.x, handsRight.x),
+        bottom: Math.max(handsLeft.y, handsRight.y),
+        role: 'hands-prop',
+      });
+    }
+    const canvasBounds = this.canvas.getBoundingClientRect();
+    for (const line of this.visibleDialogue.filter((entry) => this.focusState.participantIds.includes(entry.speakerId))) {
+      const bounds = this.projectBubbleBounds(line, snapshot);
+      if (!bounds || canvasBounds.width <= 0 || canvasBounds.height <= 0) continue;
+      elements.push({
+        left: (bounds.x - bounds.width / 2) / canvasBounds.width,
+        top: (bounds.y - bounds.height / 2) / canvasBounds.height,
+        right: (bounds.x + bounds.width / 2) / canvasBounds.width,
+        bottom: (bounds.y + bounds.height / 2) / canvasBounds.height,
+        role: 'speech-bubble',
+      });
+    }
+    this.focusFrameBounds = calculateFocusFrameBounds(elements);
+    const safeArea = VENUE_VISUAL_PROFILES[this.venue].camera.safeArea;
+    this.focusFrameSafe = this.focusFrameBounds ? focusBoundsAreSafe(this.focusFrameBounds, safeArea) : true;
+    const overshoot = this.focusFrameBounds
+      ? Math.max(
+        0,
+        safeArea.left - this.focusFrameBounds.left,
+        this.focusFrameBounds.right - safeArea.right,
+        safeArea.top - this.focusFrameBounds.top,
+        this.focusFrameBounds.bottom - safeArea.bottom,
+      )
+      : 0;
+    const targetLift = this.focusFrameSafe ? 0 : Math.min(4, 0.6 + overshoot * 18);
+    this.focusFovLift = Math.max(this.focusFovLift, targetLift);
   }
 
   private updateWeather(time: number): void {
@@ -879,7 +1006,7 @@ export class DioramaRenderer {
       point = guest?.position;
     }
     if (!point) return;
-    const mapped = worldToDiorama(point);
+    const mapped = worldToCharacterDiorama(point);
     this.eventAccent.position.set(mapped.x, 0.12, mapped.z);
     this.eventAccent.material.color.set(accident ? '#ed766b' : this.venueSet.theme.glow);
     this.eventAccent.material.opacity = 0.25 + Math.sin(time * 4) * 0.08;
@@ -937,12 +1064,19 @@ export class DioramaRenderer {
     this.canvas.dataset.cameraFocusTarget = this.focusState.target
       ? `${this.focusState.target.x.toFixed(1)},${this.focusState.target.y.toFixed(1)},${(this.focusState.targetHeight ?? 0).toFixed(2)}`
       : 'none';
-    this.canvas.dataset.cameraFocusFov = this.focusState.fieldOfView.toFixed(2);
+    this.canvas.dataset.cameraFocusFov = this.perspective.fov.toFixed(2);
+    this.canvas.dataset.cameraFocusAmount = this.focusState.amount.toFixed(2);
     this.canvas.dataset.focusParticipants = this.focusState.participantIds.join(',') || 'none';
     this.canvas.dataset.focusOccluders = this.activeFocusOccluders.map((occluder) => occluder.id).join(',') || 'none';
     this.canvas.dataset.focusOccluderOpacity = this.activeFocusOccluders.length > 0
       ? focusOccluderOpacity(this.focusState.amount).toFixed(2)
       : '1.00';
+    this.canvas.dataset.focusBounds = this.focusFrameBounds
+      ? [this.focusFrameBounds.left, this.focusFrameBounds.top, this.focusFrameBounds.right, this.focusFrameBounds.bottom]
+        .map((value) => value.toFixed(3)).join(',')
+      : 'none';
+    this.canvas.dataset.focusSafe = String(this.focusFrameSafe);
+    this.canvas.dataset.focusLight = this.focusLight.intensity > 0.01 ? this.focusLight.intensity.toFixed(2) : 'off';
     this.canvas.dataset.visibleEmotes = this.visibleDialogue
       .map((line) => `${line.speakerId}:${line.visibleEmotes.join('+')}`)
       .join('|') || 'none';
@@ -961,7 +1095,8 @@ export class DioramaRenderer {
     const geometry = new PlaneGeometry(1, 1);
     const material = new MeshStandardMaterial({
       color: '#ffffff', transparent: true, alphaTest: 0.04, depthWrite: true,
-      emissive: '#ffffff', emissiveIntensity: this.look.characterEmissive,
+      emissive: VENUE_VISUAL_PROFILES[this.venue].lights.characterRim,
+      emissiveIntensity: this.look.characterEmissive,
       roughness: 0.82, metalness: 0, side: DoubleSide,
     });
     const plane = new Mesh(geometry, material);
@@ -977,6 +1112,12 @@ export class DioramaRenderer {
     const speech = new SpeechBubble(name);
     root.add(speech.mesh);
     return { root, plane, shadow, speech, textureName: '' };
+  }
+
+  private applyCharacterRimColor(): void {
+    const color = new Color(VENUE_VISUAL_PROFILES[this.venue].lights.characterRim);
+    this.baristaNode.plane.material.emissive.copy(color);
+    for (const node of this.guestNodes.values()) node.plane.material.emissive.copy(color);
   }
 
   private disposeCharacterNode(node: CharacterNode): void {

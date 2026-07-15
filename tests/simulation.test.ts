@@ -73,10 +73,14 @@ describe('CafeSimulation', () => {
     simulation.start();
     simulation.start();
     expect(simulation.guests).toHaveLength(4);
+    const guestIds = simulation.guests.map((guest) => guest.id);
     simulation.stop();
     const elapsed = simulation.stats.elapsed;
     simulation.update(10);
     expect(simulation.stats.elapsed).toBe(elapsed);
+    expect(() => simulation.start()).not.toThrow();
+    expect(simulation.guests.map((guest) => guest.id)).toEqual(guestIds);
+    expect(simulation.guests).toHaveLength(4);
   });
 
   it('begrenzt den Café-Mittagspeak auf seine sechs Aktivitätsplätze', () => {

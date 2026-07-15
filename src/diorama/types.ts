@@ -10,6 +10,7 @@ import type {
 } from 'three';
 import type { Point } from '../simulation/types';
 import type { VenueKind } from '../venue';
+import { VENUE_VISUAL_PROFILES } from './visualProfiles';
 
 export const DIORAMA = {
   width: 16,
@@ -18,8 +19,8 @@ export const DIORAMA = {
   renderScale: 6,
   spriteWidth: 144,
   spriteHeight: 208,
-  standingHeight: 2.02,
-  seatedHeight: 1.58,
+  standingHeight: 2.14,
+  seatedHeight: 1.67,
 } as const;
 
 export const DIORAMA_SCALE = {
@@ -125,25 +126,15 @@ export interface DioramaSet {
   readonly animatedProps: readonly AnimatedProp[];
   readonly focusOccluders: readonly FocusOccluder[];
   readonly theme: DioramaTheme;
+  readonly surfaceTextureCount: number;
+  readonly surfaceKinds: readonly string[];
   dispose(): void;
 }
 
 export const DIORAMA_THEMES: Readonly<Record<VenueKind, DioramaTheme>> = {
-  cafe: {
-    wall: '#85574f', wallDark: '#4b353b', floor: '#30252d', floorLine: '#65434a',
-    wood: '#734337', woodLight: '#b06f4f', metal: '#6e7880', ink: '#1b1720',
-    glow: '#ffd18a', accent: '#d98a62', neon: '#f4bd73',
-  },
-  ramen: {
-    wall: '#753d3d', wallDark: '#3a212c', floor: '#2a2329', floorLine: '#5d3c3d',
-    wood: '#682f31', woodLight: '#b94e45', metal: '#7a7470', ink: '#18141c',
-    glow: '#ffc267', accent: '#d84e42', neon: '#ff7455',
-  },
-  arcade: {
-    wall: '#243650', wallDark: '#141d31', floor: '#172236', floorLine: '#32516d',
-    wood: '#273b58', woodLight: '#426785', metal: '#435f7c', ink: '#101526',
-    glow: '#70ebee', accent: '#ce55b7', neon: '#55dfe6',
-  },
+  cafe: VENUE_VISUAL_PROFILES.cafe.palette,
+  ramen: VENUE_VISUAL_PROFILES.ramen.palette,
+  arcade: VENUE_VISUAL_PROFILES.arcade.palette,
 };
 
 /** Maps the simulation's stable 384×216 floor plan into physical diorama space. */
@@ -152,6 +143,12 @@ export function worldToDiorama(point: Point): DioramaPoint {
     x: (point.x / 384 - 0.5) * DIORAMA.width,
     z: ((point.y - 130) / 86 - 0.5) * DIORAMA.depth,
   };
+}
+
+/** Keeps service characters and their event focus in front of the physical back wall. */
+export function worldToCharacterDiorama(point: Point): DioramaPoint {
+  const mapped = worldToDiorama(point);
+  return { ...mapped, z: Math.max(-3.2, mapped.z) };
 }
 
 export function cameraPanForWorldX(cameraX: number): number {

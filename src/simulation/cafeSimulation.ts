@@ -284,6 +284,7 @@ export class CafeSimulation {
   private readonly storyMaxDelay: number;
   private readonly storyKinds: readonly CafeStoryKind[];
   private started = false;
+  private initialized = false;
   private nextGuestId = 1;
   private readonly nextRegularIndex: Record<VenueKind, number> = { cafe: 0, ramen: 0, arcade: 0 };
   private spawnClock = 0;
@@ -365,10 +366,13 @@ export class CafeSimulation {
   start(): void {
     if (this.started) return;
     this.started = true;
-    const initialCount = this.environment
-      ? Math.min(this.initialGuests, this.desiredGuestCount, this.layout.activitySpots.length)
-      : Math.min(this.initialGuests, this.layout.activitySpots.length);
-    for (let index = 0; index < initialCount; index += 1) this.addInitialGuest();
+    if (!this.initialized) {
+      const initialCount = this.environment
+        ? Math.min(this.initialGuests, this.desiredGuestCount, this.layout.activitySpots.length)
+        : Math.min(this.initialGuests, this.layout.activitySpots.length);
+      for (let index = 0; index < initialCount; index += 1) this.addInitialGuest();
+      this.initialized = true;
+    }
     if (this.accidentEnabled && this.accidentCountdown === undefined) this.scheduleNextAccident();
     if (this.momentEnabled && this.momentCountdown === undefined) this.scheduleNextMoment();
     if (this.storyEnabled && this.storyCountdown === undefined) this.scheduleNextStory();

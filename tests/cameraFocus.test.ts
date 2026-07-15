@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   CameraFocusDirector,
+  calculateFocusFrameBounds,
   cameraFocusEase,
   focusFieldOfView,
   participantMidpoint,
   type CameraFocusCandidate,
 } from '../src/diorama/cameraFocus';
 import { CafeCamera } from '../src/camera';
+import { VENUE_LAYOUTS } from '../src/simulation/layout';
+import { VENUE_VISUAL_PROFILES, focusBoundsAreSafe } from '../src/diorama/visualProfiles';
 
 describe('sanfte Kameraregie', () => {
   const candidate = (
@@ -60,12 +63,39 @@ describe('sanfte Kameraregie', () => {
     expect(participantMidpoint([])).toBeUndefined();
   });
 
-  it('hält Einzelne bei 22 Grad und öffnet räumlich verteilte Gruppen höchstens auf 24 Grad', () => {
+  it('hält Einzelne bei 22 Grad und öffnet räumlich verteilte Gruppen höchstens auf 26 Grad', () => {
     expect(focusFieldOfView([{ x: 80, y: 170 }])).toBe(22);
     expect(focusFieldOfView([{ x: 80, y: 150 }, { x: 120, y: 190 }])).toBeGreaterThan(22);
     expect(focusFieldOfView([
       { x: 40, y: 140 }, { x: 120, y: 170 }, { x: 220, y: 200 }, { x: 300, y: 210 },
-    ])).toBe(24);
+    ])).toBe(26);
+  });
+
+  it('fasst Teilnehmer, Hände/Requisiten und Sprechblasen in einem sicheren Bildrahmen zusammen', () => {
+    const bounds = calculateFocusFrameBounds([
+      { role: 'participant', left: 0.28, top: 0.24, right: 0.54, bottom: 0.86 },
+      { role: 'hands-prop', left: 0.22, top: 0.5, right: 0.61, bottom: 0.72 },
+      { role: 'speech-bubble', left: 0.34, top: 0.1, right: 0.68, bottom: 0.31 },
+    ]);
+    expect(bounds).toMatchObject({ left: 0.22, top: 0.1, right: 0.68, bottom: 0.86 });
+    expect(bounds?.width).toBeCloseTo(0.46);
+    expect(bounds?.height).toBeCloseTo(0.76);
+    expect(bounds && focusBoundsAreSafe(bounds, VENUE_VISUAL_PROFILES.cafe.camera.safeArea)).toBe(true);
+  });
+
+  it.each(['cafe', 'ramen', 'arcade'] as const)('hält alle Aktivitätsplätze in %s für Desktop und Mobil im Fokus-FOV', (venue) => {
+    const positions = VENUE_LAYOUTS[venue].activitySpots.map((spot) => ({ x: spot.x, y: spot.y }));
+    for (const position of positions) expect(focusFieldOfView([position])).toBe(22);
+    for (const viewport of [{ width: 1440, height: 810 }, { width: 390, height: 844 }]) {
+      const maxGroupSize = viewport.width < 700 ? 2 : 4;
+      for (let index = 0; index < positions.length; index += 1) {
+        const group = positions.slice(index, index + maxGroupSize);
+        if (group.length > 0) {
+          expect(focusFieldOfView(group)).toBeGreaterThanOrEqual(22);
+          expect(focusFieldOfView(group)).toBeLessThanOrEqual(26);
+        }
+      }
+    }
   });
 
   it('pausiert die mobile Tour während eines Fokus und setzt ihren Tourzustand danach fort', () => {

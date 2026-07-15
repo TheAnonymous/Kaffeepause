@@ -2,6 +2,7 @@ import { Color } from 'three';
 import type { CafeEnvironmentSnapshot, DayPhase, WeatherKind } from '../environment/types';
 import type { VenueKind } from '../venue';
 import { DIORAMA_THEMES } from './types';
+import { VENUE_VISUAL_PROFILES } from './visualProfiles';
 
 export interface DioramaLook {
   readonly daylight: number;
@@ -24,6 +25,12 @@ export interface DioramaLook {
   readonly sky: Color;
   readonly sun: Color;
   readonly ambient: Color;
+  readonly shadowColor: Color;
+  readonly keyColor: Color;
+  readonly fillColor: Color;
+  readonly practicalColor: Color;
+  readonly focusColor: Color;
+  readonly minimumCharacterContrast: number;
   readonly fromRight: boolean;
 }
 
@@ -34,12 +41,6 @@ const DAYLIGHT: Readonly<Record<DayPhase, number>> = {
 const SKY: Readonly<Record<DayPhase, string>> = {
   night: '#11182b', dawn: '#7f5265', morning: '#8eb5c6', midday: '#6fa9ca',
   afternoon: '#8ca7ac', dusk: '#9f5963', evening: '#3d3853',
-};
-
-const SATURATION: Readonly<Record<VenueKind, number>> = {
-  cafe: 1.08,
-  ramen: 1.12,
-  arcade: 1.18,
 };
 
 function clamp(value: number, min = 0, max = 1): number {
@@ -69,6 +70,7 @@ export function calculateDioramaLook(
   const daylight = clamp(DAYLIGHT[phase] * (1 - cloud * 0.28 - storm * 0.22));
   const night = 1 - daylight;
   const theme = DIORAMA_THEMES[venue];
+  const profile = VENUE_VISUAL_PROFILES[venue];
   const sky = new Color(SKY[phase]).lerp(new Color('#3c4653'), clamp(cloud * 0.45 + fog * 0.35));
   const sun = new Color(phase === 'dawn' || phase === 'dusk' ? '#ffd09a' : '#fff0cf');
   const ambient = new Color(theme.wall).lerp(new Color(theme.glow), 0.22 + night * 0.18);
@@ -83,17 +85,23 @@ export function calculateDioramaLook(
     ambientIntensity: 1.05 + daylight * 0.35,
     keyIntensity: 1.15 + daylight * 3,
     practicalIntensity: 18 + night * 24,
-    characterEmissive: Math.min(0.31, 0.04 + night * 0.24 + (venue === 'arcade' ? 0.03 : 0)),
-    shadowLift: 0.03 + night * 0.1,
-    saturation: SATURATION[venue] + night * 0.04,
+    characterEmissive: Math.min(0.3, 0.045 + night * 0.2 + (venue === 'arcade' ? 0.035 : 0)),
+    shadowLift: Math.min(profile.contrast.maximumShadowLift, profile.contrast.minimumShadowLift + night * 0.095),
+    saturation: Math.min(profile.contrast.saturation[1], profile.contrast.saturation[0] + night * 0.035),
     vignette: 0.08 + night * 0.04,
     lightPoolOpacity: 0.06 + night * 0.18,
-    bloom: clamp(0.2 + night * 0.42 + (venue === 'arcade' ? 0.25 : 0), 0.2, 0.78),
+    bloom: clamp(profile.bloom.minimum + night * (venue === 'arcade' ? 0.46 : 0.34), profile.bloom.minimum, profile.bloom.maximum),
     focusBand: 0.57,
     blur: 0.0016 + fog * 0.0012,
     sky,
     sun,
     ambient,
+    shadowColor: new Color(profile.shadowColor),
+    keyColor: new Color(profile.lights.key),
+    fillColor: new Color(profile.lights.fill),
+    practicalColor: new Color(profile.lights.practical),
+    focusColor: new Color(profile.lights.focus),
+    minimumCharacterContrast: profile.contrast.minimumCharacterContrast,
     fromRight: (environment?.solar.azimuth ?? 220) >= 180,
   };
 }

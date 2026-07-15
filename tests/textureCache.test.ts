@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { FrameTextureCache } from '../src/diorama/spriteFactory';
+import { Texture } from 'three';
+import { PixelSurfaceLibrary } from '../src/diorama/pixelSurfaceLibrary';
+import { VENUE_VISUAL_PROFILES } from '../src/diorama/visualProfiles';
 
 describe('Figurentextur-Cache', () => {
   it('begrenzt inaktive Einträge auf 192 und entsorgt nie aktive Texturen', () => {
@@ -23,3 +26,27 @@ describe('Figurentextur-Cache', () => {
   });
 });
 
+describe('PixelSurfaceLibrary', () => {
+  it('cached jede Rezepttextur genau einmal und gibt beim Venuewechsel alle GPU-Ressourcen frei', () => {
+    const disposed: string[] = [];
+    const created: string[] = [];
+    const library = new PixelSurfaceLibrary(VENUE_VISUAL_PROFILES.cafe.surfaces, (recipe) => {
+      const texture = new Texture();
+      texture.name = recipe.kind;
+      texture.dispose = () => { disposed.push(recipe.kind); };
+      created.push(recipe.kind);
+      return texture;
+    });
+    expect(library.get('wood')).toBe(library.get('wood'));
+    library.get('glass');
+    library.get('floor');
+    expect(created).toEqual(['wood', 'glass', 'floor']);
+    expect(library.size).toBe(3);
+    library.dispose();
+    library.dispose();
+    expect(disposed.sort()).toEqual(['floor', 'glass', 'wood']);
+    expect(library.size).toBe(0);
+    expect(library.isDisposed).toBe(true);
+    expect(() => library.get('wood')).toThrow(/freigegeben/);
+  });
+});
