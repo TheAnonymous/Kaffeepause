@@ -18,7 +18,7 @@ describe('VenueVisualProfile-Registry', () => {
     expect(profile.camera.safeArea).toMatchObject({ left: 0.1, top: 0.1, right: 0.9, bottom: 0.9 });
     expect(profile.bloom.minimum).toBeLessThan(profile.bloom.maximum);
     expect(profile.bloom.maximum).toBeLessThanOrEqual(venue === 'arcade' ? 0.42 : 0.3);
-    expect(profile.bloom.threshold).toBe(0.86);
+    expect(profile.bloom.threshold).toBeGreaterThanOrEqual(0.9);
     expect(profile.contrast.minimumShadowLift).toBeGreaterThanOrEqual(0.045);
     expect(colorLuminance(profile.palette.ink)).toBeGreaterThan(0.009);
     expect(colorContrast(profile.palette.ink, profile.lights.characterRim))
@@ -28,7 +28,7 @@ describe('VenueVisualProfile-Registry', () => {
   it('nimmt Ramen den monochromen Rotstich und hebt Arcade-Schwarz sichtbar an', () => {
     expect(colorContrast(VENUE_VISUAL_PROFILES.ramen.palette.wall, VENUE_VISUAL_PROFILES.ramen.surfaces.tile.base)).toBeGreaterThan(4);
     expect(colorLuminance(VENUE_VISUAL_PROFILES.arcade.palette.wallDark)).toBeGreaterThan(0.018);
-    expect(VENUE_VISUAL_PROFILES.ramen.lights.fill).toBe('#9fc8d4');
+    expect(VENUE_VISUAL_PROFILES.ramen.lights.fill).toBe('#7895a2');
   });
 });
 

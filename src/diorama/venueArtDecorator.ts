@@ -1,19 +1,15 @@
 import {
-  BoxGeometry,
   DoubleSide,
   Group,
-  InstancedMesh,
-  Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
   type Material,
-  type Object3D,
   type Texture,
 } from 'three';
 import type { VenueKind } from '../venue';
 import type { LoadedVenueArtPack } from './artAssets';
-import { registerSelectiveBloomSurface } from './selectiveBloom';
 import type { DioramaSet } from './types';
 
 export interface VenueArtDecoration {
@@ -22,29 +18,38 @@ export interface VenueArtDecoration {
   dispose(): void;
 }
 
-interface PlaneSpec {
+interface DetailPlaneSpec {
   readonly region: string;
   readonly size: readonly [number, number];
   readonly position: readonly [number, number, number];
-  readonly emissive?: boolean;
+  readonly rotationX?: number;
+  readonly rotationY?: number;
   readonly opacity?: number;
+  readonly depthWrite?: boolean;
+  readonly unlit?: boolean;
 }
 
-const DETAIL_PLANES: Readonly<Record<VenueKind, readonly PlaneSpec[]>> = {
+/**
+ * Each room gets a few deliberately placed hero details, never a wallpaper of
+ * repeated generated props. Every crop was reviewed at native size and is free
+ * of people and lettering, keeping the simulation's authored characters and
+ * stories visually authoritative.
+ */
+const DETAIL_PLANES: Readonly<Record<VenueKind, readonly DetailPlaneSpec[]>> = {
   cafe: [
-    { region: 'surface-wall', size: [2.15, 1.35], position: [-6.55, 4.35, -3.08], opacity: 0.68 },
-    { region: 'prop-primary', size: [1.35, 1.18], position: [2.68, 1.35, -2.76] },
-    { region: 'emission-primary', size: [0.68, 0.68], position: [-3.6, 6.48, -3.02], emissive: true, opacity: 0.72 },
+    { region: 'surface-glass', size: [10.45, 5.72], position: [-0.45, 4.36, -3.66], opacity: 0.82, depthWrite: false, unlit: true },
+    { region: 'prop-primary', size: [1.34, 1.08], position: [2.68, 0.73, -1.24], opacity: 0.92 },
+    { region: 'surface-metal', size: [1.06, 1.06], position: [6.2, 1.89, -1.75], opacity: 0.9 },
+    { region: 'foreground-detail', size: [1.22, 1.22], position: [-6.3, 2.1, -2.94], opacity: 0.88 },
   ],
   ramen: [
-    { region: 'prop-noren', size: [5.6, 1.22], position: [-0.45, 3.68, -3.02], opacity: 0.78 },
-    { region: 'prop-primary', size: [1.2, 1.05], position: [4.42, 1.9, -2.82] },
-    { region: 'emission-primary', size: [3.4, 0.72], position: [-0.45, 5.5, -2.96], emissive: true, opacity: 0.7 },
+    { region: 'surface-metal', size: [3.1, 1.72], position: [-4.48, 2.52, -2.9], opacity: 0.84, unlit: true },
+    { region: 'prop-noren', size: [10.25, 1.58], position: [-0.48, 4.03, -2.96], opacity: 0.94 },
+    { region: 'foreground-detail', size: [0.86, 0.86], position: [5.9, 0.7, 2.39], opacity: 0.9 },
   ],
   arcade: [
-    { region: 'prop-poster', size: [1.55, 2.12], position: [-4.82, 4.15, -3.02], opacity: 0.82 },
-    { region: 'foreground-detail', size: [1.58, 1.24], position: [3.12, 2.48, -2.98], opacity: 0.76 },
-    { region: 'emission-magenta', size: [3.65, 0.68], position: [0, 5.05, -2.94], emissive: true, opacity: 0.76 },
+    { region: 'foreground-detail', size: [5.05, 3.2], position: [0, 0.17, 1.2], rotationX: -Math.PI / 2, opacity: 0.86, depthWrite: false, unlit: true },
+    { region: 'prop-poster', size: [2.36, 2.28], position: [3.2, 2.75, -2.94], opacity: 0.82, unlit: true },
   ],
 };
 
@@ -69,81 +74,41 @@ function firstTexture(pack: LoadedVenueArtPack, ...ids: string[]): Texture | und
 function addDetailPlane(
   parent: Group,
   pack: LoadedVenueArtPack,
-  spec: PlaneSpec,
-  geometries: Set<PlaneGeometry | BoxGeometry>,
+  spec: DetailPlaneSpec,
+  geometries: Set<PlaneGeometry>,
   materials: Set<Material>,
 ): void {
   const map = pack.textureForRegion(spec.region);
   if (!map) return;
+  const opacity = spec.opacity ?? 1;
   const geometry = new PlaneGeometry(...spec.size);
-  const material = new MeshStandardMaterial({
-    color: '#ffffff',
-    map,
-    roughness: spec.emissive ? 0.28 : 0.74,
-    metalness: spec.emissive ? 0.12 : 0.02,
-    transparent: (spec.opacity ?? 1) < 1,
-    opacity: spec.opacity ?? 1,
-    depthWrite: true,
-    side: DoubleSide,
-    emissive: spec.emissive ? '#ffffff' : '#000000',
-    emissiveMap: spec.emissive ? map : null,
-    emissiveIntensity: spec.emissive ? 0.34 : 0,
-  });
+  const shared = {
+    color: '#ffffff', map, transparent: opacity < 1, opacity,
+    depthWrite: spec.depthWrite ?? opacity >= 0.9, side: DoubleSide, alphaTest: 0.01,
+  } as const;
+  const material: Material = spec.unlit
+    ? new MeshBasicMaterial(shared)
+    : new MeshStandardMaterial({
+      ...shared,
+      roughness: spec.region === 'surface-metal' ? 0.42 : 0.76,
+      metalness: spec.region === 'surface-metal' ? 0.16 : 0.02,
+    });
   const plane = new Mesh(geometry, material);
-  plane.name = `art-detail:${spec.region}`;
+  plane.name = `authored-art-detail:${spec.region}`;
   plane.position.set(...spec.position);
+  plane.rotation.x = spec.rotationX ?? 0;
+  plane.rotation.y = spec.rotationY ?? 0;
   plane.castShadow = false;
   plane.receiveShadow = false;
-  if (spec.emissive) registerSelectiveBloomSurface(plane);
   geometries.add(geometry);
   materials.add(material);
   parent.add(plane);
 }
 
-function addInstancedProps(
-  venue: VenueKind,
-  parent: Group,
-  pack: LoadedVenueArtPack,
-  geometries: Set<PlaneGeometry | BoxGeometry>,
-  materials: Set<Material>,
-): void {
-  const region = venue === 'arcade' ? 'prop-secondary' : 'prop-primary';
-  const map = firstTexture(pack, region, 'foreground-detail');
-  if (!map) return;
-  const geometry = new BoxGeometry(0.22, venue === 'arcade' ? 0.24 : 0.18, 0.18);
-  const material = new MeshStandardMaterial({ color: '#ffffff', map, roughness: 0.46, metalness: venue === 'arcade' ? 0.18 : 0.04 });
-  const positions: readonly (readonly [number, number, number])[] = venue === 'cafe'
-    ? [[4.55, 1.47, -2.12], [4.92, 1.47, -2.12], [5.3, 1.47, -2.12], [5.68, 1.47, -2.12], [6.05, 1.47, -2.12], [6.42, 1.47, -2.12]]
-    : venue === 'ramen'
-      ? [[-5.8, 1.48, -1.73], [-4.2, 1.48, -1.73], [-2.6, 1.48, -1.73], [-1, 1.48, -1.73], [0.6, 1.48, -1.73], [2.2, 1.48, -1.73]]
-      : [[2.52, 1.42, -2.42], [2.86, 1.42, -2.42], [3.2, 1.42, -2.42], [3.54, 1.42, -2.42], [3.88, 1.42, -2.42], [4.22, 1.42, -2.42]];
-  const props = new InstancedMesh(geometry, material, positions.length);
-  props.name = `art-instanced-props:${venue}`;
-  const matrix = new Matrix4();
-  for (const [index, position] of positions.entries()) {
-    matrix.makeTranslation(...position);
-    props.setMatrixAt(index, matrix);
-  }
-  props.instanceMatrix.needsUpdate = true;
-  props.castShadow = true;
-  props.receiveShadow = true;
-  geometries.add(geometry);
-  materials.add(material);
-  parent.add(props);
-}
-
-function countDrawables(root: Object3D): number {
-  let count = 0;
-  root.traverse((object) => {
-    if (object instanceof Mesh || object instanceof InstancedMesh) count += 1;
-  });
-  return count;
-}
-
 export function decorateVenueWithArtPack(set: DioramaSet, pack: LoadedVenueArtPack): VenueArtDecoration {
   const root = new Group();
-  root.name = `venue-art:${pack.id}`;
-  const geometries = new Set<PlaneGeometry | BoxGeometry>();
+  root.name = `venue-art:${pack.id}:curated-details`;
+  const geometries = new Set<PlaneGeometry>();
   const materials = new Set<Material>();
   const decoratedMaterials = new Set<MeshStandardMaterial>();
 
@@ -154,20 +119,18 @@ export function decorateVenueWithArtPack(set: DioramaSet, pack: LoadedVenueArtPa
     for (const material of entries) {
       material.roughnessMap = texture;
       material.bumpMap = texture;
-      material.bumpScale = surfaceKind === 'floor' ? 0.018 : surfaceKind === 'metal' ? 0.008 : 0.028;
+      material.bumpScale = surfaceKind === 'floor' ? 0.01 : surfaceKind === 'metal' ? 0.004 : 0.014;
       material.needsUpdate = true;
       decoratedMaterials.add(material);
     }
   }
 
   for (const spec of DETAIL_PLANES[pack.venue]) addDetailPlane(root, pack, spec, geometries, materials);
-  addInstancedProps(pack.venue, root, pack, geometries, materials);
   set.root.add(root);
-
   let disposed = false;
   return {
     root,
-    drawCalls: countDrawables(root),
+    drawCalls: geometries.size,
     dispose(): void {
       if (disposed) return;
       disposed = true;
@@ -176,9 +139,6 @@ export function decorateVenueWithArtPack(set: DioramaSet, pack: LoadedVenueArtPa
         material.bumpMap = null;
         material.needsUpdate = true;
       }
-      root.traverse((object) => {
-        if (object instanceof InstancedMesh) object.dispose();
-      });
       for (const geometry of geometries) geometry.dispose();
       for (const material of materials) material.dispose();
       root.removeFromParent();

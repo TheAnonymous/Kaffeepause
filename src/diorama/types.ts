@@ -1,6 +1,5 @@
 import type {
   BufferGeometry,
-  CircleGeometry,
   ColorRepresentation,
   Group,
   InstancedMesh,
@@ -8,9 +7,10 @@ import type {
   Matrix4,
   Mesh,
   MeshStandardMaterial,
+  PlaneGeometry,
   MeshBasicMaterial,
   Object3D,
-  SpotLight,
+  PointLight,
 } from 'three';
 import type { Point } from '../simulation/types';
 import type { SeatOrientation } from '../simulation/layout';
@@ -192,10 +192,10 @@ export interface SeatAlignmentReport {
 export interface DioramaSet {
   readonly root: Group;
   readonly doorPivot: Group;
-  readonly practicalLights: readonly SpotLight[];
+  readonly practicalLights: readonly PointLight[];
   readonly floorMaterial: MeshStandardMaterial;
   readonly exteriorMaterials: readonly MeshStandardMaterial[];
-  readonly lightPools: readonly Mesh<CircleGeometry, MeshBasicMaterial>[];
+  readonly lightPools: readonly Mesh<PlaneGeometry, MeshBasicMaterial>[];
   readonly animatedProps: readonly AnimatedProp[];
   readonly focusOccluders: readonly FocusOccluder[];
   readonly seatBindings: readonly SeatVisualBinding[];

@@ -82,10 +82,10 @@ const sharedRegion = (id: typeof CHARACTER_REGION_IDS[number], column: number): 
 });
 
 const SHARED_ATLAS: PixelAtlasManifest = Object.freeze({
-  src: './art/v3/shared/character-atlas.webp',
+  src: './art/v6/shared/character-atlas.webp',
   width: 1584,
   height: 264,
-  bytes: 152_054,
+  bytes: 56,
   regions: Object.freeze(CHARACTER_REGION_IDS.map(sharedRegion)),
 });
 
@@ -106,7 +106,7 @@ const venueRegion = (
 });
 
 const venueAtlas = (venue: VenueKind, bytes: number, regions: readonly PixelAtlasRegion[]): PixelAtlasManifest => Object.freeze({
-  src: `./art/v3/venues/${venue}-atlas.webp`,
+  src: `./art/v6/venues/${venue}-atlas.webp`,
   width: 544,
   height: 272,
   bytes,
@@ -115,10 +115,10 @@ const venueAtlas = (venue: VenueKind, bytes: number, regions: readonly PixelAtla
 
 export const VENUE_ART_MANIFESTS: Readonly<Record<VenueKind, VenueArtManifest>> = Object.freeze({
   cafe: Object.freeze({
-    id: 'v3-cafe-filmic-density',
+    id: 'v6-cafe-authored-materials',
     venue: 'cafe',
     shared: SHARED_ATLAS,
-    venueAtlas: venueAtlas('cafe', 182_250, [
+    venueAtlas: venueAtlas('cafe', 36_062, [
       venueRegion('surface-floor', 0, 'surface'),
       venueRegion('surface-wood', 1, 'surface'),
       venueRegion('surface-wall', 2, 'surface'),
@@ -130,10 +130,10 @@ export const VENUE_ART_MANIFESTS: Readonly<Record<VenueKind, VenueArtManifest>> 
     ]),
   }),
   ramen: Object.freeze({
-    id: 'v3-ramen-filmic-density',
+    id: 'v6-ramen-authored-materials',
     venue: 'ramen',
     shared: SHARED_ATLAS,
-    venueAtlas: venueAtlas('ramen', 167_258, [
+    venueAtlas: venueAtlas('ramen', 80_432, [
       venueRegion('surface-tile', 0, 'surface'),
       venueRegion('surface-wood', 1, 'surface'),
       venueRegion('surface-floor', 2, 'surface'),
@@ -145,10 +145,10 @@ export const VENUE_ART_MANIFESTS: Readonly<Record<VenueKind, VenueArtManifest>> 
     ]),
   }),
   arcade: Object.freeze({
-    id: 'v3-arcade-filmic-density',
+    id: 'v6-arcade-authored-materials',
     venue: 'arcade',
     shared: SHARED_ATLAS,
-    venueAtlas: venueAtlas('arcade', 151_952, [
+    venueAtlas: venueAtlas('arcade', 31_452, [
       venueRegion('surface-wall', 0, 'surface'),
       venueRegion('prop-primary', 1, 'prop', { x: 0.5, y: 1 }),
       venueRegion('surface-floor', 2, 'surface'),
