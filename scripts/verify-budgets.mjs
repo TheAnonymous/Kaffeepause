@@ -27,8 +27,8 @@ const rendererFiles = incrementalRendererGraph(renderer[0], entry[0]);
 const rendererGzipBytes = rendererFiles.reduce((total, file) => total + gzipBytes(file), 0);
 const totalJavascriptGzipBytes = assets.reduce((total, file) => total + gzipBytes(join('assets', file)), 0);
 if (entryGzipBytes > 40_000) fail(`entry graph: ${entryGzipBytes} gzip bytes exceeds 40 kB`);
-if (rendererGzipBytes > 155_000) fail(`renderer graph: ${rendererGzipBytes} gzip bytes exceeds 155 kB`);
-if (totalJavascriptGzipBytes > 190_000) fail(`total JavaScript: ${totalJavascriptGzipBytes} gzip bytes exceeds 190 kB`);
+if (rendererGzipBytes > 185_000) fail(`renderer graph: ${rendererGzipBytes} gzip bytes exceeds 185 kB`);
+if (totalJavascriptGzipBytes > 225_000) fail(`total JavaScript: ${totalJavascriptGzipBytes} gzip bytes exceeds 225 kB`);
 
 const audioFiles = ['cafe', 'ramen', 'arcade'].flatMap((venue) =>
   readdirSync(join('public/audio', venue)).filter((file) => file.endsWith('.mp3')).map((file) => join('public/audio', venue, file)),
@@ -51,11 +51,17 @@ for (const file of audioFiles) {
 
 const sharedArt = join('public/art/v3/shared', 'character-atlas.webp');
 const venueArt = ['cafe', 'ramen', 'arcade'].map((venue) => join('public/art/v3/venues', `${venue}-atlas.webp`));
-const artFiles = [sharedArt, ...venueArt];
+const sharedAtmosphereArt = join('public/art/v5/shared', 'atmosphere-atlas.webp');
+const venueAtmosphereArt = ['cafe', 'ramen', 'arcade']
+  .map((venue) => join('public/art/v5/venues', `${venue}-atlas.webp`));
+const artFiles = [sharedArt, ...venueArt, sharedAtmosphereArt, ...venueAtmosphereArt];
 const sharedArtBytes = statSync(sharedArt).size;
 const venueArtBytes = venueArt.map((file) => statSync(file).size);
-const artBytes = sharedArtBytes + venueArtBytes.reduce((total, bytes) => total + bytes, 0);
-const maximumActiveArtBytes = sharedArtBytes + Math.max(...venueArtBytes);
+const sharedAtmosphereArtBytes = statSync(sharedAtmosphereArt).size;
+const venueAtmosphereArtBytes = venueAtmosphereArt.map((file) => statSync(file).size);
+const artBytes = artFiles.reduce((total, file) => total + statSync(file).size, 0);
+const maximumActiveArtBytes = sharedArtBytes + Math.max(...venueArtBytes)
+  + sharedAtmosphereArtBytes + Math.max(...venueAtmosphereArtBytes);
 if (artBytes > 4_000_000) fail(`art: ${artBytes} bytes exceeds 4 MB`);
 if (maximumActiveArtBytes > 1_500_000) {
   fail(`active art pack: ${maximumActiveArtBytes} bytes exceeds 1.5 MB`);

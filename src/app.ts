@@ -17,6 +17,8 @@ import {
   RenderQualityGovernor,
   type RenderQualityTier,
 } from './scene/renderQuality';
+import { AtmosphereDirector } from './atmosphere/AtmosphereDirector';
+import { parseAtmosphereDevelopmentOverrides } from './atmosphere/types';
 
 const UI_IDLE_DELAY = 2_500;
 
@@ -189,6 +191,9 @@ export class KaffeepauseApp {
   private readonly simulation = new CafeSimulation(simulationOptions());
   private readonly camera = new CafeCamera();
   private readonly audio = new CafeAudio();
+  private readonly atmosphereDirector = new AtmosphereDirector({
+    overrides: parseAtmosphereDevelopmentOverrides(window.location.search, import.meta.env.DEV),
+  });
   private readonly environment = new CafeEnvironmentController({
     overrides: parseEnvironmentOverrides(window.location.search, import.meta.env.DEV),
     onNotice: (message) => { this.status.textContent = message; },
@@ -226,6 +231,7 @@ export class KaffeepauseApp {
   start(): void {
     this.setRendererState('loading');
     this.canvas.dataset.audioSamples = this.audio.getSampleState();
+    this.canvas.dataset.audioLayers = this.audio.getLayerSummary();
     this.canvas.dataset.performanceBudget = 'warming-up';
     this.updateMotionPreference();
     this.environmentUnsubscribe = this.environment.subscribe((snapshot) => this.applyEnvironment(snapshot));
@@ -262,6 +268,16 @@ export class KaffeepauseApp {
         const delta = Math.max(0, Math.min(0.1, deltaSeconds));
         this.elapsed += delta;
         const scene = this.lifecycle.update(delta);
+        const atmosphere = this.atmosphereDirector.observe({
+          environment: this.environment.getSnapshot(),
+          venue: this.selectedVenue,
+          scene,
+          deltaSeconds: delta,
+          visible: !document.hidden,
+          reducedMotion: this.motionQuery.matches,
+        });
+        this.lifecycle.setAtmosphere(atmosphere);
+        this.audio.setAtmosphereWave(atmosphere);
         this.lifecycle.renderOnce(this.elapsed, scene);
       };
       this.devRenderingWindow.setDioramaDiagnosticVenue = (venue) => {
@@ -357,6 +373,7 @@ export class KaffeepauseApp {
   private async prepareRenderer(generation: number): Promise<void> {
     let candidate: RendererLifecycle | undefined;
     try {
+      void this.audio.preload();
       candidate = await loadRendererLifecycle({
         canvas: this.canvas,
         camera: this.camera,
@@ -370,7 +387,18 @@ export class KaffeepauseApp {
       candidate.setVenue(this.selectedVenue);
       candidate.setEnvironment(this.environment.getSnapshot());
       candidate.resize(this.motionQuery.matches);
-      candidate.renderOnce(this.elapsed);
+      const initialScene = this.simulation.getSceneSnapshot();
+      const initialAtmosphere = this.atmosphereDirector.observe({
+        environment: this.environment.getSnapshot(),
+        venue: this.selectedVenue,
+        scene: initialScene,
+        deltaSeconds: 0,
+        visible: !document.hidden,
+        reducedMotion: this.motionQuery.matches,
+      });
+      candidate.setAtmosphere(initialAtmosphere);
+      this.audio.setAtmosphereWave(initialAtmosphere);
+      candidate.renderOnce(this.elapsed, initialScene);
       this.canvas.dataset.qualityReason = this.forcedQualityTier
         ? 'development-override'
         : window.innerWidth < 700 ? 'initial-mobile-balanced' : 'initial-desktop-master';
@@ -504,12 +532,25 @@ export class KaffeepauseApp {
   private readonly tick = (now: number): void => {
     this.frame = undefined;
     if (!this.entered || document.hidden || !this.lifecycle) return;
+    if (document.body.dataset.reducedMotion !== String(this.motionQuery.matches)) {
+      this.updateMotionPreference();
+    }
     const frameDurationMs = Math.max(0, now - this.lastFrame);
     const delta = Math.min(0.1, frameDurationMs / 1000);
     this.lastFrame = now;
     this.applyEnvironment(this.environment.update(), false);
     this.elapsed += delta;
     const scene = this.lifecycle.update(delta);
+    const atmosphere = this.atmosphereDirector.observe({
+      environment: this.environment.getSnapshot(),
+      venue: this.selectedVenue,
+      scene,
+      deltaSeconds: delta,
+      visible: true,
+      reducedMotion: this.motionQuery.matches,
+    });
+    this.lifecycle.setAtmosphere(atmosphere);
+    this.audio.setAtmosphereWave(atmosphere);
     const accident = scene.accident;
     if (accident && accident.id !== this.lastAnnouncedAccidentId) {
       this.lastAnnouncedAccidentId = accident.id;
@@ -524,6 +565,7 @@ export class KaffeepauseApp {
     }
     const metrics = this.lifecycle.renderOnce(this.elapsed, scene);
     this.canvas.dataset.audioSamples = this.audio.getSampleState();
+    this.canvas.dataset.audioLayers = this.audio.getLayerSummary();
     const reactionToken = Number(this.canvas.dataset.reactionToken ?? 0);
     if (reactionToken > this.lastReactionAudioToken) {
       this.lastReactionAudioToken = reactionToken;

@@ -25,9 +25,11 @@ import {
   Vector3,
   WebGLRenderer,
   Texture,
+  type Object3D,
 } from 'three';
 import type { CafeCamera } from '../camera';
 import type { CafeEnvironmentSnapshot } from '../environment/types';
+import type { AtmosphereSnapshot } from '../atmosphere/types';
 import {
   VENUE_LAYOUTS,
   VENUE_LAYOUT_REPORTS,
@@ -116,6 +118,8 @@ import {
 } from './cinematicSequence';
 import { FixedRenderPipeline } from './fixedRenderPipeline';
 import { GpuFrameTimer } from './gpuTimer';
+import { AtmosphereArtLoader, type AtmosphereArtPack } from './atmosphereAssets';
+import { AtmosphereLayer, atmosphereLightCue } from './atmosphereLayer';
 
 interface CharacterNode {
   readonly root: Group;
@@ -149,6 +153,8 @@ export class DioramaRenderer {
   private readonly guestNodes = new Map<string, CharacterNode>();
   private readonly baristaNode: CharacterNode;
   private readonly weatherLayers: readonly Points<BufferGeometry, PointsMaterial>[];
+  private readonly atmosphereLayer = new AtmosphereLayer();
+  private readonly atmosphereTint = new Color();
   private readonly eventAccent: Mesh<RingGeometry, MeshBasicMaterial>;
   private venueSet: DioramaSet;
   private venue: VenueKind = 'cafe';
@@ -184,7 +190,16 @@ export class DioramaRenderer {
   private readonly artLoader: VenueArtPackLoader;
   private artPack?: LoadedVenueArtPack;
   private artDecoration?: VenueArtDecoration;
+  private readonly atmosphereDecorHandoffs: Object3D[] = [];
   private artGeneration = 0;
+  private readonly atmosphereLoader: AtmosphereArtLoader;
+  private atmospherePack?: AtmosphereArtPack;
+  private atmosphereGeneration = 0;
+  private atmosphere: AtmosphereSnapshot = {
+    wave: 'none', phase: 'idle', zone: 'none', intensity: 0, seed: 0,
+    venue: 'cafe', durationSeconds: 0, elapsedSeconds: 0, reducedMotion: false,
+    motion: 'animated', venueSignature: false,
+  };
   private readonly cinematicScale: number;
   private readonly cinematicShotOverride?: Extract<CinematicShotBeat, 'establishing' | 'detail' | 'reaction'>;
   private readonly diagnosticRendering: boolean;
@@ -208,6 +223,10 @@ export class DioramaRenderer {
     this.artLoader = forceArtFallback
       ? new VenueArtPackLoader(async () => { throw new Error('forced-art-fallback'); })
       : new VenueArtPackLoader();
+    const forceAtmosphereFallback = import.meta.env.DEV && parameters.get('atmosphereAssets') === 'fallback';
+    this.atmosphereLoader = forceAtmosphereFallback
+      ? new AtmosphereArtLoader(async () => { throw new Error('forced-atmosphere-fallback'); })
+      : new AtmosphereArtLoader();
     this.qualityTier = qualityTier;
     this.qualityProfile = RENDER_QUALITY_PROFILES[qualityTier];
     this.webgl = new WebGLRenderer({
@@ -244,12 +263,11 @@ export class DioramaRenderer {
 
     this.venueSet = buildVenue(this.venue);
     this.scene.add(this.venueSet.root);
+    this.scene.add(this.atmosphereLayer.root);
     this.baristaNode = this.createCharacterNode('barista');
     this.scene.add(this.baristaNode.root);
     this.weatherLayers = [
-      this.createWeatherParticles(0, -3.43, 0.72),
-      this.createWeatherParticles(1, -3.36, 1),
-      this.createWeatherParticles(2, -3.29, 1.32),
+      this.createWeatherParticles(),
     ];
     this.scene.add(...this.weatherLayers);
     this.eventAccent = this.createEventAccent();
@@ -303,12 +321,18 @@ export class DioramaRenderer {
     canvas.dataset.emoteBubbles = '0';
     canvas.dataset.bloomSurfaces = String(this.venueSet.bloomSurfaceCount);
     canvas.dataset.characterBloom = 'excluded';
-    canvas.dataset.weatherLayers = '3';
+    canvas.dataset.weatherLayers = '1-batched';
     canvas.dataset.shotBeat = 'overview';
     canvas.dataset.cameraSequence = 'none';
     canvas.dataset.cameraSequenceProgress = '0.000';
     canvas.dataset.artAssets = 'loading';
     canvas.dataset.artPack = 'procedural';
+    canvas.dataset.atmosphereWave = 'none';
+    canvas.dataset.atmospherePhase = 'idle';
+    canvas.dataset.atmosphereZone = 'none';
+    canvas.dataset.atmosphereIntensity = '0.000';
+    canvas.dataset.atmosphereSeed = '0';
+    canvas.dataset.atmosphereAssets = 'loading';
     canvas.dataset.drawCalls = '0';
     canvas.dataset.renderCpuP95 = '0.00';
     canvas.dataset.gpuP95 = 'unavailable';
@@ -327,6 +351,7 @@ export class DioramaRenderer {
     this.canvas.addEventListener('webglcontextlost', this.contextLost);
     this.canvas.addEventListener('webglcontextrestored', this.contextRestored);
     this.requestVenueArt(this.venue);
+    this.requestAtmosphereArt(this.venue);
   }
 
   setActive(active: boolean): void {
@@ -356,6 +381,9 @@ export class DioramaRenderer {
     this.artGeneration += 1;
     this.artLoader.cancel();
     this.releaseVenueArt();
+    this.atmosphereGeneration += 1;
+    this.atmosphereLoader.cancel();
+    this.releaseAtmosphereArt();
     this.gpuTimer.reset();
     this.setArtState('failed', 'procedural-context-fallback');
   };
@@ -363,12 +391,13 @@ export class DioramaRenderer {
   private readonly contextRestored = (): void => {
     this.gpuTimer.reset();
     this.requestVenueArt(this.venue);
+    this.requestAtmosphereArt(this.venue);
   };
 
   private setArtState(state: ArtAssetState, pack = 'procedural'): void {
     this.canvas.dataset.artAssets = state;
     this.canvas.dataset.artPack = pack;
-    this.canvas.dataset.textureBytes = String(this.artPack?.textureBytes ?? 0);
+    this.canvas.dataset.textureBytes = String((this.artPack?.textureBytes ?? 0) + (this.atmospherePack?.textureBytes ?? 0));
   }
 
   private requestVenueArt(venue: VenueKind): void {
@@ -390,6 +419,13 @@ export class DioramaRenderer {
           return;
         }
         this.artDecoration = decorateVenueWithArtPack(this.venueSet, pack);
+        this.atmosphereDecorHandoffs.length = 0;
+        if (venue === 'ramen') {
+          for (const name of ['art-detail:prop-primary', 'art-instanced-props:ramen']) {
+            const object = this.artDecoration.root.getObjectByName(name);
+            if (object) this.atmosphereDecorHandoffs.push(object);
+          }
+        }
         this.artPack = pack;
         this.spriteTextures.setCharacterAtlas(pack);
         for (const node of this.guestNodes.values()) node.textureName = '';
@@ -412,9 +448,39 @@ export class DioramaRenderer {
     this.baristaNode.textureName = '';
     this.artDecoration?.dispose();
     this.artDecoration = undefined;
+    this.atmosphereDecorHandoffs.length = 0;
     this.artPack?.dispose();
     this.artPack = undefined;
     this.setArtState('procedural');
+  }
+
+  private requestAtmosphereArt(venue: VenueKind): void {
+    const generation = ++this.atmosphereGeneration;
+    this.canvas.dataset.atmosphereAssets = 'loading';
+    void this.atmosphereLoader.load(venue).then((pack) => {
+      if (generation !== this.atmosphereGeneration || venue !== this.venue) {
+        pack?.dispose();
+        return;
+      }
+      if (!pack) {
+        this.atmosphereLayer.setAssets(undefined);
+        this.canvas.dataset.atmosphereAssets = 'failed';
+        return;
+      }
+      this.atmospherePack?.dispose();
+      this.atmospherePack = pack;
+      this.atmosphereLayer.setAssets(pack);
+      this.canvas.dataset.atmosphereAssets = pack.state;
+      this.canvas.dataset.textureBytes = String((this.artPack?.textureBytes ?? 0) + pack.textureBytes);
+    });
+  }
+
+  private releaseAtmosphereArt(): void {
+    this.atmosphereLayer.setAssets(undefined);
+    this.atmospherePack?.dispose();
+    this.atmospherePack = undefined;
+    this.canvas.dataset.atmosphereAssets = 'procedural';
+    this.canvas.dataset.textureBytes = String(this.artPack?.textureBytes ?? 0);
   }
 
   setQualityTier(tier: RenderQualityTier): void {
@@ -430,13 +496,18 @@ export class DioramaRenderer {
       this.restoreFocusEffects();
       this.releaseVenueArt();
       this.artLoader.cancel();
+      this.atmosphereGeneration += 1;
+      this.atmosphereLoader.cancel();
+      this.releaseAtmosphereArt();
       this.venueSet.dispose();
       this.venue = venue;
       this.venueSet = buildVenue(venue);
       this.scene.add(this.venueSet.root);
+      this.atmosphereLayer.setVenue(venue);
       for (const node of this.guestNodes.values()) node.textureName = '';
       this.baristaNode.textureName = '';
       this.requestVenueArt(venue);
+      this.requestAtmosphereArt(venue);
     }
     this.look = calculateDioramaLook(this.venue, this.environment);
     const profile = VENUE_VISUAL_PROFILES[venue];
@@ -460,6 +531,15 @@ export class DioramaRenderer {
     this.canvas.dataset.localTime = snapshot.localTimeText;
     this.canvas.dataset.locationState = snapshot.locationState;
     this.canvas.dataset.crowdTarget = String(snapshot.targetCrowd);
+  }
+
+  setAtmosphere(snapshot: AtmosphereSnapshot): void {
+    this.atmosphere = snapshot;
+    this.canvas.dataset.atmosphereWave = snapshot.wave;
+    this.canvas.dataset.atmospherePhase = snapshot.phase;
+    this.canvas.dataset.atmosphereZone = snapshot.zone;
+    this.canvas.dataset.atmosphereIntensity = snapshot.intensity.toFixed(3);
+    this.canvas.dataset.atmosphereSeed = String(snapshot.seed);
   }
 
   resize(reducedMotion: boolean): void {
@@ -508,6 +588,8 @@ export class DioramaRenderer {
     this.updateFocusEffects(snapshot);
     this.updateFocusFrame(snapshot);
     this.updateWeather(time);
+    this.atmosphereLayer.update(this.atmosphere, this.qualityTier, time);
+    for (const object of this.atmosphereDecorHandoffs) object.visible = this.atmosphere.intensity <= 0.004;
     this.updateEvent(snapshot, time);
     if (drawVisualFrame) {
       this.gpuTimer.begin();
@@ -519,7 +601,7 @@ export class DioramaRenderer {
     }
     this.renderCount += 1;
     this.canvas.dataset.renderCount = String(this.renderCount);
-    this.canvas.dataset.textureBytes = String(this.artPack?.textureBytes ?? 0);
+    this.canvas.dataset.textureBytes = String((this.artPack?.textureBytes ?? 0) + (this.atmospherePack?.textureBytes ?? 0));
     const cache = this.spriteTextures.cacheStats;
     const metrics: RendererFrameMetrics = {
       cpuMs: Math.max(0, performance.now() - cpuStart),
@@ -542,6 +624,10 @@ export class DioramaRenderer {
     this.artGeneration += 1;
     this.artLoader.cancel();
     this.releaseVenueArt();
+    this.atmosphereGeneration += 1;
+    this.atmosphereLoader.cancel();
+    this.releaseAtmosphereArt();
+    this.atmosphereLayer.dispose();
     this.venueSet.dispose();
     this.spriteTextures.dispose();
     for (const node of this.guestNodes.values()) this.disposeCharacterNode(node);
@@ -584,6 +670,13 @@ export class DioramaRenderer {
       material.emissive.copy(material.color);
       material.emissiveIntensity = 0.02 + this.look.night * 0.08;
     }
+    const atmosphereCue = atmosphereLightCue(this.atmosphere, time);
+    this.atmosphereTint.set(atmosphereCue.tint);
+    this.keyLight.color.lerp(this.atmosphereTint, Math.min(0.72, atmosphereCue.key * 0.34 + atmosphereCue.flash * 0.35));
+    this.keyLight.intensity += atmosphereCue.key;
+    this.hemisphere.intensity += atmosphereCue.ambient;
+    for (const light of this.venueSet.practicalLights) light.intensity += atmosphereCue.practical;
+    for (const material of this.venueSet.exteriorMaterials) material.emissiveIntensity += atmosphereCue.exterior;
     this.baristaNode.plane.material.emissiveIntensity = this.look.characterEmissive;
     for (const node of this.guestNodes.values()) node.plane.material.emissiveIntensity = this.look.characterEmissive;
     this.pipeline.setLook({
@@ -1226,19 +1319,21 @@ export class DioramaRenderer {
     const visible = weather === 'rain' || weather === 'storm' || weather === 'snow';
     for (const layer of this.weatherLayers) layer.visible = visible;
     if (!visible) return;
-    for (const [layerIndex, layer] of this.weatherLayers.entries()) {
+    for (const layer of this.weatherLayers) {
       layer.material.color.set(weather === 'snow' ? '#e6edf0' : '#8eb3c5');
-      layer.material.size = (weather === 'snow' ? 0.075 : 0.035) * (0.75 + layerIndex * 0.28);
-      layer.material.opacity = (weather === 'storm' ? 0.72 : 0.5) * (0.72 + layerIndex * 0.14);
+      layer.material.size = weather === 'snow' ? 0.073 : 0.038;
+      layer.material.opacity = weather === 'storm' ? 0.66 : 0.48;
       const positions = layer.geometry.getAttribute('position') as BufferAttribute;
-      const baseCount = this.reducedMotion ? 18 : weather === 'storm' ? 86 : 60;
-      const count = Math.min(90, baseCount + layerIndex * (this.reducedMotion ? 3 : 9));
+      const masterCount = weather === 'storm' ? 252 : weather === 'snow' ? 180 : 198;
+      const qualityScale = this.qualityTier === 'master' ? 1 : this.qualityTier === 'balanced' ? 0.64 : 0.38;
+      const count = this.reducedMotion ? Math.min(54, Math.round(masterCount * qualityScale)) : Math.round(masterCount * qualityScale);
       layer.geometry.setDrawRange(0, count);
       if (this.reducedMotion) continue;
       for (let index = 0; index < count; index += 1) {
-        const seedIndex = index + layerIndex * 97;
+        const depthBand = index % 3;
+        const seedIndex = index + depthBand * 97;
         const base = seeded(seedIndex, 3);
-        const speed = weather === 'snow' ? 0.3 + seeded(seedIndex, 4) * 0.18 : 1.1 + layerIndex * 0.28 + seeded(seedIndex, 4) * 0.65;
+        const speed = weather === 'snow' ? 0.3 + seeded(seedIndex, 4) * 0.18 : 1.1 + depthBand * 0.28 + seeded(seedIndex, 4) * 0.65;
         const y = ((base * 8.5 - time * speed) % 8.5 + 8.5) % 8.5 + 0.4;
         positions.setY(index, y);
         if (weather === 'snow') positions.setX(index, -7.7 + seeded(seedIndex, 1) * 15.4 + Math.sin(time + seedIndex) * 0.12);
@@ -1429,21 +1524,22 @@ export class DioramaRenderer {
     node.speech.dispose();
   }
 
-  private createWeatherParticles(layer: number, z: number, scale: number): Points<BufferGeometry, PointsMaterial> {
-    const count = 90;
+  private createWeatherParticles(): Points<BufferGeometry, PointsMaterial> {
+    const count = 270;
     const positions = new Float32Array(count * 3);
     for (let index = 0; index < count; index += 1) {
-      const seedIndex = index + layer * 97;
+      const depthBand = index % 3;
+      const seedIndex = index + depthBand * 97;
       positions[index * 3] = -7.7 + seeded(seedIndex, 1) * 15.4;
       positions[index * 3 + 1] = 0.3 + seeded(seedIndex, 2) * 8.5;
-      positions[index * 3 + 2] = z + seeded(seedIndex, 5) * 0.025;
+      positions[index * 3 + 2] = -3.43 + depthBand * 0.07 + seeded(seedIndex, 5) * 0.025;
     }
     const geometry = new BufferGeometry();
     const attribute = new BufferAttribute(positions, 3);
     attribute.setUsage(DynamicDrawUsage);
     geometry.setAttribute('position', attribute);
     const material = new PointsMaterial({
-      color: '#8eb3c5', size: 0.04 * scale, transparent: true, opacity: 0.52,
+      color: '#8eb3c5', size: 0.038, transparent: true, opacity: 0.52,
       depthWrite: false, sizeAttenuation: true,
     });
     const particles = new Points(geometry, material);

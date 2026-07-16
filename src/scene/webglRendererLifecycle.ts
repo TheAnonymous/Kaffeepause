@@ -6,6 +6,7 @@ import type { CafeEnvironmentSnapshot } from '../environment/types';
 import type { VenueKind } from '../venue';
 import type { SceneSnapshot } from './types';
 import type { PointerSample } from '../diorama/pointerReaction';
+import type { AtmosphereSnapshot } from '../atmosphere/types';
 
 class WebglRendererLifecycle implements RendererLifecycle {
   private readonly renderer: CafeRenderer;
@@ -48,6 +49,10 @@ class WebglRendererLifecycle implements RendererLifecycle {
   setEnvironment(snapshot: CafeEnvironmentSnapshot): void {
     this.options.simulation.setEnvironment(snapshot);
     this.renderer.setEnvironment(snapshot);
+  }
+
+  setAtmosphere(snapshot: AtmosphereSnapshot): void {
+    this.renderer.setAtmosphere(snapshot);
   }
 
   setQualityTier(tier: RenderQualityTier): void {
