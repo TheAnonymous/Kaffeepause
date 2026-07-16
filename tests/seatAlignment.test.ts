@@ -1,4 +1,3 @@
-import { Mesh, MeshBasicMaterial } from 'three';
 import { describe, expect, it } from 'vitest';
 import { VENUE_LAYOUTS } from '../src/simulation/layout';
 import {
@@ -45,8 +44,12 @@ describe('Sitzmöbel-Ausrichtung', () => {
 
     expect(VENUE_LAYOUTS.cafe.activitySpots.find((spot) => spot.id === 'cafe-table-a2'))
       .toMatchObject({ facing: -1, seatOrientation: 'left' });
-    expect(binding).toMatchObject({ orientation: 'left', rotation: -Math.PI / 2, forward: { x: -1, z: 0 } });
-    expect(binding?.backrestCenter?.x).toBeGreaterThan(binding?.seatCenter.x ?? Number.POSITIVE_INFINITY);
+    expect(binding).toMatchObject({
+      orientation: 'left',
+      transform: { rotation: -Math.PI / 2, forward: { x: -1, z: 0 } },
+    });
+    expect(binding?.transform.backrestCenter?.x)
+      .toBeGreaterThan(binding?.transform.seatCenter.x ?? Number.POSITIVE_INFINITY);
     set.dispose();
   });
 
@@ -57,10 +60,10 @@ describe('Sitzmöbel-Ausrichtung', () => {
         const spot = VENUE_LAYOUTS[venue].activitySpots.find((entry) => entry.id === binding.activitySpotId);
         if (!spot || spot.pose !== 'seated' || spot.seatOrientation === 'radial') continue;
         const anchor = worldToDiorama(spot);
-        const backrest = binding.backrestCenter;
+        const backrest = binding.transform.backrestCenter;
         expect(backrest, spot.id).toBeDefined();
-        const dot = ((backrest?.x ?? 0) - anchor.x) * binding.forward.x
-          + ((backrest?.z ?? 0) - anchor.z) * binding.forward.z;
+        const dot = ((backrest?.x ?? 0) - anchor.x) * binding.transform.forward.x
+          + ((backrest?.z ?? 0) - anchor.z) * binding.transform.forward.z;
         expect(dot, spot.id).toBeLessThan(-0.05);
       }
       set.dispose();
@@ -71,8 +74,7 @@ describe('Sitzmöbel-Ausrichtung', () => {
     expect(radialBindings).toHaveLength(5);
     const directionNeutral = radialBindings.map((binding) => ({
       ...binding,
-      rotation: 2.4,
-      forward: { x: 0.7, z: -0.3 },
+      transform: { ...binding.transform, rotation: 2.4, forward: { x: 0.7, z: -0.3 } },
     })) satisfies SeatVisualBinding[];
     const otherBindings = ramen.seatBindings.filter((binding) => binding.orientation !== 'radial');
     expect(validateSeatAlignment(VENUE_LAYOUTS.ramen, [...directionNeutral, ...otherBindings]).valid).toBe(true);
@@ -88,9 +90,12 @@ describe('Sitzmöbel-Ausrichtung', () => {
       .filter((binding) => binding.activitySpotId !== first.activitySpotId)
       .map((binding) => binding === left ? {
         ...binding,
-        rotation: 0,
-        seatCenter: { x: binding.seatCenter.x + 2, z: binding.seatCenter.z },
-        backrestCenter: binding.seatCenter,
+        transform: {
+          ...binding.transform,
+          rotation: 0,
+          seatCenter: { x: binding.transform.seatCenter.x + 2, z: binding.transform.seatCenter.z },
+          backrestCenter: binding.transform.seatCenter,
+        },
       } : binding);
     broken.push({ ...left });
     const report = validateSeatAlignment(VENUE_LAYOUTS.cafe, broken);
@@ -107,20 +112,12 @@ describe('Sitzmöbel-Ausrichtung', () => {
   it('gibt allen Stühlen, Hockern und Bänken den definierten Kontaktschatten', () => {
     for (const venue of ['cafe', 'ramen', 'arcade'] as const) {
       const set = buildVenue(venue);
-      for (const object of new Set(set.seatBindings.map((binding) => binding.object))) {
-        const shadows: Mesh[] = [];
-        object.traverse((entry) => {
-          if (entry instanceof Mesh && entry.name === 'seat-contact-shadow') shadows.push(entry);
-        });
-        expect(shadows, object.name).toHaveLength(1);
-        const shadow = shadows[0];
-        expect(shadow?.userData.overhang).toBe(0.08);
-        expect(shadow?.material).toBeInstanceOf(MeshBasicMaterial);
-        const material = shadow?.material as MeshBasicMaterial;
-        expect(material.opacity).toBe(0.18);
-        expect(material.transparent).toBe(true);
-        expect(material.depthWrite).toBe(false);
-      }
+      for (const binding of set.seatBindings) expect(binding.contactShadow).toEqual({
+        overhang: 0.08,
+        opacity: 0.18,
+        transparent: true,
+        depthWrite: false,
+      });
       set.dispose();
     }
   });
@@ -129,8 +126,7 @@ describe('Sitzmöbel-Ausrichtung', () => {
     for (const venue of ['cafe', 'ramen'] as const) {
       const set = buildVenue(venue);
       for (const binding of set.seatBindings.filter((entry) => entry.kind === 'chair')) {
-        const names: string[] = [];
-        binding.object.traverse((entry) => names.push(entry.name));
+        const names = binding.partNames;
         expect(names.filter((name) => name === `seat-backrest-slat:${binding.activitySpotId}`)).toHaveLength(2);
         expect(names.filter((name) => name === `seat-backrest-rail:${binding.activitySpotId}`)).toHaveLength(1);
       }
@@ -141,10 +137,12 @@ describe('Sitzmöbel-Ausrichtung', () => {
   it('hält Lounge-Sitzfläche, Rückenlehne und Cyan-Kante auf den geprüften Tiefen', () => {
     const set = buildVenue('arcade');
     const binding = set.seatBindings.find((entry) => entry.activitySpotId === 'arcade-lounge');
-    const names: string[] = [];
-    binding?.object.traverse((entry) => names.push(entry.name));
+    const names = binding?.partNames ?? [];
 
-    expect(binding).toMatchObject({ orientation: 'front', seatCenter: { x: 0, z: 2.18 }, backrestCenter: { x: 0, z: 1.88 } });
+    expect(binding).toMatchObject({
+      orientation: 'front',
+      transform: { seatCenter: { x: 0, z: 2.18 }, backrestCenter: { x: 0, z: 1.88 } },
+    });
     expect(names).toContain('seat-edge:arcade-lounge');
     set.dispose();
   });

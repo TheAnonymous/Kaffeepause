@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   FrameBudgetProbe,
+  initialRenderQualityTier,
   lowerQualityTier,
   parseRenderQualityOverride,
   RENDER_QUALITY,
@@ -9,6 +10,21 @@ import {
   RenderQualityGovernor,
   validateRenderQuality,
 } from '../src/scene/renderQuality';
+
+function observeWindow(
+  governor: RenderQualityGovernor,
+  values: Readonly<{ frameMs: number; cpuMs: number; gpuMs?: number }>,
+  startMs: number,
+  mobile = false,
+) {
+  let decision;
+  for (let index = 0; index < 3; index += 1) {
+    decision = governor.observe({ ...values, timestampMs: startMs + index * 10 }, {
+      mobile, visible: true, reducedMotion: false,
+    }) ?? decision;
+  }
+  return decision;
+}
 
 describe('HD-2D-Masterauflösung', () => {
   it('rendert die vollständige Szene auf einer echten 6×-Masterfläche', () => {
@@ -44,47 +60,109 @@ describe('HD-2D-Masterauflösung', () => {
     expect(parseRenderQualityOverride('?quality=fallback', false)).toBeUndefined();
   });
 
-  it('misst erst nach der Aufwärmphase und stuft bei einem Median über 28 ms einzeln ab', () => {
+  it('startet Desktop ab 700 CSS-Pixeln in Master und Mobile in Balanced', () => {
+    expect(initialRenderQualityTier(1_280)).toBe('master');
+    expect(initialRenderQualityTier(700)).toBe('master');
+    expect(initialRenderQualityTier(699)).toBe('balanced');
+  });
+
+  it('misst erst nach der Aufwärmphase und stuft nach zwei schlechten 180er-Fenstern ab', () => {
     const governor = new RenderQualityGovernor('master', {
-      warmupMs: 40, sampleFrames: 3, slowFrameThresholdMs: 28, cooldownMs: 50,
+      warmupMs: 40, sampleFrames: 3, cooldownMs: 0,
     });
-    expect(governor.observeVisibleFrame(20)).toBeUndefined();
-    expect(governor.observeVisibleFrame(20)).toBeUndefined();
-    expect(governor.observeVisibleFrame(30)).toBeUndefined();
-    expect(governor.observeVisibleFrame(35)).toBeUndefined();
-    expect(governor.observeVisibleFrame(31)).toBe('balanced');
+    for (const timestampMs of [0, 20, 39]) {
+      expect(governor.observe({ frameMs: 40, cpuMs: 8, timestampMs }, {
+        mobile: false, visible: true, reducedMotion: false,
+      })).toBeUndefined();
+    }
+    expect(observeWindow(governor, { frameMs: 30, cpuMs: 8 }, 40)).toBeUndefined();
+    expect(observeWindow(governor, { frameMs: 30, cpuMs: 8 }, 100)).toMatchObject({
+      previousTier: 'master', tier: 'balanced', action: 'downgrade', reason: 'frame-p95',
+    });
     expect(governor.currentTier).toBe('balanced');
   });
 
-  it('respektiert den Cooldown und reduziert nach einer zweiten langsamen Stichprobe bis fallback', () => {
+  it('respektiert fünf Sekunden Cooldown und reduziert danach bis Fallback', () => {
     const governor = new RenderQualityGovernor('master', {
-      warmupMs: 0, sampleFrames: 2, slowFrameThresholdMs: 28, cooldownMs: 50,
+      warmupMs: 0, sampleFrames: 3, cooldownMs: 5_000,
     });
-    expect(governor.observeVisibleFrame(31)).toBeUndefined();
-    expect(governor.observeVisibleFrame(32)).toBe('balanced');
-    expect(governor.observeVisibleFrame(25)).toBeUndefined();
-    expect(governor.observeVisibleFrame(25)).toBeUndefined();
-    expect(governor.observeVisibleFrame(31)).toBeUndefined();
-    expect(governor.observeVisibleFrame(32)).toBe('fallback');
+    observeWindow(governor, { frameMs: 31, cpuMs: 8 }, 0);
+    expect(observeWindow(governor, { frameMs: 31, cpuMs: 8 }, 100)?.tier).toBe('balanced');
+    observeWindow(governor, { frameMs: 31, cpuMs: 8 }, 200);
+    expect(observeWindow(governor, { frameMs: 31, cpuMs: 8 }, 300)).toBeUndefined();
+    expect(observeWindow(governor, { frameMs: 31, cpuMs: 8 }, 5_200)?.tier).toBe('fallback');
     expect(governor.currentTier).toBe('fallback');
   });
 
-  it('senkt bei einem P95-Ausreißer trotz gutem Median ab und behält eine stabile Stufe', () => {
+  it('wertet CPU und gültige GPU-P95 aus, fällt ohne Extension aber auf Frame und CPU zurück', () => {
     const governor = new RenderQualityGovernor('master', {
-      warmupMs: 0, sampleFrames: 3, slowFrameThresholdMs: 28, slowFrameP95ThresholdMs: 25,
+      warmupMs: 0, sampleFrames: 3, cooldownMs: 0,
     });
-    governor.observeVisibleFrame(16);
-    governor.observeVisibleFrame(16);
-    expect(governor.observeVisibleFrame(33)).toBe('balanced');
-    expect(governor.currentTier).toBe('balanced');
+    observeWindow(governor, { frameMs: 16, cpuMs: 13 }, 0);
+    expect(observeWindow(governor, { frameMs: 16, cpuMs: 13 }, 100)).toMatchObject({ reason: 'cpu-p95' });
 
-    const stable = new RenderQualityGovernor('master', {
-      warmupMs: 0, sampleFrames: 3, slowFrameThresholdMs: 28, slowFrameP95ThresholdMs: 25,
+    const gpu = new RenderQualityGovernor('master', {
+      warmupMs: 0, sampleFrames: 3, cooldownMs: 0,
     });
-    stable.observeVisibleFrame(16);
-    stable.observeVisibleFrame(18);
-    expect(stable.observeVisibleFrame(24)).toBeUndefined();
-    expect(stable.currentTier).toBe('master');
+    observeWindow(gpu, { frameMs: 16, cpuMs: 8, gpuMs: 19 }, 0);
+    expect(observeWindow(gpu, { frameMs: 16, cpuMs: 8, gpuMs: 19 }, 100)).toMatchObject({ reason: 'gpu-p95' });
+
+    const fallback = new RenderQualityGovernor('master', { warmupMs: 0, sampleFrames: 3 });
+    observeWindow(fallback, { frameMs: 16, cpuMs: 8 }, 0);
+    observeWindow(fallback, { frameMs: 16, cpuMs: 8 }, 100);
+    expect(fallback.currentTier).toBe('master');
+    expect(fallback.lastWindow).toMatchObject({ healthy: true });
+    expect(fallback.lastWindow?.gpuP95).toBeUndefined();
+  });
+
+  it('ignoriert versteckte, Reduced-Motion- und ungültige Messsamples vollständig', () => {
+    const governor = new RenderQualityGovernor('master', { warmupMs: 0, sampleFrames: 3, cooldownMs: 0 });
+    for (let index = 0; index < 20; index += 1) {
+      governor.observe({ frameMs: 100, cpuMs: 100, gpuMs: Number.NaN, timestampMs: index }, {
+        mobile: false, visible: index % 2 === 0, reducedMotion: index % 2 === 0,
+      });
+    }
+    expect(governor.lastWindow).toBeUndefined();
+    expect(governor.currentTier).toBe('master');
+  });
+
+  it('stuft Mobile nach zehn stabilen Sekunden und drei gesunden Fenstern genau einmal hoch', () => {
+    const governor = new RenderQualityGovernor('balanced', {
+      warmupMs: 0, sampleFrames: 3, cooldownMs: 0, stablePromotionMs: 10_000,
+    });
+    expect(observeWindow(governor, { frameMs: 20, cpuMs: 8 }, 0, true)).toBeUndefined();
+    expect(observeWindow(governor, { frameMs: 20, cpuMs: 8 }, 5_000, true)).toBeUndefined();
+    expect(observeWindow(governor, { frameMs: 20, cpuMs: 8 }, 10_000, true)).toMatchObject({
+      previousTier: 'balanced', tier: 'master', action: 'upgrade', reason: 'mobile-stable',
+    });
+    observeWindow(governor, { frameMs: 40, cpuMs: 8 }, 11_000, true);
+    expect(observeWindow(governor, { frameMs: 40, cpuMs: 8 }, 12_000, true)?.tier).toBe('balanced');
+    for (const start of [20_000, 25_000, 30_000, 35_000]) observeWindow(governor, { frameMs: 20, cpuMs: 8 }, start, true);
+    expect(governor.currentTier).toBe('balanced');
+  });
+
+  it('beginnt die mobile Stabilitätszeit nach einem Gerätekontextwechsel neu', () => {
+    const governor = new RenderQualityGovernor('balanced', {
+      warmupMs: 0, sampleFrames: 3, cooldownMs: 0, stablePromotionMs: 10_000,
+    });
+    observeWindow(governor, { frameMs: 16, cpuMs: 8 }, 0, false);
+    observeWindow(governor, { frameMs: 16, cpuMs: 8 }, 5_000, false);
+    expect(observeWindow(governor, { frameMs: 16, cpuMs: 8 }, 10_000, true)).toBeUndefined();
+    expect(governor.currentTier).toBe('balanced');
+    observeWindow(governor, { frameMs: 16, cpuMs: 8 }, 15_000, true);
+    expect(observeWindow(governor, { frameMs: 16, cpuMs: 8 }, 20_000, true)).toMatchObject({
+      action: 'upgrade', tier: 'master', reason: 'mobile-stable',
+    });
+  });
+
+  it('erlaubt nach einer Herabstufung keinerlei spätere Hochstufung', () => {
+    const governor = new RenderQualityGovernor('balanced', {
+      warmupMs: 0, sampleFrames: 3, cooldownMs: 0, stablePromotionMs: 0,
+    });
+    observeWindow(governor, { frameMs: 40, cpuMs: 8 }, 0, true);
+    expect(observeWindow(governor, { frameMs: 40, cpuMs: 8 }, 100, true)?.tier).toBe('fallback');
+    for (const start of [200, 300, 400, 500]) observeWindow(governor, { frameMs: 20, cpuMs: 8 }, start, true);
+    expect(governor.currentTier).toBe('fallback');
   });
 
   it('prüft nach der Aufwärmung Desktop-Median/P95 und das reduzierte Mobile-Profil getrennt', () => {

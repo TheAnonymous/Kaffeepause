@@ -12,6 +12,7 @@ import {
 } from './scene/rendererLifecycle';
 import {
   FrameBudgetProbe,
+  initialRenderQualityTier,
   parseRenderQualityOverride,
   RenderQualityGovernor,
   type RenderQualityTier,
@@ -193,10 +194,11 @@ export class KaffeepauseApp {
     onNotice: (message) => { this.status.textContent = message; },
   });
   private readonly forcedQualityTier = parseRenderQualityOverride(window.location.search, import.meta.env.DEV);
+  private readonly initialQualityTier = this.forcedQualityTier ?? initialRenderQualityTier(window.innerWidth);
   private readonly qualityGovernor = this.forcedQualityTier
     ? undefined
-    : new RenderQualityGovernor('master');
-  private qualityTier: RenderQualityTier = this.forcedQualityTier ?? 'master';
+    : new RenderQualityGovernor(this.initialQualityTier);
+  private qualityTier: RenderQualityTier = this.initialQualityTier;
   private readonly frameBudget = new FrameBudgetProbe();
   private lifecycle?: RendererLifecycle;
   private rendererState: RendererState = 'loading';
@@ -216,6 +218,7 @@ export class KaffeepauseApp {
   private get devRenderingWindow(): typeof window & {
     renderDioramaVisualFrame?: () => void;
     stepDioramaDiagnosticFrame?: (deltaSeconds?: number) => void;
+    setDioramaDiagnosticVenue?: (venue: VenueKind) => void;
   } {
     return window;
   }
@@ -260,6 +263,9 @@ export class KaffeepauseApp {
         this.elapsed += delta;
         const scene = this.lifecycle.update(delta);
         this.lifecycle.renderOnce(this.elapsed, scene);
+      };
+      this.devRenderingWindow.setDioramaDiagnosticVenue = (venue) => {
+        if (isVenueKind(venue)) this.selectVenue(venue);
       };
     }
     this.updateFullscreenState();
@@ -365,10 +371,14 @@ export class KaffeepauseApp {
       candidate.setEnvironment(this.environment.getSnapshot());
       candidate.resize(this.motionQuery.matches);
       candidate.renderOnce(this.elapsed);
+      this.canvas.dataset.qualityReason = this.forcedQualityTier
+        ? 'development-override'
+        : window.innerWidth < 700 ? 'initial-mobile-balanced' : 'initial-desktop-master';
       this.lifecycle = candidate;
       this.canvas.dataset.renderLoop = 'single-frame';
       this.setRendererState('ready');
-    } catch {
+    } catch (error) {
+      console.error('Renderer preparation failed.', error);
       candidate?.dispose();
       if (generation !== this.rendererGeneration) return;
       this.lifecycle = undefined;
@@ -512,7 +522,7 @@ export class KaffeepauseApp {
       this.status.textContent = momentMessage(moment);
       this.audio.playMoment(moment.kind);
     }
-    this.lifecycle.renderOnce(this.elapsed, scene);
+    const metrics = this.lifecycle.renderOnce(this.elapsed, scene);
     this.canvas.dataset.audioSamples = this.audio.getSampleState();
     const reactionToken = Number(this.canvas.dataset.reactionToken ?? 0);
     if (reactionToken > this.lastReactionAudioToken) {
@@ -520,10 +530,25 @@ export class KaffeepauseApp {
       if (this.audio.playReaction()) this.canvas.dataset.reactionAudioGain = String(REACTION_ACCENT_MAX_GAIN);
     }
 
-    const reducedTier = this.qualityGovernor?.observeVisibleFrame(frameDurationMs);
-    if (reducedTier) {
-      this.qualityTier = reducedTier;
-      this.lifecycle.setQualityTier(reducedTier);
+    const decision = this.qualityGovernor?.observe({
+      frameMs: frameDurationMs,
+      cpuMs: metrics.cpuMs,
+      ...(metrics.gpuMs === undefined ? {} : { gpuMs: metrics.gpuMs }),
+      timestampMs: now,
+    }, {
+      mobile: window.innerWidth < 700,
+      visible: !document.hidden,
+      reducedMotion: this.motionQuery.matches,
+    });
+    const performanceWindow = this.qualityGovernor?.lastWindow;
+    if (performanceWindow) {
+      this.canvas.dataset.renderCpuP95 = performanceWindow.cpuP95.toFixed(2);
+      this.canvas.dataset.gpuP95 = performanceWindow.gpuP95?.toFixed(2) ?? 'unavailable';
+    }
+    if (decision) {
+      this.qualityTier = decision.tier;
+      this.canvas.dataset.qualityReason = `${decision.action}:${decision.reason}`;
+      this.lifecycle.setQualityTier(decision.tier);
       this.lifecycle.renderOnce(this.elapsed, scene);
     }
     const frameReport = this.frameBudget.observe(frameDurationMs, window.innerWidth < 700);
@@ -591,6 +616,7 @@ export class KaffeepauseApp {
     this.environment.stop();
     delete this.devRenderingWindow.renderDioramaVisualFrame;
     delete this.devRenderingWindow.stepDioramaDiagnosticFrame;
+    delete this.devRenderingWindow.setDioramaDiagnosticVenue;
     this.canvas.removeEventListener('pointermove', this.pointerMoved);
     this.canvas.removeEventListener('pointerleave', this.pointerLeft);
     this.lifecycle?.dispose();

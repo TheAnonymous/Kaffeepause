@@ -22,15 +22,10 @@ import {
   RingGeometry,
   Scene,
   SRGBColorSpace,
-  Vector2,
   Vector3,
   WebGLRenderer,
-  type Texture,
+  Texture,
 } from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import type { CafeCamera } from '../camera';
 import type { CafeEnvironmentSnapshot } from '../environment/types';
 import {
@@ -51,6 +46,7 @@ import {
   type RenderQualityProfile,
   type RenderQualityTier,
 } from '../scene/renderQuality';
+import type { RendererFrameMetrics } from '../scene/rendererLifecycle';
 import { calculateDioramaLook, type DioramaLook } from './look';
 import { calculateDialogue, type DialogueLine } from './dialogue';
 import {
@@ -83,7 +79,6 @@ import {
   type FocusFrameElement,
 } from './cameraFocus';
 import { resolveBubblePlacements, type BubbleBounds } from './bubbleLayout';
-import { SELECTIVE_BLOOM_LAYER } from './selectiveBloom';
 import {
   fadeFocusOccluder,
   focusOccluderOpacity,
@@ -119,6 +114,8 @@ import {
   type CinematicShotBeat,
   type CinematicTransformSet,
 } from './cinematicSequence';
+import { FixedRenderPipeline } from './fixedRenderPipeline';
+import { GpuFrameTimer } from './gpuTimer';
 
 interface CharacterNode {
   readonly root: Group;
@@ -127,73 +124,6 @@ interface CharacterNode {
   readonly speech: SpeechBubble;
   textureName: string;
 }
-
-const MINIATURE_SHADER = {
-  uniforms: {
-    tDiffuse: { value: null },
-    resolution: { value: new Vector2(2304, 1296) },
-    focusBand: { value: 0.57 },
-    blurStrength: { value: 0.0016 },
-    vignette: { value: 0.22 },
-    warmth: { value: 0.05 },
-    saturation: { value: 1.08 },
-    shadowLift: { value: 0.03 },
-    time: { value: 0 },
-    simplifiedBlur: { value: 0 },
-  },
-  vertexShader: `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    uniform sampler2D tDiffuse;
-    uniform vec2 resolution;
-    uniform float focusBand;
-    uniform float blurStrength;
-    uniform float vignette;
-    uniform float warmth;
-    uniform float saturation;
-    uniform float shadowLift;
-    uniform float time;
-    uniform float simplifiedBlur;
-    varying vec2 vUv;
-
-    void main() {
-      float distanceFromFocus = abs(vUv.y - focusBand);
-      float miniatureBlur = smoothstep(0.18, 0.49, distanceFromFocus);
-      vec2 offset = vec2(blurStrength * miniatureBlur, blurStrength * 0.62 * miniatureBlur);
-      vec4 color;
-      if (simplifiedBlur > 0.5) {
-        color = texture2D(tDiffuse, vUv) * 0.76;
-        color += texture2D(tDiffuse, vUv + vec2(offset.x, 0.0)) * 0.12;
-        color += texture2D(tDiffuse, vUv - vec2(offset.x, 0.0)) * 0.12;
-      } else {
-        color = texture2D(tDiffuse, vUv) * 0.32;
-        color += texture2D(tDiffuse, vUv + vec2(offset.x, 0.0)) * 0.12;
-        color += texture2D(tDiffuse, vUv - vec2(offset.x, 0.0)) * 0.12;
-        color += texture2D(tDiffuse, vUv + vec2(0.0, offset.y)) * 0.12;
-        color += texture2D(tDiffuse, vUv - vec2(0.0, offset.y)) * 0.12;
-        color += texture2D(tDiffuse, vUv + offset) * 0.10;
-        color += texture2D(tDiffuse, vUv - offset) * 0.10;
-      }
-      float luminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
-      color.rgb = mix(vec3(luminance), color.rgb, saturation);
-      float saturatedLuminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
-      float shadowWeight = 1.0 - smoothstep(0.08, 0.58, saturatedLuminance);
-      color.rgb += vec3(shadowLift * shadowWeight);
-      float edge = smoothstep(0.9, 0.22, distance(vUv, vec2(0.5)));
-      color.rgb *= mix(1.0 - vignette, 1.0, edge);
-      color.r += warmth * 0.018;
-      color.b -= warmth * 0.012;
-      // Extremely subtle exposure breathing keeps practical lights from feeling static.
-      color.rgb *= 1.0 + sin(time * 0.37) * 0.002;
-      gl_FragColor = color;
-    }
-  `,
-} as const;
 
 function seeded(index: number, salt: number): number {
   const value = Math.sin(index * 91.73 + salt * 17.17) * 43_758.5453;
@@ -209,13 +139,9 @@ const INITIAL_CAMERA_TRANSFORM: CameraTransform = Object.freeze({
 export class DioramaRenderer {
   private readonly webgl: WebGLRenderer;
   private readonly scene = new Scene();
-  private readonly bloomBackground = new Color('#000000');
   private readonly perspective = new PerspectiveCamera(30, 16 / 9, 0.1, 80);
-  private readonly composer: EffectComposer;
-  private readonly bloomComposer: EffectComposer;
-  private readonly bloom: UnrealBloomPass;
-  private readonly selectiveBloomComposite: ShaderPass;
-  private readonly miniature: ShaderPass;
+  private readonly pipeline: FixedRenderPipeline;
+  private readonly gpuTimer: GpuFrameTimer;
   private readonly hemisphere = new HemisphereLight('#bad7df', '#2a2028', 1.1);
   private readonly keyLight = new DirectionalLight('#fff0cc', 3.1);
   private readonly focusLight = new PointLight('#ffe0a6', 0, 5.2, 1.55);
@@ -298,6 +224,7 @@ export class DioramaRenderer {
     this.webgl.toneMapping = ACESFilmicToneMapping;
     this.webgl.shadowMap.enabled = true;
     this.webgl.shadowMap.type = PCFSoftShadowMap;
+    this.webgl.shadowMap.autoUpdate = false;
     this.webgl.setClearColor('#181520');
 
     this.look = calculateDioramaLook(this.venue);
@@ -330,28 +257,8 @@ export class DioramaRenderer {
 
     this.perspective.position.set(0, 6.7, 15.8);
     this.perspective.lookAt(0, 2.55, -0.2);
-    const renderPass = new RenderPass(this.scene, this.perspective);
-    const bloomRenderPass = new RenderPass(this.scene, this.perspective);
-    const initialBloom = VENUE_VISUAL_PROFILES[this.venue].bloom;
-    this.bloom = new UnrealBloomPass(new Vector2(1152, 648), this.look.bloom, initialBloom.radius, initialBloom.threshold);
-    this.bloomComposer = new EffectComposer(this.webgl);
-    this.bloomComposer.renderToScreen = false;
-    this.bloomComposer.addPass(bloomRenderPass);
-    this.bloomComposer.addPass(this.bloom);
-    this.selectiveBloomComposite = new ShaderPass({
-      uniforms: {
-        tDiffuse: { value: null },
-        tBloom: { value: this.bloomComposer.renderTarget2.texture },
-        bloomMix: { value: 1 },
-      },
-      vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-      fragmentShader: 'uniform sampler2D tDiffuse; uniform sampler2D tBloom; uniform float bloomMix; varying vec2 vUv; void main(){ vec4 base=texture2D(tDiffuse,vUv); vec3 glow=texture2D(tBloom,vUv).rgb; gl_FragColor=vec4(base.rgb+glow*bloomMix,base.a); }',
-    });
-    this.miniature = new ShaderPass(MINIATURE_SHADER);
-    this.composer = new EffectComposer(this.webgl);
-    this.composer.addPass(renderPass);
-    this.composer.addPass(this.selectiveBloomComposite);
-    this.composer.addPass(this.miniature);
+    this.pipeline = new FixedRenderPipeline(this.webgl, this.qualityProfile);
+    this.gpuTimer = new GpuFrameTimer(this.webgl.getContext());
     this.applyQualityProfile();
 
     const layoutScore = Math.min(...Object.values(VENUE_LAYOUT_REPORTS).map((report) => report.score));
@@ -403,6 +310,18 @@ export class DioramaRenderer {
     canvas.dataset.artAssets = 'loading';
     canvas.dataset.artPack = 'procedural';
     canvas.dataset.drawCalls = '0';
+    canvas.dataset.renderCpuP95 = '0.00';
+    canvas.dataset.gpuP95 = 'unavailable';
+    canvas.dataset.triangles = '0';
+    canvas.dataset.geometries = '0';
+    canvas.dataset.gpuTextures = '0';
+    canvas.dataset.estimatedTextureBytes = '0';
+    canvas.dataset.characterCache = '0';
+    canvas.dataset.qualityReason = 'initial-device-profile';
+    canvas.dataset.staticBatches = String(this.venueSet.batchedResources.batchCount);
+    canvas.dataset.staticInstances = String(this.venueSet.batchedResources.primitiveCount);
+    canvas.dataset.v3GeometryBaseline = String(this.venueSet.batchedResources.v3GeometryBaseline);
+    canvas.dataset.renderTargets = String(this.pipeline.renderTargetCount);
     canvas.dataset.textureBytes = '0';
     this.applyLayoutDatasets(this.venue);
     this.canvas.addEventListener('webglcontextlost', this.contextLost);
@@ -437,10 +356,12 @@ export class DioramaRenderer {
     this.artGeneration += 1;
     this.artLoader.cancel();
     this.releaseVenueArt();
+    this.gpuTimer.reset();
     this.setArtState('failed', 'procedural-context-fallback');
   };
 
   private readonly contextRestored = (): void => {
+    this.gpuTimer.reset();
     this.requestVenueArt(this.venue);
   };
 
@@ -485,6 +406,10 @@ export class DioramaRenderer {
 
   private releaseVenueArt(): void {
     this.spriteTextures.setCharacterAtlas(undefined);
+    this.canvas.dataset.characterCache = String(this.spriteTextures.cacheStats.textures);
+    this.canvas.dataset.textureCache = String(this.spriteTextures.cacheStats.textures);
+    for (const node of this.guestNodes.values()) node.textureName = '';
+    this.baristaNode.textureName = '';
     this.artDecoration?.dispose();
     this.artDecoration = undefined;
     this.artPack?.dispose();
@@ -515,13 +440,14 @@ export class DioramaRenderer {
     }
     this.look = calculateDioramaLook(this.venue, this.environment);
     const profile = VENUE_VISUAL_PROFILES[venue];
-    this.bloom.threshold = profile.bloom.threshold;
-    this.bloom.radius = profile.bloom.radius;
     this.applyCharacterRimColor();
     this.canvas.dataset.venue = venue;
     this.canvas.dataset.visualProfile = profile.id;
     this.canvas.dataset.surfaceTextures = String(this.venueSet.surfaceTextureCount);
     this.canvas.dataset.bloomSurfaces = String(this.venueSet.bloomSurfaceCount);
+    this.canvas.dataset.staticBatches = String(this.venueSet.batchedResources.batchCount);
+    this.canvas.dataset.staticInstances = String(this.venueSet.batchedResources.primitiveCount);
+    this.canvas.dataset.v3GeometryBaseline = String(this.venueSet.batchedResources.v3GeometryBaseline);
     this.applyLayoutDatasets(venue);
   }
 
@@ -546,11 +472,10 @@ export class DioramaRenderer {
     const width = this.sceneWidth * this.qualityProfile.renderScale;
     const height = WORLD_HEIGHT * this.qualityProfile.renderScale;
     this.webgl.setSize(width, height, false);
-    this.composer.setSize(width, height);
-    this.bloomComposer.setSize(Math.max(1, Math.ceil(width / 2)), Math.max(1, Math.ceil(height / 2)));
+    this.pipeline.resize(width, height);
+    this.canvas.dataset.bloomResolution = this.pipeline.bloomResolution;
     this.perspective.aspect = width / height;
     this.perspective.updateProjectionMatrix();
-    this.miniature.uniforms.resolution!.value.set(width, height);
     this.canvas.dataset.logicalWidth = String(width);
     this.canvas.dataset.sceneWidth = String(this.sceneWidth);
     this.canvas.dataset.renderScale = String(this.qualityProfile.renderScale);
@@ -559,15 +484,17 @@ export class DioramaRenderer {
     this.canvas.dataset.cameraMode = this.camera.mode;
   }
 
-  render(elapsed: number, snapshot: SceneSnapshot): void {
-    this.renderFrame(elapsed, snapshot, !this.diagnosticRendering);
+  render(elapsed: number, snapshot: SceneSnapshot): RendererFrameMetrics {
+    return this.renderFrame(elapsed, snapshot, !this.diagnosticRendering);
   }
 
-  renderVisual(elapsed: number, snapshot: SceneSnapshot): void {
-    this.renderFrame(elapsed, snapshot, true);
+  renderVisual(elapsed: number, snapshot: SceneSnapshot): RendererFrameMetrics {
+    return this.renderFrame(elapsed, snapshot, true);
   }
 
-  private renderFrame(elapsed: number, snapshot: SceneSnapshot, drawVisualFrame: boolean): void {
+  private renderFrame(elapsed: number, snapshot: SceneSnapshot, drawVisualFrame: boolean): RendererFrameMetrics {
+    const cpuStart = performance.now();
+    let gpuMs = this.gpuTimer.poll();
     if (drawVisualFrame) this.webgl.info.reset();
     const time = this.active ? elapsed : 0;
     this.applyLook(time);
@@ -583,23 +510,31 @@ export class DioramaRenderer {
     this.updateWeather(time);
     this.updateEvent(snapshot, time);
     if (drawVisualFrame) {
-      if (this.qualityProfile.bloom !== 'off') {
-        const background = this.scene.background;
-        this.scene.background = this.bloomBackground;
-        this.perspective.layers.set(SELECTIVE_BLOOM_LAYER);
-        this.bloomComposer.render();
-        this.perspective.layers.set(0);
-        this.scene.background = background;
-      }
-      this.composer.render();
+      this.gpuTimer.begin();
+      this.pipeline.render(this.scene, this.perspective);
+      this.gpuTimer.end();
+      gpuMs ??= this.gpuTimer.poll();
       this.visualRenderCount += 1;
       this.canvas.dataset.visualRenderCount = String(this.visualRenderCount);
-      this.canvas.dataset.drawCalls = String(this.webgl.info.render.calls);
     }
     this.renderCount += 1;
     this.canvas.dataset.renderCount = String(this.renderCount);
     this.canvas.dataset.textureBytes = String(this.artPack?.textureBytes ?? 0);
+    const cache = this.spriteTextures.cacheStats;
+    const metrics: RendererFrameMetrics = {
+      cpuMs: Math.max(0, performance.now() - cpuStart),
+      ...(gpuMs === undefined ? {} : { gpuMs }),
+      drawCalls: this.webgl.info.render.calls,
+      triangles: this.webgl.info.render.triangles,
+      geometries: this.webgl.info.memory.geometries,
+      textures: this.webgl.info.memory.textures,
+      estimatedTextureBytes: this.estimateTextureBytes(cache.rawPixelBytes),
+      characterCacheSize: cache.textures,
+      renderTargets: this.pipeline.renderTargetCount,
+    };
+    this.publishFrameMetrics(metrics);
     this.updateDatasets(snapshot);
+    return metrics;
   }
 
   dispose(): void {
@@ -617,8 +552,8 @@ export class DioramaRenderer {
     }
     this.eventAccent.geometry.dispose();
     this.eventAccent.material.dispose();
-    this.composer.dispose();
-    this.bloomComposer.dispose();
+    this.pipeline.dispose();
+    this.gpuTimer.dispose();
     this.webgl.dispose();
     this.canvas.removeEventListener('webglcontextlost', this.contextLost);
     this.canvas.removeEventListener('webglcontextrestored', this.contextRestored);
@@ -651,30 +586,34 @@ export class DioramaRenderer {
     }
     this.baristaNode.plane.material.emissiveIntensity = this.look.characterEmissive;
     for (const node of this.guestNodes.values()) node.plane.material.emissiveIntensity = this.look.characterEmissive;
-    this.bloom.strength = this.look.bloom * this.qualityProfile.bloomStrength;
-    this.miniature.uniforms.focusBand!.value = this.look.focusBand;
-    this.miniature.uniforms.blurStrength!.value = this.look.blur * this.qualityProfile.miniatureBlurStrength;
-    this.miniature.uniforms.vignette!.value = this.look.vignette;
-    this.miniature.uniforms.warmth!.value = this.venue === 'arcade' ? -0.08 : 0.12 + this.look.night * 0.08;
-    this.miniature.uniforms.saturation!.value = this.look.saturation;
-    this.miniature.uniforms.shadowLift!.value = this.look.shadowLift;
-    this.miniature.uniforms.time!.value = time;
+    this.pipeline.setLook({
+      bloomStrength: this.look.bloom * this.qualityProfile.bloomStrength,
+      bloomThreshold: VENUE_VISUAL_PROFILES[this.venue].bloom.threshold,
+      focusBand: this.look.focusBand,
+      blurStrength: this.look.blur * this.qualityProfile.miniatureBlurStrength,
+      vignette: this.look.vignette,
+      warmth: this.venue === 'arcade' ? -0.08 : 0.12 + this.look.night * 0.08,
+      saturation: this.look.saturation,
+      shadowLift: this.look.shadowLift,
+      time,
+    });
   }
 
   private applyQualityProfile(): void {
     const profile = this.qualityProfile;
-    this.bloom.enabled = profile.bloom !== 'off';
-    this.selectiveBloomComposite.uniforms.bloomMix!.value = profile.bloom === 'off' ? 0 : 1;
+    this.pipeline.applyProfile(profile);
     this.keyLight.shadow.map?.dispose();
     this.keyLight.shadow.map = null;
     this.keyLight.shadow.mapSize.set(profile.shadowMapSize, profile.shadowMapSize);
-    this.miniature.uniforms.simplifiedBlur!.value = profile.miniatureBlur === 'simplified' ? 1 : 0;
     this.canvas.dataset.qualityTier = profile.tier;
     this.canvas.dataset.renderScale = String(profile.renderScale);
     this.canvas.dataset.renderQuality = `webgl-diorama-${profile.tier}`;
     this.canvas.dataset.shadowMapSize = String(profile.shadowMapSize);
     this.canvas.dataset.bloomPass = profile.bloom;
-    this.canvas.dataset.selectiveBloom = profile.bloom === 'off' ? 'fallback-off' : 'half-res-registered';
+    this.canvas.dataset.selectiveBloom = profile.bloom === 'off'
+      ? 'fallback-off'
+      : profile.tier === 'master' ? 'half-res-registered' : 'quarter-res-registered';
+    this.canvas.dataset.bloomResolution = this.pipeline.bloomResolution;
     this.canvas.dataset.miniatureBlur = profile.miniatureBlur;
     this.canvas.dataset.characterFrameRate = String(profile.characterFrameRate);
   }
@@ -932,6 +871,7 @@ export class DioramaRenderer {
       if (visibleIds.has(id)) continue;
       node.root.removeFromParent();
       this.disposeCharacterNode(node);
+      this.spriteTextures.releaseCharacter(id);
       this.guestNodes.delete(id);
     }
 
@@ -1340,6 +1280,46 @@ export class DioramaRenderer {
       .join('|');
   }
 
+  private estimateTextureBytes(characterCacheBytes: number): number {
+    const textures = new Map<string, Texture>();
+    this.scene.traverse((entry) => {
+      if (!(entry instanceof Mesh)) return;
+      const materials = Array.isArray(entry.material) ? entry.material : [entry.material];
+      for (const material of materials) {
+        const values = material as unknown as Record<string, unknown>;
+        for (const key of ['map', 'emissiveMap', 'roughnessMap', 'bumpMap', 'alphaMap']) {
+          const texture = values[key];
+          if (texture instanceof Texture && !texture.name.startsWith('character:')) textures.set(texture.uuid, texture);
+        }
+      }
+    });
+    let sceneTextureBytes = 0;
+    for (const texture of textures.values()) {
+      const source = texture.source.data as { width?: unknown; height?: unknown } | undefined;
+      const image = texture.image as { width?: unknown; height?: unknown } | undefined;
+      const width = typeof source?.width === 'number' ? source.width : typeof image?.width === 'number' ? image.width : 0;
+      const height = typeof source?.height === 'number' ? source.height : typeof image?.height === 'number' ? image.height : 0;
+      sceneTextureBytes += Math.max(0, width * height * 4);
+    }
+    const shadowMapBytes = this.qualityProfile.shadowMapSize ** 2 * 4;
+    return characterCacheBytes
+      + Math.max(sceneTextureBytes, this.venueSet.surfaceTextureBytes)
+      + this.pipeline.estimatedTextureBytes
+      + shadowMapBytes;
+  }
+
+  private publishFrameMetrics(metrics: RendererFrameMetrics): void {
+    this.canvas.dataset.drawCalls = String(metrics.drawCalls);
+    this.canvas.dataset.renderCpu = metrics.cpuMs.toFixed(2);
+    if (metrics.gpuMs !== undefined) this.canvas.dataset.gpu = metrics.gpuMs.toFixed(2);
+    this.canvas.dataset.triangles = String(metrics.triangles);
+    this.canvas.dataset.geometries = String(metrics.geometries);
+    this.canvas.dataset.gpuTextures = String(metrics.textures);
+    this.canvas.dataset.estimatedTextureBytes = String(metrics.estimatedTextureBytes);
+    this.canvas.dataset.characterCache = String(metrics.characterCacheSize);
+    this.canvas.dataset.renderTargets = String(metrics.renderTargets);
+  }
+
   private updateDatasets(snapshot: SceneSnapshot): void {
     const { accident, moment } = snapshot;
     this.canvas.dataset.cameraX = this.camera.x.toFixed(1);
@@ -1407,7 +1387,7 @@ export class DioramaRenderer {
       .map((target) => `${target.id}:${Math.round(target.x)},${Math.round(target.y)}`)
       .join('|');
     this.canvas.dataset.textureCache = String(this.spriteTextures.cacheSize);
-    this.canvas.dataset.inactiveTextures = String(this.spriteTextures.inactiveCacheSize);
+    this.canvas.dataset.inactiveTextures = '0';
   }
 
   private createCharacterNode(name: string): CharacterNode {

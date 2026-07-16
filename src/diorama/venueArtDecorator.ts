@@ -176,6 +176,9 @@ export function decorateVenueWithArtPack(set: DioramaSet, pack: LoadedVenueArtPa
         material.bumpMap = null;
         material.needsUpdate = true;
       }
+      root.traverse((object) => {
+        if (object instanceof InstancedMesh) object.dispose();
+      });
       for (const geometry of geometries) geometry.dispose();
       for (const material of materials) material.dispose();
       root.removeFromParent();

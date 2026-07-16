@@ -9,6 +9,7 @@ import {
 import type { Barista, Guest, GuestAppearance, GuestPalette } from '../simulation/types';
 import type { VenueKind } from '../venue';
 import type { LoadedVenueArtPack, PixelAtlasRegion } from './artAssets';
+import type { CharacterTextureCacheStats } from './types';
 import type { CharacterPose, CharacterVisualState } from './characterVisualState';
 import { DIORAMA } from './types';
 import { VENUE_VISUAL_PROFILES } from './visualProfiles';
@@ -502,23 +503,34 @@ interface DisposableTexture {
 
 interface TextureCacheEntry<T extends DisposableTexture> {
   readonly value: T;
+  readonly identity: string;
   lastUsedFrame: number;
   active: boolean;
 }
 
-/** LRU bounded by inactive entries; textures touched in the current frame are protected. */
-export class FrameTextureCache<T extends DisposableTexture> {
+/** Identity-aware LRU with hard per-character and global texture limits. */
+export class CharacterTextureCache<T extends DisposableTexture> {
   private readonly entries = new Map<string, TextureCacheEntry<T>>();
   private frame = 0;
 
-  constructor(readonly maxInactiveEntries = 192) {}
+  constructor(
+    readonly maximumVariantsPerIdentity = 8,
+    readonly maximumTextures = 64,
+    readonly bytesPerTexture = DIORAMA.spriteWidth * DIORAMA.spriteHeight * 4,
+  ) {}
 
   get size(): number {
     return this.entries.size;
   }
 
-  get inactiveSize(): number {
-    return [...this.entries.values()].filter((entry) => !entry.active).length;
+  get stats(): CharacterTextureCacheStats {
+    return {
+      textures: this.entries.size,
+      identities: new Set([...this.entries.values()].map((entry) => entry.identity)).size,
+      rawPixelBytes: this.entries.size * this.bytesPerTexture,
+      maximumTextures: this.maximumTextures,
+      maximumVariantsPerIdentity: this.maximumVariantsPerIdentity,
+    };
   }
 
   beginFrame(): void {
@@ -526,25 +538,25 @@ export class FrameTextureCache<T extends DisposableTexture> {
     for (const entry of this.entries.values()) entry.active = false;
   }
 
-  getOrCreate(key: string, create: () => T): T {
+  getOrCreate(identity: string, variant: string, create: () => T): T {
+    const key = `${identity}\u0000${variant}`;
     let entry = this.entries.get(key);
     if (!entry) {
-      entry = { value: create(), lastUsedFrame: this.frame, active: true };
+      entry = { value: create(), identity, lastUsedFrame: this.frame, active: true };
       this.entries.set(key, entry);
     }
     entry.lastUsedFrame = this.frame;
     entry.active = true;
+    this.trimIdentity(identity, key);
+    this.trimTotal(key);
     return entry.value;
   }
 
-  endFrame(): void {
-    const inactive = [...this.entries.entries()]
-      .filter(([, entry]) => !entry.active)
-      .sort(([, left], [, right]) => left.lastUsedFrame - right.lastUsedFrame);
-    const removeCount = Math.max(0, inactive.length - Math.max(0, this.maxInactiveEntries));
-    for (const [key, entry] of inactive.slice(0, removeCount)) {
-      entry.value.dispose();
-      this.entries.delete(key);
+  endFrame(): void {}
+
+  releaseIdentity(identity: string): void {
+    for (const [key, entry] of this.entries) {
+      if (entry.identity === identity) this.remove(key, entry);
     }
   }
 
@@ -552,18 +564,44 @@ export class FrameTextureCache<T extends DisposableTexture> {
     for (const entry of this.entries.values()) entry.value.dispose();
     this.entries.clear();
   }
+
+  private trimIdentity(identity: string, protectedKey: string): void {
+    const entries = [...this.entries.entries()]
+      .filter(([key, entry]) => entry.identity === identity && key !== protectedKey)
+      .sort(([, left], [, right]) => left.lastUsedFrame - right.lastUsedFrame);
+    while (entries.length >= this.maximumVariantsPerIdentity) {
+      const oldest = entries.shift();
+      if (oldest) this.remove(...oldest);
+    }
+  }
+
+  private trimTotal(protectedKey: string): void {
+    const entries = [...this.entries.entries()]
+      .filter(([key]) => key !== protectedKey)
+      .sort(([, left], [, right]) => left.lastUsedFrame - right.lastUsedFrame);
+    while (this.entries.size > this.maximumTextures) {
+      const oldest = entries.shift();
+      if (!oldest) break;
+      this.remove(...oldest);
+    }
+  }
+
+  private remove(key: string, entry: TextureCacheEntry<T>): void {
+    entry.value.dispose();
+    this.entries.delete(key);
+  }
 }
 
 export class SpriteTextureLibrary {
-  private readonly textures = new FrameTextureCache<CanvasTexture>(192);
+  private readonly textures = new CharacterTextureCache<CanvasTexture>();
   private characterAtlas?: CharacterAtlasOverlay;
 
   get cacheSize(): number {
     return this.textures.size;
   }
 
-  get inactiveCacheSize(): number {
-    return this.textures.inactiveSize;
+  get cacheStats(): CharacterTextureCacheStats {
+    return this.textures.stats;
   }
 
   beginFrame(): void {
@@ -583,7 +621,7 @@ export class SpriteTextureLibrary {
   }
 
   forGuest(guest: Guest, venue: VenueKind, visual: CharacterVisualState): Texture {
-    return this.texture({
+    return this.texture(guest.id, {
       palette: guest.palette,
       appearance: guest.appearance,
       seated: visual.seated,
@@ -597,7 +635,7 @@ export class SpriteTextureLibrary {
   }
 
   forBarista(_barista: Barista, venue: VenueKind, visual: CharacterVisualState): Texture {
-    return this.texture({
+    return this.texture('barista', {
       palette: BARISTA_PALETTES[venue],
       appearance: BARISTA_APPEARANCE,
       seated: false,
@@ -613,9 +651,13 @@ export class SpriteTextureLibrary {
     this.textures.clear();
   }
 
-  private texture(description: SpriteDescription): CanvasTexture {
+  releaseCharacter(identity: string): void {
+    this.textures.releaseIdentity(identity);
+  }
+
+  private texture(identity: string, description: SpriteDescription): CanvasTexture {
     const key = spriteKey(description);
-    return this.textures.getOrCreate(key, () => {
+    return this.textures.getOrCreate(identity, key, () => {
       const canvas = document.createElement('canvas');
       canvas.width = DIORAMA.spriteWidth;
       canvas.height = DIORAMA.spriteHeight;

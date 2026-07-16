@@ -8,6 +8,18 @@ import type { PointerSample } from '../diorama/pointerReaction';
 
 export type RendererState = 'loading' | 'ready' | 'failed';
 
+export interface RendererFrameMetrics {
+  readonly cpuMs: number;
+  readonly gpuMs?: number;
+  readonly drawCalls: number;
+  readonly triangles: number;
+  readonly geometries: number;
+  readonly textures: number;
+  readonly estimatedTextureBytes: number;
+  readonly characterCacheSize: number;
+  readonly renderTargets: number;
+}
+
 export interface RendererLifecycleOptions {
   readonly canvas: HTMLCanvasElement;
   readonly camera: CafeCamera;
@@ -19,8 +31,8 @@ export interface RendererLifecycle {
   start(): void;
   stop(): void;
   update(deltaSeconds: number): SceneSnapshot;
-  renderOnce(elapsed: number, snapshot?: SceneSnapshot): void;
-  renderVisualOnce(elapsed: number, snapshot?: SceneSnapshot): void;
+  renderOnce(elapsed: number, snapshot?: SceneSnapshot): RendererFrameMetrics;
+  renderVisualOnce(elapsed: number, snapshot?: SceneSnapshot): RendererFrameMetrics;
   resize(reducedMotion: boolean): void;
   setVenue(venue: VenueKind): void;
   setEnvironment(snapshot: CafeEnvironmentSnapshot): void;

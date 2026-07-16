@@ -7,7 +7,6 @@ import {
   Group,
   Mesh,
   MeshBasicMaterial,
-  MeshPhysicalMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
   SpotLight,
@@ -40,6 +39,7 @@ import {
 import { PixelSurfaceLibrary } from './pixelSurfaceLibrary';
 import { VENUE_VISUAL_PROFILES, type SurfaceKind, type VenueVisualProfile } from './visualProfiles';
 import { countSelectiveBloomSurfaces, registerSelectiveBloomSurface } from './selectiveBloom';
+import { batchStaticVenuePrimitives } from './venueBatching';
 
 interface BuildContext {
   readonly geometries: Set<BufferGeometry>;
@@ -49,6 +49,8 @@ interface BuildContext {
   readonly surfaces: PixelSurfaceLibrary;
   readonly usedSurfaceKinds: Set<SurfaceKind>;
   readonly surfaceMaterials: Map<SurfaceKind, MeshStandardMaterial[]>;
+  readonly geometryCache: Map<string, BufferGeometry>;
+  readonly materialCache: Map<string, MeshStandardMaterial>;
   readonly focusOccluders: FocusOccluder[];
   readonly seatBindings: SeatVisualBinding[];
   focusOccluderSerial: number;
@@ -97,6 +99,16 @@ export function forwardAxisForSeatOrientation(orientation: SeatOrientation): Dio
 function material(context: BuildContext, options: BoxOptions): MeshStandardMaterial {
   const surfaceKind = options.surface ?? 'wood';
   const recipe = context.profile.surfaces[surfaceKind];
+  const key = JSON.stringify([
+    surfaceKind,
+    String(options.color ?? context.theme.wood),
+    String(options.emissive ?? '#000000'),
+    options.emissiveIntensity ?? 0,
+    options.roughness ?? recipe.roughness,
+    options.metalness ?? recipe.metalness,
+  ]);
+  const cached = context.materialCache.get(key);
+  if (cached) return cached;
   const result = new MeshStandardMaterial({
     color: options.color ?? context.theme.wood,
     emissive: options.emissive ?? '#000000',
@@ -106,12 +118,24 @@ function material(context: BuildContext, options: BoxOptions): MeshStandardMater
     map: context.surfaces.get(surfaceKind),
   });
   result.userData.surfaceKind = surfaceKind;
+  result.userData.sharedMaterialKey = key;
   context.usedSurfaceKinds.add(surfaceKind);
   const registered = context.surfaceMaterials.get(surfaceKind) ?? [];
   registered.push(result);
   context.surfaceMaterials.set(surfaceKind, registered);
   context.materials.add(result);
+  context.materialCache.set(key, result);
   return result;
+}
+
+function sharedGeometry<T extends BufferGeometry>(context: BuildContext, key: string, create: () => T): T {
+  const cached = context.geometryCache.get(key);
+  if (cached) return cached as T;
+  const geometry = create();
+  geometry.userData.staticGeometryKey = key;
+  context.geometryCache.set(key, geometry);
+  context.geometries.add(geometry);
+  return geometry;
 }
 
 function box(
@@ -121,10 +145,11 @@ function box(
   position: readonly [number, number, number],
   options: BoxOptions = {},
 ): Mesh<BoxGeometry, MeshStandardMaterial> {
-  const geometry = new BoxGeometry(...size);
-  context.geometries.add(geometry);
+  const geometry = sharedGeometry(context, 'box:unit', () => new BoxGeometry(1, 1, 1));
   const mesh = new Mesh(geometry, material(context, options));
   mesh.position.set(...position);
+  mesh.scale.set(...size);
+  mesh.userData.staticPrimitiveKind = 'box';
   mesh.castShadow = options.castShadow ?? true;
   mesh.receiveShadow = options.receiveShadow ?? true;
   parent.add(mesh);
@@ -139,7 +164,7 @@ function addContactShadow(
   x = 0,
   z = 0,
 ): Mesh<PlaneGeometry, MeshBasicMaterial> {
-  const geometry = new PlaneGeometry(width * 1.08, depth * 1.08);
+  const geometry = sharedGeometry(context, 'plane:unit', () => new PlaneGeometry(1, 1));
   const shadowMaterial = new MeshBasicMaterial({
     color: '#000000',
     transparent: true,
@@ -147,13 +172,15 @@ function addContactShadow(
     depthWrite: false,
     side: DoubleSide,
   });
-  context.geometries.add(geometry);
   context.materials.add(shadowMaterial);
   const shadow = new Mesh(geometry, shadowMaterial);
   shadow.name = 'seat-contact-shadow';
   shadow.userData.overhang = 0.08;
   shadow.position.set(x, 0.09, z);
   shadow.rotation.x = -Math.PI / 2;
+  shadow.scale.set(width * 1.08, depth * 1.08, 1);
+  shadow.userData.staticPrimitiveKind = 'plane';
+  shadow.userData.staticBatchable = false;
   shadow.renderOrder = 1;
   parent.add(shadow);
   return shadow;
@@ -171,11 +198,31 @@ function bindSeat(
     activitySpotId: spot.id,
     kind,
     orientation: spot.seatOrientation,
-    object,
-    rotation: rotationForSeatOrientation(spot.seatOrientation),
-    seatCenter,
-    forward: forwardAxisForSeatOrientation(spot.seatOrientation),
-    backrestCenter,
+    transform: {
+      rotation: rotationForSeatOrientation(spot.seatOrientation),
+      seatCenter,
+      forward: forwardAxisForSeatOrientation(spot.seatOrientation),
+      backrestCenter,
+    },
+    visualRotation: object.rotation.y,
+    partNames: (() => {
+      const names: string[] = [];
+      object.traverse((entry) => { if (entry.name) names.push(entry.name); });
+      return names;
+    })(),
+    contactShadow: (() => {
+      let result: SeatVisualBinding['contactShadow'];
+      object.traverse((entry) => {
+        if (!(entry instanceof Mesh) || entry.name !== 'seat-contact-shadow' || !(entry.material instanceof MeshBasicMaterial)) return;
+        result = {
+          overhang: Number(entry.userData.overhang ?? 0),
+          opacity: entry.material.opacity,
+          transparent: entry.material.transparent,
+          depthWrite: entry.material.depthWrite,
+        };
+      });
+      return result;
+    })(),
   });
 }
 
@@ -215,24 +262,24 @@ export function validateSeatAlignment(
     if (binding.orientation !== spot.seatOrientation) issues.push(`orientation:${spot.id}`);
 
     const guestAnchor = worldToDiorama(spot);
-    if (Math.hypot(binding.seatCenter.x - guestAnchor.x, binding.seatCenter.z - guestAnchor.z) > 0.8) {
+    if (Math.hypot(binding.transform.seatCenter.x - guestAnchor.x, binding.transform.seatCenter.z - guestAnchor.z) > 0.8) {
       issues.push(`anchor-distance:${spot.id}`);
     }
 
     if (spot.seatOrientation === 'radial') continue;
     const expectedRotation = rotationForSeatOrientation(spot.seatOrientation);
     const expectedForward = forwardAxisForSeatOrientation(spot.seatOrientation);
-    if (rotationDelta(binding.rotation, expectedRotation) > 0.001) issues.push(`rotation:${spot.id}`);
-    if (rotationDelta(binding.object.rotation.y, expectedRotation) > 0.001) issues.push(`visual-rotation:${spot.id}`);
-    if (Math.hypot(binding.forward.x - expectedForward.x, binding.forward.z - expectedForward.z) > 0.001) {
+    if (rotationDelta(binding.transform.rotation, expectedRotation) > 0.001) issues.push(`rotation:${spot.id}`);
+    if (rotationDelta(binding.visualRotation, expectedRotation) > 0.001) issues.push(`visual-rotation:${spot.id}`);
+    if (Math.hypot(binding.transform.forward.x - expectedForward.x, binding.transform.forward.z - expectedForward.z) > 0.001) {
       issues.push(`forward-axis:${spot.id}`);
     }
-    if (!binding.backrestCenter) {
+    if (!binding.transform.backrestCenter) {
       issues.push(`missing-backrest:${spot.id}`);
       continue;
     }
-    const backrestOffsetX = binding.backrestCenter.x - guestAnchor.x;
-    const backrestOffsetZ = binding.backrestCenter.z - guestAnchor.z;
+    const backrestOffsetX = binding.transform.backrestCenter.x - guestAnchor.x;
+    const backrestOffsetZ = binding.transform.backrestCenter.z - guestAnchor.z;
     if (backrestOffsetX * expectedForward.x + backrestOffsetZ * expectedForward.z >= -0.05) {
       issues.push(`backrest-position:${spot.id}`);
     }
@@ -258,10 +305,11 @@ function cylinder(
   sides = 12,
   surfaceKind: SurfaceKind = 'wood',
 ): Mesh<CylinderGeometry, MeshStandardMaterial> {
-  const geometry = new CylinderGeometry(radius, radius * 1.05, height, sides);
-  context.geometries.add(geometry);
+  const geometry = sharedGeometry(context, `cylinder:unit:${sides}`, () => new CylinderGeometry(1, 1.05, 1, sides));
   const mesh = new Mesh(geometry, material(context, { color, roughness: 0.66, surface: surfaceKind }));
   mesh.position.set(...position);
+  mesh.scale.set(radius, height, radius);
+  mesh.userData.staticPrimitiveKind = 'cylinder';
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   parent.add(mesh);
@@ -287,16 +335,34 @@ function glowPanel(
 }
 
 function markFocusOccluder(context: BuildContext, object: Object3D, kind: FocusOccluderKind): void {
+  context.focusOccluderSerial += 1;
+  object.userData.staticBatchScope = `focus:${kind}:${context.focusOccluderSerial}`;
+  const replacements = new Map<MeshStandardMaterial, MeshStandardMaterial>();
   const occluderMaterials = new Set<MeshStandardMaterial>();
   object.traverse((entry) => {
     if (entry instanceof Mesh) {
       const entries = Array.isArray(entry.material) ? entry.material : [entry.material];
-      for (const entryMaterial of entries) {
-        if (entryMaterial instanceof MeshStandardMaterial) occluderMaterials.add(entryMaterial);
-      }
+      const replaced = entries.map((entryMaterial) => {
+        if (!(entryMaterial instanceof MeshStandardMaterial)) return entryMaterial;
+        let replacement = replacements.get(entryMaterial);
+        if (!replacement) {
+          replacement = entryMaterial.clone();
+          replacement.userData = { ...entryMaterial.userData, sharedMaterialKey: `focus:${kind}:${context.focusOccluderSerial}:${entryMaterial.uuid}` };
+          replacements.set(entryMaterial, replacement);
+          context.materials.add(replacement);
+          const surfaceKind = replacement.userData.surfaceKind as SurfaceKind | undefined;
+          if (surfaceKind) {
+            const registered = context.surfaceMaterials.get(surfaceKind) ?? [];
+            registered.push(replacement);
+            context.surfaceMaterials.set(surfaceKind, registered);
+          }
+        }
+        occluderMaterials.add(replacement);
+        return replacement;
+      });
+      entry.material = Array.isArray(entry.material) ? replaced : replaced[0]!;
     }
   });
-  context.focusOccluderSerial += 1;
   context.focusOccluders.push({
     id: `${kind}-${context.focusOccluderSerial}`,
     kind,
@@ -327,7 +393,7 @@ function addPendant(
   light.target.position.set(x, 0, z + 0.4);
   light.castShadow = false;
   root.add(light, light.target);
-  const poolGeometry = new CircleGeometry(1, 32);
+  const poolGeometry = sharedGeometry(context, 'circle:unit:32', () => new CircleGeometry(1, 32));
   const poolMaterial = new MeshBasicMaterial({
     color,
     transparent: true,
@@ -336,7 +402,6 @@ function addPendant(
     side: DoubleSide,
     blending: AdditiveBlending,
   });
-  context.geometries.add(poolGeometry);
   context.materials.add(poolMaterial);
   const pool = new Mesh(poolGeometry, poolMaterial);
   pool.position.set(x, 0.115, z + 0.4);
@@ -405,7 +470,9 @@ function addStool(context: BuildContext, root: Group, spot: SeatedActivitySpot):
   root.add(stool);
   const seat = cylinder(context, stool, 0.36, 0.12, [point.x, 0.58, point.z], context.theme.woodLight, 12);
   seat.name = `seat-surface:${spot.id}`;
-  cylinder(context, stool, 0.08, 0.55, [point.x, 0.28, point.z], context.theme.ink, 8);
+  seat.castShadow = false;
+  const stem = cylinder(context, stool, 0.08, 0.55, [point.x, 0.28, point.z], context.theme.ink, 8);
+  stem.castShadow = false;
   addContactShadow(context, stool, 0.72, 0.72, point.x, point.z);
   bindSeat(context, spot, stool, 'stool', point);
   markFocusOccluder(context, stool, 'chair');
@@ -440,6 +507,7 @@ function addDoor(context: BuildContext, root: Group, venue: VenueKind): Group {
   doorPivot.position.set(mapped.x, 0.1, mapped.z);
   doorPivot.rotation.y = closedRotation;
   doorPivot.userData.closedRotation = closedRotation;
+  doorPivot.userData.staticBatchBoundary = true;
   root.add(doorPivot);
   box(context, doorPivot, [1.42, 3.75, 0.18], [0.71, 1.88, 0], { color: context.theme.wood, roughness: 0.65, surface: 'wood' });
   box(context, doorPivot, [1.08, 2.65, 0.08], [0.71, 2.28, 0.11], { color: context.theme.wallDark, roughness: 0.3, surface: 'glass' });
@@ -474,18 +542,20 @@ function addCafeWindow(context: BuildContext, root: Group): void {
   box(context, root, [3.0, 8.5, 0.22], [6.5, 4.25, -3.52], { color: context.theme.wall, surface: 'plaster' });
   box(context, root, [10.9, 1.5, 0.22], [-0.45, 0.75, -3.52], { color: context.theme.wall, surface: 'plaster' });
   box(context, root, [10.9, 1.2, 0.22], [-0.45, 7.9, -3.52], { color: context.theme.wallDark, surface: 'plaster' });
-  const geometry = new PlaneGeometry(10.6, 6.4);
-  const glassMaterial = new MeshPhysicalMaterial({
+  const geometry = sharedGeometry(context, 'plane:unit', () => new PlaneGeometry(1, 1));
+  const glassMaterial = new MeshStandardMaterial({
     color: '#9fc0ca', transparent: true, opacity: 0.14, roughness: 0.1, metalness: 0,
-    transmission: 0.12, depthWrite: false, side: DoubleSide,
+    depthWrite: false, side: DoubleSide,
     map: context.surfaces.get('glass'),
   });
   glassMaterial.userData.surfaceKind = 'glass';
   context.usedSurfaceKinds.add('glass');
-  context.geometries.add(geometry);
   context.materials.add(glassMaterial);
   const glass = new Mesh(geometry, glassMaterial);
   glass.position.set(-0.45, 4.35, -3.39);
+  glass.scale.set(10.6, 6.4, 1);
+  glass.userData.staticPrimitiveKind = 'plane';
+  glass.userData.staticBatchable = false;
   root.add(glass);
   for (const x of [-4.2, -0.45, 3.3]) box(context, root, [0.18, 6.55, 0.26], [x, 4.3, -3.32], { color: context.theme.wallDark });
   box(context, root, [10.9, 0.22, 0.32], [-0.45, 1.5, -3.28], { color: context.theme.woodLight });
@@ -678,10 +748,12 @@ export function buildVenue(venue: VenueKind): DioramaSet {
   const surfaces = new PixelSurfaceLibrary(profile.surfaces);
   const usedSurfaceKinds = new Set<SurfaceKind>();
   const surfaceMaterials = new Map<SurfaceKind, MeshStandardMaterial[]>();
+  const geometryCache = new Map<string, BufferGeometry>();
+  const materialCache = new Map<string, MeshStandardMaterial>();
   const focusOccluders: FocusOccluder[] = [];
   const seatBindings: SeatVisualBinding[] = [];
   const context: BuildContext = {
-    geometries, materials, theme, profile, surfaces, usedSurfaceKinds, surfaceMaterials,
+    geometries, materials, theme, profile, surfaces, usedSurfaceKinds, surfaceMaterials, geometryCache, materialCache,
     focusOccluders, seatBindings, focusOccluderSerial: 0,
   };
   const animatedProps: AnimatedProp[] = [];
@@ -703,6 +775,15 @@ export function buildVenue(venue: VenueKind): DioramaSet {
 
   const availableSurfaceKinds = Object.keys(profile.surfaces) as SurfaceKind[];
   for (const kind of availableSurfaceKinds) surfaces.get(kind);
+  const excluded = new Set<Object3D>([
+    shell.doorPivot,
+    ...animatedProps.map((entry) => entry.object),
+  ]);
+  const batchedResources = batchStaticVenuePrimitives(root, excluded, geometryCache.size, venue);
+  const surfaceTextureBytes = availableSurfaceKinds.reduce((total, kind) => {
+    const size = profile.surfaces[kind].size;
+    return total + size * size * 4;
+  }, 0);
 
   return {
     root,
@@ -719,7 +800,10 @@ export function buildVenue(venue: VenueKind): DioramaSet {
     surfaceKinds: [...availableSurfaceKinds].sort(),
     surfaceMaterials,
     bloomSurfaceCount: countSelectiveBloomSurfaces(root),
+    batchedResources,
+    surfaceTextureBytes,
     dispose(): void {
+      for (const mesh of batchedResources.meshes) mesh.dispose();
       for (const geometry of geometries) geometry.dispose();
       for (const entry of materials) entry.dispose();
       surfaces.dispose();

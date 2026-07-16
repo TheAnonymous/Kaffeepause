@@ -1,6 +1,6 @@
 import { CafeRenderer } from '../renderer';
 import { SceneRuntime } from './sceneRuntime';
-import type { RendererLifecycle, RendererLifecycleOptions } from './rendererLifecycle';
+import type { RendererFrameMetrics, RendererLifecycle, RendererLifecycleOptions } from './rendererLifecycle';
 import type { RenderQualityTier } from './renderQuality';
 import type { CafeEnvironmentSnapshot } from '../environment/types';
 import type { VenueKind } from '../venue';
@@ -28,12 +28,12 @@ class WebglRendererLifecycle implements RendererLifecycle {
     return this.runtime.update(deltaSeconds);
   }
 
-  renderOnce(elapsed: number, snapshot?: SceneSnapshot): void {
-    this.runtime.render(elapsed, snapshot);
+  renderOnce(elapsed: number, snapshot?: SceneSnapshot): RendererFrameMetrics {
+    return this.runtime.render(elapsed, snapshot);
   }
 
-  renderVisualOnce(elapsed: number, snapshot?: SceneSnapshot): void {
-    this.renderer.renderVisual(elapsed, snapshot ?? this.runtime.snapshot());
+  renderVisualOnce(elapsed: number, snapshot?: SceneSnapshot): RendererFrameMetrics {
+    return this.renderer.renderVisual(elapsed, snapshot ?? this.runtime.snapshot());
   }
 
   resize(reducedMotion: boolean): void {

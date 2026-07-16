@@ -79,69 +79,179 @@ export function lowerQualityTier(tier: RenderQualityTier): RenderQualityTier | u
   return undefined;
 }
 
+export function initialRenderQualityTier(cssWidth: number): RenderQualityTier {
+  return Number.isFinite(cssWidth) && cssWidth >= 700 ? 'master' : 'balanced';
+}
+
+export interface RenderPerformanceSample {
+  readonly frameMs: number;
+  readonly cpuMs: number;
+  readonly gpuMs?: number;
+  readonly timestampMs: number;
+}
+
+export interface RenderPerformanceContext {
+  readonly mobile: boolean;
+  readonly visible: boolean;
+  readonly reducedMotion: boolean;
+}
+
+export interface RenderPerformanceWindow {
+  readonly samples: number;
+  readonly frameP95: number;
+  readonly cpuP95: number;
+  readonly gpuP95?: number;
+  readonly healthy: boolean;
+  readonly reason: string;
+}
+
+export interface AdaptiveQualityDecision {
+  readonly previousTier: RenderQualityTier;
+  readonly tier: RenderQualityTier;
+  readonly action: 'downgrade' | 'upgrade';
+  readonly reason: string;
+  readonly window: RenderPerformanceWindow;
+}
+
 export interface RenderQualityGovernorOptions {
   readonly warmupMs?: number;
   readonly sampleFrames?: number;
-  readonly slowFrameThresholdMs?: number;
-  readonly slowFrameP95ThresholdMs?: number;
   readonly cooldownMs?: number;
+  readonly stablePromotionMs?: number;
+  readonly badWindowsBeforeDowngrade?: number;
+  readonly healthyWindowsBeforeUpgrade?: number;
+  readonly desktopFrameP95Ms?: number;
+  readonly mobileFrameP95Ms?: number;
+  readonly cpuP95Ms?: number;
+  readonly gpuP95Ms?: number;
 }
 
 /**
- * Session-local, downward-only quality governor. It only receives visible frame
- * durations, so background tabs cannot consume warmup, samples, or cooldown.
+ * Session-local adaptive governor. Only complete visible, motion-enabled samples
+ * consume warm-up or performance windows; a downgrade permanently locks upgrades.
  */
 export class RenderQualityGovernor {
+  private readonly warmupMs: number;
   private readonly sampleFrames: number;
-  private readonly slowFrameThresholdMs: number;
-  private readonly slowFrameP95ThresholdMs: number;
   private readonly cooldownMs: number;
-  private remainingDelayMs: number;
-  private samples: number[] = [];
-  private finished = false;
+  private readonly stablePromotionMs: number;
+  private readonly badWindowsBeforeDowngrade: number;
+  private readonly healthyWindowsBeforeUpgrade: number;
+  private readonly desktopFrameP95Ms: number;
+  private readonly mobileFrameP95Ms: number;
+  private readonly cpuP95Ms: number;
+  private readonly gpuP95Ms: number;
+  private samples: RenderPerformanceSample[] = [];
+  private startedAt?: number;
+  private stableSince?: number;
+  private lastDecisionAt = Number.NEGATIVE_INFINITY;
+  private badWindows = 0;
+  private healthyWindows = 0;
+  private upgradeUsed = false;
+  private downgraded = false;
+  private sampleMobile?: boolean;
+  private recentWindow?: RenderPerformanceWindow;
 
   constructor(
     private tier: RenderQualityTier = 'master',
     options: RenderQualityGovernorOptions = {},
   ) {
-    this.remainingDelayMs = Math.max(0, options.warmupMs ?? 3_000);
-    this.sampleFrames = Math.max(1, Math.round(options.sampleFrames ?? 120));
-    this.slowFrameThresholdMs = Math.max(0, options.slowFrameThresholdMs ?? 16.7);
-    this.slowFrameP95ThresholdMs = Math.max(0, options.slowFrameP95ThresholdMs ?? 25);
+    this.warmupMs = Math.max(0, options.warmupMs ?? 3_000);
+    this.sampleFrames = Math.max(1, Math.round(options.sampleFrames ?? 180));
     this.cooldownMs = Math.max(0, options.cooldownMs ?? 5_000);
+    this.stablePromotionMs = Math.max(0, options.stablePromotionMs ?? 10_000);
+    this.badWindowsBeforeDowngrade = Math.max(1, Math.round(options.badWindowsBeforeDowngrade ?? 2));
+    this.healthyWindowsBeforeUpgrade = Math.max(1, Math.round(options.healthyWindowsBeforeUpgrade ?? 3));
+    this.desktopFrameP95Ms = Math.max(0, options.desktopFrameP95Ms ?? 25);
+    this.mobileFrameP95Ms = Math.max(0, options.mobileFrameP95Ms ?? 33);
+    this.cpuP95Ms = Math.max(0, options.cpuP95Ms ?? 12);
+    this.gpuP95Ms = Math.max(0, options.gpuP95Ms ?? 18);
   }
 
   get currentTier(): RenderQualityTier {
     return this.tier;
   }
 
-  observeVisibleFrame(durationMs: number): RenderQualityTier | undefined {
-    if (this.finished || !Number.isFinite(durationMs) || durationMs < 0) return undefined;
-    if (this.remainingDelayMs > 0) {
-      this.remainingDelayMs = Math.max(0, this.remainingDelayMs - durationMs);
-      return undefined;
-    }
+  get lastWindow(): RenderPerformanceWindow | undefined { return this.recentWindow; }
 
-    this.samples.push(durationMs);
+  observe(sample: RenderPerformanceSample, context: RenderPerformanceContext): AdaptiveQualityDecision | undefined {
+    if (!context.visible || context.reducedMotion || !validDuration(sample.frameMs)
+      || !validDuration(sample.cpuMs) || !validDuration(sample.timestampMs)) return undefined;
+    if (this.startedAt === undefined) this.startedAt = sample.timestampMs;
+    if (sample.timestampMs - this.startedAt < this.warmupMs) return undefined;
+    if (this.sampleMobile !== undefined && this.sampleMobile !== context.mobile) {
+      this.samples = [];
+      this.badWindows = 0;
+      this.healthyWindows = 0;
+      this.stableSince = sample.timestampMs;
+    }
+    this.sampleMobile = context.mobile;
+    if (this.stableSince === undefined) this.stableSince = sample.timestampMs;
+    this.samples.push({
+      ...sample,
+      ...(sample.gpuMs !== undefined && validDuration(sample.gpuMs) ? { gpuMs: sample.gpuMs } : { gpuMs: undefined }),
+    });
     if (this.samples.length < this.sampleFrames) return undefined;
-
-    const median = medianOf(this.samples);
-    const sorted = [...this.samples].sort((left, right) => left - right);
-    const p95 = sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)] ?? 0;
+    const gpuSamples = this.samples.flatMap((entry) => entry.gpuMs === undefined ? [] : [entry.gpuMs]);
+    const frameP95 = percentile95(this.samples.map((entry) => entry.frameMs));
+    const cpuP95 = percentile95(this.samples.map((entry) => entry.cpuMs));
+    const gpuP95 = gpuSamples.length > 0 ? percentile95(gpuSamples) : undefined;
     this.samples = [];
-    const lowerTier = median > this.slowFrameThresholdMs || p95 > this.slowFrameP95ThresholdMs
-      ? lowerQualityTier(this.tier)
-      : undefined;
-    if (!lowerTier) {
-      this.finished = true;
-      return undefined;
+    const reasons = [
+      ...(frameP95 > (context.mobile ? this.mobileFrameP95Ms : this.desktopFrameP95Ms) ? ['frame-p95'] : []),
+      ...(cpuP95 > this.cpuP95Ms ? ['cpu-p95'] : []),
+      ...(gpuP95 !== undefined && gpuP95 > this.gpuP95Ms ? ['gpu-p95'] : []),
+    ];
+    const window: RenderPerformanceWindow = {
+      samples: this.sampleFrames,
+      frameP95,
+      cpuP95,
+      ...(gpuP95 === undefined ? {} : { gpuP95 }),
+      healthy: reasons.length === 0,
+      reason: reasons.join('+') || 'healthy',
+    };
+    this.recentWindow = window;
+
+    if (!window.healthy) {
+      this.badWindows += 1;
+      this.healthyWindows = 0;
+      this.stableSince = undefined;
+      if (this.badWindows < this.badWindowsBeforeDowngrade
+        || sample.timestampMs - this.lastDecisionAt < this.cooldownMs) return undefined;
+      const lowerTier = lowerQualityTier(this.tier);
+      if (!lowerTier) return undefined;
+      const previousTier = this.tier;
+      this.tier = lowerTier;
+      this.badWindows = 0;
+      this.lastDecisionAt = sample.timestampMs;
+      this.downgraded = true;
+      return { previousTier, tier: lowerTier, action: 'downgrade', reason: window.reason, window };
     }
 
-    this.tier = lowerTier;
-    if (lowerTier === 'fallback') this.finished = true;
-    else this.remainingDelayMs = this.cooldownMs;
-    return lowerTier;
+    this.badWindows = 0;
+    this.healthyWindows += 1;
+    if (!context.mobile || this.tier !== 'balanced' || this.upgradeUsed || this.downgraded
+      || this.healthyWindows < this.healthyWindowsBeforeUpgrade
+      || sample.timestampMs - (this.stableSince ?? sample.timestampMs) < this.stablePromotionMs
+      || sample.timestampMs - this.lastDecisionAt < this.cooldownMs) {
+      return undefined;
+    }
+    const previousTier = this.tier;
+    this.tier = 'master';
+    this.upgradeUsed = true;
+    this.lastDecisionAt = sample.timestampMs;
+    this.healthyWindows = 0;
+    return { previousTier, tier: 'master', action: 'upgrade', reason: 'mobile-stable', window };
   }
+}
+
+function validDuration(value: number): boolean {
+  return Number.isFinite(value) && value >= 0;
+}
+
+function percentile95(values: readonly number[]): number {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1)] ?? 0;
 }
 
 function medianOf(values: readonly number[]): number {

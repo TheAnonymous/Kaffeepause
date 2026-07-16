@@ -1,10 +1,14 @@
 import type {
+  BufferGeometry,
   CircleGeometry,
   ColorRepresentation,
   Group,
+  InstancedMesh,
+  Material,
+  Matrix4,
   Mesh,
-  MeshBasicMaterial,
   MeshStandardMaterial,
+  MeshBasicMaterial,
   Object3D,
   SpotLight,
 } from 'three';
@@ -104,7 +108,7 @@ export interface AnimatedProp {
 export type FocusOccluderKind = 'table' | 'chair' | 'counter' | 'machine';
 
 export interface FocusOccluderMaterialState {
-  readonly material: MeshStandardMaterial;
+  readonly material: Material;
   readonly opacity: number;
   readonly transparent: boolean;
   readonly depthWrite: boolean;
@@ -119,15 +123,61 @@ export interface FocusOccluder {
 
 export type SeatVisualKind = 'chair' | 'stool' | 'bench';
 
-export interface SeatVisualBinding {
-  readonly activitySpotId: string;
-  readonly kind: SeatVisualKind;
-  readonly orientation: SeatOrientation;
-  readonly object: Object3D;
+export interface SeatVisualTransform {
   readonly rotation: number;
   readonly seatCenter: DioramaPoint;
   readonly forward: DioramaPoint;
   readonly backrestCenter?: DioramaPoint;
+}
+
+export interface SeatContactShadowSpec {
+  readonly overhang: number;
+  readonly opacity: number;
+  readonly transparent: boolean;
+  readonly depthWrite: boolean;
+}
+
+export interface SeatVisualBinding {
+  readonly activitySpotId: string;
+  readonly kind: SeatVisualKind;
+  readonly orientation: SeatOrientation;
+  readonly transform: SeatVisualTransform;
+  readonly visualRotation: number;
+  readonly partNames: readonly string[];
+  readonly contactShadow?: SeatContactShadowSpec;
+}
+
+export type StaticPrimitiveKind = 'box' | 'cylinder' | 'plane';
+
+export interface StaticPrimitiveSpec {
+  readonly kind: StaticPrimitiveKind;
+  readonly geometryKey: string;
+  readonly materialKey: string;
+  readonly layerMask: number;
+  readonly castShadow: boolean;
+  readonly receiveShadow: boolean;
+  readonly renderOrder: number;
+  readonly selectiveBloom: boolean;
+  readonly matrix: Matrix4;
+}
+
+export type VenueBatchKey = string;
+
+export interface BatchedVenueResources {
+  readonly meshes: readonly InstancedMesh<BufferGeometry, Material>[];
+  readonly primitiveCount: number;
+  readonly batchCount: number;
+  readonly sourceMeshCount: number;
+  readonly unitGeometryCount: number;
+  readonly v3GeometryBaseline: number;
+}
+
+export interface CharacterTextureCacheStats {
+  readonly textures: number;
+  readonly identities: number;
+  readonly rawPixelBytes: number;
+  readonly maximumTextures: number;
+  readonly maximumVariantsPerIdentity: number;
 }
 
 export interface SeatAlignmentReport {
@@ -154,6 +204,8 @@ export interface DioramaSet {
   readonly surfaceKinds: readonly string[];
   readonly surfaceMaterials: ReadonlyMap<string, readonly MeshStandardMaterial[]>;
   readonly bloomSurfaceCount: number;
+  readonly batchedResources: BatchedVenueResources;
+  readonly surfaceTextureBytes: number;
   dispose(): void;
 }
 

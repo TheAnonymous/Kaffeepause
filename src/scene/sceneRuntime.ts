@@ -1,10 +1,11 @@
 import { CafeCamera } from '../camera';
 import { CafeSimulation } from '../simulation/cafeSimulation';
 import type { SceneSnapshot } from './types';
+import type { RendererFrameMetrics } from './rendererLifecycle';
 
 export interface SceneRenderer {
   setActive(active: boolean): void;
-  render(elapsed: number, snapshot: SceneSnapshot): void;
+  render(elapsed: number, snapshot: SceneSnapshot): RendererFrameMetrics;
 }
 
 // Schlanke Laufzeit für das Diorama: Update, Kamera und Rendern bleiben in fester Reihenfolge.
@@ -35,7 +36,7 @@ export class SceneRuntime {
     return this.simulation.getSceneSnapshot();
   }
 
-  render(elapsed: number, snapshot = this.snapshot()): void {
-    this.renderer.render(elapsed, snapshot);
+  render(elapsed: number, snapshot = this.snapshot()): RendererFrameMetrics {
+    return this.renderer.render(elapsed, snapshot);
   }
 }

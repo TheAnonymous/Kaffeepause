@@ -5,12 +5,30 @@ import { gzipSync } from 'node:zlib';
 
 const fail = (message) => { throw new Error(message); };
 const assets = readdirSync('dist/assets').filter((file) => file.endsWith('.js'));
-for (const file of assets) {
-  const source = readFileSync(join('dist/assets', file));
-  if (source.byteLength > 650_000) fail(`${file}: ${source.byteLength} bytes exceeds 650 kB`);
-  const gzip = gzipSync(source).byteLength;
-  if (gzip > 170_000) fail(`${file}: ${gzip} gzip bytes exceeds 170 kB`);
-}
+const manifest = JSON.parse(readFileSync('dist/.vite/manifest.json', 'utf8'));
+const manifestEntries = Object.entries(manifest);
+const gzipBytes = (file) => gzipSync(readFileSync(join('dist', file)), { level: 9 }).byteLength;
+const entry = manifestEntries.find(([, value]) => value.isEntry);
+const renderer = manifestEntries.find(([, value]) => value.name === 'webglRendererLifecycle');
+if (!entry || !renderer) fail('build manifest is missing the entry or renderer graph');
+const incrementalRendererGraph = (rootKey, entryKey) => {
+  const visited = new Set();
+  const visit = (key) => {
+    if (key === entryKey || visited.has(key)) return;
+    visited.add(key);
+    const node = manifest[key];
+    for (const dependency of [...(node?.imports ?? []), ...(node?.dynamicImports ?? [])]) visit(dependency);
+  };
+  visit(rootKey);
+  return [...visited].map((key) => manifest[key]?.file).filter((file) => typeof file === 'string');
+};
+const entryGzipBytes = gzipBytes(entry[1].file);
+const rendererFiles = incrementalRendererGraph(renderer[0], entry[0]);
+const rendererGzipBytes = rendererFiles.reduce((total, file) => total + gzipBytes(file), 0);
+const totalJavascriptGzipBytes = assets.reduce((total, file) => total + gzipBytes(join('assets', file)), 0);
+if (entryGzipBytes > 40_000) fail(`entry graph: ${entryGzipBytes} gzip bytes exceeds 40 kB`);
+if (rendererGzipBytes > 155_000) fail(`renderer graph: ${rendererGzipBytes} gzip bytes exceeds 155 kB`);
+if (totalJavascriptGzipBytes > 190_000) fail(`total JavaScript: ${totalJavascriptGzipBytes} gzip bytes exceeds 190 kB`);
 
 const audioFiles = ['cafe', 'ramen', 'arcade'].flatMap((venue) =>
   readdirSync(join('public/audio', venue)).filter((file) => file.endsWith('.mp3')).map((file) => join('public/audio', venue, file)),
@@ -44,7 +62,13 @@ if (maximumActiveArtBytes > 1_500_000) {
 }
 
 console.log(JSON.stringify({
-  javascript: assets.length,
+  javascript: {
+    files: assets.length,
+    entryGzipBytes,
+    rendererGzipBytes,
+    totalGzipBytes: totalJavascriptGzipBytes,
+    rendererFiles,
+  },
   audioFiles: audioFiles.length,
   audioBytes,
   artFiles: artFiles.length,

@@ -207,6 +207,111 @@ test('initialisiert auch das ausgewogene Qualitätsprofil vollständig', async (
   await expect(canvas).toHaveAttribute('data-character-frame-rate', '4');
 });
 
+test('hält die V4-Ressourcenbudgets gemeinsam für alle Orte ein', async ({ page }) => {
+  test.setTimeout(45_000);
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await openCafe(page, '/?time=12:30&weather=clear', 'master');
+  const canvas = page.locator('#cafe');
+  const drawCallBudgets: Readonly<Record<VisualVenue, number>> = { cafe: 220, ramen: 130, arcade: 165 };
+
+  for (const venue of ['cafe', 'ramen', 'arcade'] as const) {
+    await chooseVenue(page, venue);
+    await renderVisualFrame(page);
+    const metrics = await canvas.evaluate((element) => ({
+      drawCalls: Number(element.dataset.drawCalls),
+      geometries: Number(element.dataset.geometries),
+      v3GeometryBaseline: Number(element.dataset.v3GeometryBaseline),
+      gpuTextures: Number(element.dataset.gpuTextures),
+      estimatedTextureBytes: Number(element.dataset.estimatedTextureBytes),
+      characterCache: Number(element.dataset.characterCache),
+      staticBatches: Number(element.dataset.staticBatches),
+      staticInstances: Number(element.dataset.staticInstances),
+      renderTargets: Number(element.dataset.renderTargets),
+    }));
+    expect(metrics.drawCalls, `${venue} draw calls`).toBeLessThanOrEqual(drawCallBudgets[venue]);
+    expect(metrics.geometries, `${venue} geometries`)
+      .toBeLessThanOrEqual(Math.floor(metrics.v3GeometryBaseline * 0.6));
+    expect(metrics.characterCache, `${venue} character cache`).toBeLessThanOrEqual(64);
+    expect(metrics.estimatedTextureBytes, `${venue} estimated texture bytes`).toBeLessThan(64 * 1024 * 1024);
+    expect(metrics.gpuTextures, `${venue} WebGL textures`).toBeGreaterThan(0);
+    expect(metrics.staticBatches, `${venue} static batches`).toBeGreaterThan(0);
+    expect(metrics.staticInstances, `${venue} static instances`).toBeGreaterThan(metrics.staticBatches);
+    expect(metrics.renderTargets, `${venue} render targets`).toBe(4);
+  }
+});
+
+test('startet mobil adaptiv in Balanced und hält das 32-MiB-Texturbudget', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/?time=12%3A30&weather=clear&testRender=diagnostic');
+  const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-renderer-state', 'ready', { timeout: 15_000 });
+  await expect(canvas).toHaveAttribute('data-quality-tier', 'balanced');
+  await expect(canvas).toHaveAttribute('data-quality-reason', 'initial-mobile-balanced');
+  await expect(canvas).toHaveAttribute('data-bloom-resolution', /^quarter:/);
+  await renderVisualFrame(page);
+  await expect.poll(async () => Number(await canvas.getAttribute('data-estimated-texture-bytes')))
+    .toBeLessThan(32 * 1024 * 1024);
+});
+
+test('entsorgt Figuren- und Art-Texturen bei Kontextverlust und stellt den Ort wieder her', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await openCafe(page, '/?time=12:30&weather=clear', 'master');
+  await chooseVenue(page, 'cafe');
+  const canvas = page.locator('#cafe');
+  await renderVisualFrame(page);
+  await expect.poll(async () => Number(await canvas.getAttribute('data-character-cache'))).toBeGreaterThan(0);
+
+  await canvas.evaluate((element) => {
+    element.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+  });
+  await expect(canvas).toHaveAttribute('data-art-assets', 'failed');
+  await expect(canvas).toHaveAttribute('data-art-pack', 'procedural-context-fallback');
+  await expect(canvas).toHaveAttribute('data-character-cache', '0');
+
+  await canvas.evaluate((element) => {
+    element.dispatchEvent(new Event('webglcontextrestored'));
+  });
+  await expect(canvas).toHaveAttribute('data-art-assets', 'ready', { timeout: 15_000 });
+  await expect(canvas).toHaveAttribute('data-art-pack', /^v3-cafe-/);
+});
+
+test('kehrt nach beschleunigten Figuren-, Moment-, Atlas- und Ortswechseln zum Ressourcenstand zurück', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await installFramePause(page);
+  await openCafe(page, '/?moment=shared-cake&cinematicScale=0.02&time=12:30&weather=clear', 'master');
+  await chooseVenue(page, 'cafe');
+  await pauseBeforeEntry(page);
+  await page.getByTestId('enter').click();
+  await stepDiagnosticFrames(page, 6, 0.1);
+  await renderVisualFrame(page);
+  const canvas = page.locator('#cafe');
+  const resourceSnapshot = () => canvas.evaluate((element) => ({
+    geometries: Number(element.dataset.geometries),
+    gpuTextures: Number(element.dataset.gpuTextures),
+    renderTargets: Number(element.dataset.renderTargets),
+  }));
+  const cycleVenues = async (venues: readonly VisualVenue[]) => {
+    for (const venue of venues) {
+      await page.evaluate((nextVenue) => {
+        (window as typeof window & { setDioramaDiagnosticVenue?: (venue: VisualVenue) => void })
+          .setDioramaDiagnosticVenue?.(nextVenue);
+      }, venue);
+      await expect(canvas).toHaveAttribute('data-art-pack', new RegExp(`^v3-${venue}-`), { timeout: 15_000 });
+      await stepDiagnosticFrames(page, 2, 0);
+      await renderVisualFrame(page);
+      await expect.poll(async () => Number(await canvas.getAttribute('data-character-cache'))).toBeLessThanOrEqual(64);
+    }
+  };
+
+  // Establish a first-use high-water mark before checking that repeated cycles release back to it.
+  await cycleVenues(['ramen', 'arcade', 'cafe']);
+  const initial = await resourceSnapshot();
+  await cycleVenues(['ramen', 'arcade', 'cafe', 'arcade', 'ramen', 'cafe']);
+
+  expect(await resourceSnapshot()).toEqual(initial);
+});
+
 test('betritt das Café auf fallback und schaltet den Ton', async ({ page }) => {
   const errors: string[] = [];
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
