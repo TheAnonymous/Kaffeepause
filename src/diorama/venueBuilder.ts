@@ -1,7 +1,6 @@
 import {
   AdditiveBlending,
   BoxGeometry,
-  CircleGeometry,
   CylinderGeometry,
   DoubleSide,
   Group,
@@ -9,11 +8,12 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
-  SpotLight,
+  PointLight,
   type BufferGeometry,
   type ColorRepresentation,
   type Material,
   type Object3D,
+  type Texture,
 } from 'three';
 import type { VenueKind } from '../venue';
 import {
@@ -36,7 +36,7 @@ import {
   type SeatVisualKind,
   worldToDiorama,
 } from './types';
-import { PixelSurfaceLibrary } from './pixelSurfaceLibrary';
+import { createPixelLightPoolTexture, PixelSurfaceLibrary } from './pixelSurfaceLibrary';
 import { VENUE_VISUAL_PROFILES, type SurfaceKind, type VenueVisualProfile } from './visualProfiles';
 import { countSelectiveBloomSurfaces, registerSelectiveBloomSurface } from './selectiveBloom';
 import { batchStaticVenuePrimitives } from './venueBatching';
@@ -53,6 +53,7 @@ interface BuildContext {
   readonly materialCache: Map<string, MeshStandardMaterial>;
   readonly focusOccluders: FocusOccluder[];
   readonly seatBindings: SeatVisualBinding[];
+  readonly lightPoolTexture: Texture;
   focusOccluderSerial: number;
 }
 
@@ -63,8 +64,8 @@ interface ShellParts {
 }
 
 interface PendantParts {
-  readonly light: SpotLight;
-  readonly pool: Mesh<CircleGeometry, MeshBasicMaterial>;
+  readonly light: PointLight;
+  readonly pool: Mesh<PlaneGeometry, MeshBasicMaterial>;
 }
 
 interface BoxOptions {
@@ -76,6 +77,7 @@ interface BoxOptions {
   readonly castShadow?: boolean;
   readonly receiveShadow?: boolean;
   readonly surface?: SurfaceKind;
+  readonly opacity?: number;
 }
 
 const SEAT_ROTATIONS: Readonly<Record<SeatOrientation, number>> = {
@@ -106,6 +108,7 @@ function material(context: BuildContext, options: BoxOptions): MeshStandardMater
     options.emissiveIntensity ?? 0,
     options.roughness ?? recipe.roughness,
     options.metalness ?? recipe.metalness,
+    options.opacity ?? 1,
   ]);
   const cached = context.materialCache.get(key);
   if (cached) return cached;
@@ -116,6 +119,9 @@ function material(context: BuildContext, options: BoxOptions): MeshStandardMater
     roughness: options.roughness ?? recipe.roughness,
     metalness: options.metalness ?? recipe.metalness,
     map: context.surfaces.get(surfaceKind),
+    transparent: (options.opacity ?? 1) < 1,
+    opacity: options.opacity ?? 1,
+    depthWrite: (options.opacity ?? 1) >= 1,
   });
   result.userData.surfaceKind = surfaceKind;
   result.userData.sharedMaterialKey = key;
@@ -384,18 +390,26 @@ function addPendant(
   color: ColorRepresentation,
 ): PendantParts {
   box(context, root, [0.06, 2.05, 0.06], [x, 7.65, z], { color: context.theme.ink, castShadow: false, surface: 'metal' });
-  const shade = cylinder(context, root, 0.28, 0.26, [x, 6.55, z], context.theme.woodLight, 8, 'metal');
-  shade.rotation.x = Math.PI;
-  glowPanel(context, root, [0.35, 0.06, 0.35], [x, 6.39, z], color);
-  const light = new SpotLight(color, 20, 11, Math.PI / 4.5, 0.72, 1.15);
+  if (context.profile.id === 'ramen') {
+    box(context, root, [0.68, 0.54, 0.52], [x, 6.52, z], { color: context.theme.wood, roughness: 0.86, surface: 'wood' });
+    glowPanel(context, root, [0.5, 0.38, 0.54], [x, 6.5, z + 0.02], color);
+    for (const offset of [-0.22, 0.22]) {
+      box(context, root, [0.035, 0.48, 0.57], [x + offset, 6.5, z + 0.03], { color: context.theme.ink, castShadow: false, surface: 'wood' });
+    }
+  } else {
+    const shade = cylinder(context, root, context.profile.id === 'arcade' ? 0.2 : 0.28, 0.26, [x, 6.55, z], context.theme.woodLight, 8, 'metal');
+    shade.rotation.x = Math.PI;
+    glowPanel(context, root, [context.profile.id === 'arcade' ? 0.24 : 0.35, 0.06, context.profile.id === 'arcade' ? 0.24 : 0.35], [x, 6.39, z], color);
+  }
+  const light = new PointLight(color, 30, 8.5, 1.65);
   light.userData.baseColor = color;
   light.position.set(x, 6.34, z);
-  light.target.position.set(x, 0, z + 0.4);
   light.castShadow = false;
-  root.add(light, light.target);
-  const poolGeometry = sharedGeometry(context, 'circle:unit:32', () => new CircleGeometry(1, 32));
+  root.add(light);
+  const poolGeometry = sharedGeometry(context, 'plane:unit', () => new PlaneGeometry(1, 1));
   const poolMaterial = new MeshBasicMaterial({
     color,
+    map: context.lightPoolTexture,
     transparent: true,
     opacity: 0,
     depthWrite: false,
@@ -406,7 +420,7 @@ function addPendant(
   const pool = new Mesh(poolGeometry, poolMaterial);
   pool.position.set(x, 0.115, z + 0.4);
   pool.rotation.x = -Math.PI / 2;
-  pool.scale.set(2.05, 1.35, 1);
+  pool.scale.set(4.1, 2.7, 1);
   pool.renderOrder = 1;
   root.add(pool);
   return { light, pool };
@@ -461,6 +475,80 @@ function addPlant(context: BuildContext, root: Group, x: number, y: number, z: n
     ], { color: greens[index % greens.length], castShadow: false });
     leaf.rotation.z = (index - 3) * 0.16;
   }
+}
+
+function addMug(
+  context: BuildContext,
+  root: Group,
+  x: number,
+  y: number,
+  z: number,
+  color: ColorRepresentation,
+): void {
+  cylinder(context, root, 0.11, 0.2, [x, y, z], color, 10, 'tile');
+  box(context, root, [0.08, 0.09, 0.035], [x + 0.13, y, z], { color, castShadow: false, surface: 'tile' });
+}
+
+function addPixelLantern(
+  context: BuildContext,
+  root: Group,
+  x: number,
+  y: number,
+  z: number,
+  color: ColorRepresentation,
+  scale = 1,
+): void {
+  box(context, root, [0.3 * scale, 0.44 * scale, 0.26 * scale], [x, y, z], { color: context.theme.ink, castShadow: false, surface: 'metal' });
+  glowPanel(context, root, [0.2 * scale, 0.28 * scale, 0.28 * scale], [x, y, z + 0.015], color);
+  for (const offset of [-0.12, 0.12]) {
+    box(context, root, [0.025 * scale, 0.48 * scale, 0.3 * scale], [x + offset * scale, y, z], { color: context.theme.ink, castShadow: false, surface: 'metal' });
+  }
+}
+
+function addWallShelf(
+  context: BuildContext,
+  root: Group,
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+  levels: number,
+): void {
+  for (let level = 0; level < levels; level += 1) {
+    const shelfY = y + level * 0.62;
+    box(context, root, [width, 0.1, 0.35], [x, shelfY, z], { color: context.theme.woodLight, roughness: 0.78, surface: 'wood' });
+    const itemCount = 3 + (level % 2);
+    for (let item = 0; item < itemCount; item += 1) {
+      const itemX = x - width * 0.38 + item * (width * 0.76 / Math.max(1, itemCount - 1));
+      const height = 0.2 + ((item + level) % 3) * 0.07;
+      box(context, root, [0.16 + (item % 2) * 0.05, height, 0.18], [itemX, shelfY + 0.08 + height / 2, z + 0.03], {
+        color: (item + level) % 3 === 0 ? context.theme.accent : (item + level) % 3 === 1 ? context.theme.metal : context.theme.wood,
+        castShadow: false,
+        surface: (item + level) % 3 === 1 ? 'metal' : 'wood',
+      });
+    }
+  }
+  for (const side of [-1, 1]) box(context, root, [0.1, levels * 0.62, 0.32], [x + side * width / 2, y + (levels - 1) * 0.31, z], { color: context.theme.wood, surface: 'wood' });
+}
+
+function addSteamPlume(
+  context: BuildContext,
+  root: Group,
+  animated: AnimatedProp[],
+  x: number,
+  y: number,
+  z: number,
+  phase: number,
+): void {
+  const steam = new Group();
+  steam.name = 'authored-steam-plume';
+  root.add(steam);
+  const wisp = box(context, steam, [0.052, 0.34, 0.052], [x, y + 0.14, z], {
+    color: '#d8d2bd', emissive: '#d8d2bd', emissiveIntensity: 0.08, opacity: 0.24,
+    castShadow: false, receiveShadow: false, surface: 'emissive',
+  });
+  wisp.rotation.z = -0.08;
+  animated.push({ object: steam, phase, speed: 0.42, amplitude: 0.035, axis: 'y' });
 }
 
 function addStool(context: BuildContext, root: Group, spot: SeatedActivitySpot): void {
@@ -567,13 +655,29 @@ function buildShell(context: BuildContext, root: Group, venue: VenueKind): Shell
   const floor = box(context, root, [DIORAMA.width, 0.16, DIORAMA.depth], [0, 0, 0], {
     color: context.theme.floor, roughness: venue === 'arcade' ? 0.28 : 0.55, metalness: venue === 'arcade' ? 0.24 : 0.08, surface: 'floor',
   });
-  for (let index = -7; index <= 7; index += 1) {
-    const strip = box(context, root, [0.035, 0.018, DIORAMA.depth - 0.2], [index + 0.5, 0.095, 0], {
-      color: context.theme.floorLine, emissive: venue === 'arcade' && index % 3 === 0 ? context.theme.floorLine : '#000000',
-      emissiveIntensity: venue === 'arcade' && index % 3 === 0 ? 0.45 : 0, castShadow: false,
-      surface: venue === 'arcade' && index % 3 === 0 ? 'emissive' : 'floor',
-    });
-    strip.rotation.y = venue === 'cafe' ? -0.08 : 0;
+  if (venue === 'cafe') {
+    for (let index = -7; index <= 7; index += 1) {
+      const strip = box(context, root, [0.028, 0.014, DIORAMA.depth - 0.24], [index + 0.5, 0.094, 0], {
+        color: context.theme.floorLine, castShadow: false, surface: 'floor',
+      });
+      strip.rotation.y = -0.045;
+    }
+    for (let row = -2; row <= 2; row += 1) {
+      box(context, root, [3.2, 0.012, 0.026], [row % 2 === 0 ? -3.6 : 3.8, 0.096, row * 1.25], {
+        color: context.theme.floorLine, castShadow: false, surface: 'floor',
+      });
+    }
+  } else {
+    for (let index = -7; index <= 7; index += 1) {
+      box(context, root, [0.022, 0.012, DIORAMA.depth - 0.24], [index + 0.5, 0.094, 0], {
+        color: context.theme.floorLine, castShadow: false, surface: 'floor',
+      });
+    }
+    for (let row = -3; row <= 3; row += 1) {
+      box(context, root, [DIORAMA.width - 0.2, 0.012, 0.022], [0, 0.096, row + 0.5], {
+        color: context.theme.floorLine, castShadow: false, surface: 'floor',
+      });
+    }
   }
   const exteriorMaterials = addExterior(context, root);
   addSideWall(context, root, venue, 'left');
@@ -597,6 +701,9 @@ function buildCafe(context: BuildContext, root: Group, animated: AnimatedProp[])
   benchSeat.name = 'seat-surface:cafe-window';
   const benchBackrest = box(context, bench, [4.7, 0.92, 0.18], [-3.18, 1.04, -2.02], { color: context.theme.wood });
   benchBackrest.name = 'seat-backrest:cafe-window';
+  for (const x of [-4.72, -3.18, -1.64]) {
+    box(context, bench, [1.35, 0.1, 0.52], [x, 0.72, -1.74], { color: x === -3.18 ? '#5b4938' : '#4a4237', roughness: 0.92, surface: 'plaster' });
+  }
   addContactShadow(context, bench, 4.7, 0.62, -3.18, -1.78);
   for (const spot of VENUE_LAYOUTS.cafe.activitySpots) {
     if (spot.pose !== 'seated' || spot.kind !== 'bench') continue;
@@ -614,11 +721,18 @@ function buildCafe(context: BuildContext, root: Group, animated: AnimatedProp[])
   root.add(counter);
   box(context, counter, [4.4, 1.18, 1.15], [5.55, 0.6, -2.06], { color: context.theme.wood });
   box(context, counter, [4.65, 0.16, 1.36], [5.48, 1.28, -2.06], { color: context.theme.woodLight });
+  for (const x of [3.82, 4.52, 5.22, 5.92, 6.62, 7.32]) {
+    box(context, counter, [0.055, 0.86, 1.18], [x, 0.58, -2.04], { color: context.theme.wallDark, castShadow: false, surface: 'wood' });
+  }
   markFocusOccluder(context, counter, 'counter');
   const machine = new Group();
   root.add(machine);
   box(context, machine, [1.05, 1.05, 0.62], [6.2, 1.88, -2.12], { color: context.theme.metal, metalness: 0.72, roughness: 0.27, surface: 'metal' });
   glowPanel(context, machine, [0.3, 0.18, 0.04], [6.2, 2.04, -1.79], '#e6b86c');
+  for (const x of [5.95, 6.2, 6.45]) {
+    box(context, machine, [0.11, 0.08, 0.07], [x, 1.75, -1.77], { color: x === 6.2 ? context.theme.glow : context.theme.ink, castShadow: false, surface: x === 6.2 ? 'emissive' : 'metal' });
+  }
+  for (const x of [6.03, 6.37]) box(context, machine, [0.035, 0.35, 0.035], [x, 1.36, -1.77], { color: context.theme.metal, surface: 'metal' });
   markFocusOccluder(context, machine, 'machine');
   const cakeCase = new Group();
   root.add(cakeCase);
@@ -626,10 +740,18 @@ function buildCafe(context: BuildContext, root: Group, animated: AnimatedProp[])
   box(context, cakeCase, [1.05, 0.06, 0.72], [2.68, 0.68, -1.66], { color: '#fff2d2', surface: 'glass', castShadow: false });
   for (const x of [2.35, 2.68, 3.01]) cylinder(context, cakeCase, 0.14, 0.13, [x, 0.93, -1.52], '#d88a5d', 12, 'tile');
   markFocusOccluder(context, cakeCase, 'counter');
+  addWallShelf(context, root, -6.75, 2.9, -3.02, 1.45, 3);
+  addWallShelf(context, root, 4.82, 3.12, -3.02, 2.75, 2);
+  addPixelLantern(context, root, 0.24, 1.28, 1.65, context.theme.glow, 0.78);
+  addMug(context, root, -2.7, 1.14, 0.92, '#c6a77c');
+  addMug(context, root, -3.2, 1.14, 0.92, '#807862');
+  addMug(context, root, -0.35, 1.14, 1.62, '#688078');
+  addMug(context, root, 0.72, 1.14, 1.62, '#a57452');
   addPlant(context, root, 2.1, 0.05, -2.85);
   addPlant(context, root, -6.15, 0.05, 2.7);
   const cup = cylinder(context, root, 0.13, 0.24, [-2.95, 1.15, 0.9], '#ece0bd', 12);
   animated.push({ object: cup, phase: 0.2, speed: 1.1, amplitude: 0.025, axis: 'y' });
+  addSteamPlume(context, root, animated, -2.95, 1.36, 0.9, 0.2);
 }
 
 function buildRamen(context: BuildContext, root: Group, animated: AnimatedProp[]): void {
@@ -638,17 +760,17 @@ function buildRamen(context: BuildContext, root: Group, animated: AnimatedProp[]
   root.add(counter);
   box(context, counter, [10.2, 1.16, 1.0], [-1.02, 0.58, -2.02], { color: context.theme.wood });
   box(context, counter, [10.45, 0.16, 1.18], [-1.02, 1.25, -2.02], { color: context.theme.woodLight });
+  for (const x of [-5.5, -3.7, -1.9, -0.1, 1.7, 3.5]) {
+    box(context, counter, [0.07, 0.86, 1.02], [x, 0.56, -2.02], { color: context.theme.wallDark, castShadow: false, surface: 'wood' });
+  }
   markFocusOccluder(context, counter, 'counter');
-  for (const spot of VENUE_LAYOUTS.ramen.activitySpots.filter((entry) => entry.kind === 'counter-stool')) {
+  for (const [index, spot] of VENUE_LAYOUTS.ramen.activitySpots.filter((entry) => entry.kind === 'counter-stool').entries()) {
     if (spot.pose !== 'seated') continue;
     const point = worldToDiorama(spot);
     addStool(context, root, spot);
-    const bowl = cylinder(context, root, 0.2, 0.17, [point.x, 1.45, -1.75], '#efe1bc', 12, 'tile');
+    const bowl = cylinder(context, root, 0.2, 0.17, [point.x, 1.45, -1.75], index % 3 === 0 ? '#b9503d' : index % 3 === 1 ? '#b9a47e' : '#6f8078', 12, 'tile');
     bowl.scale.y = 0.55;
-    const steam = glowPanel(context, root, [0.035, 0.48, 0.035], [point.x, 1.84, -1.75], '#ffe5b3');
-    steam.material.transparent = true;
-    steam.material.opacity = 0.34;
-    animated.push({ object: steam, phase: point.x, speed: 1.5, amplitude: 0.12, axis: 'y' });
+    addSteamPlume(context, root, animated, point.x, 1.62, -1.75, point.x);
   }
   addTable(context, root, 5.25, 0.58, 1.35);
   for (const spot of VENUE_LAYOUTS.ramen.activitySpots.filter((entry) => entry.kind === 'table')) {
@@ -656,15 +778,22 @@ function buildRamen(context: BuildContext, root: Group, animated: AnimatedProp[]
   }
   box(context, root, [11.5, 0.2, 0.25], [-0.45, 4.35, -3.18], { color: context.theme.woodLight });
   box(context, root, [11.7, 1.55, 0.09], [-0.45, 2.75, -3.24], { color: '#8ba8ad', surface: 'tile', castShadow: false });
+  box(context, root, [11.7, 0.14, 0.22], [-0.45, 3.55, -3.12], { color: context.theme.wood, surface: 'wood' });
   box(context, root, [3.25, 1.28, 0.22], [-4.5, 2.75, -3.04], { color: context.theme.metal, surface: 'metal', metalness: 0.8 });
   for (const x of [-5.55, -4.8, -4.05, -3.3]) cylinder(context, root, 0.22, 0.38, [x, 1.58, -2.78], '#d8e3df', 12, 'metal');
-  for (const x of [-5.5, -3.65, -1.8, 0.05, 1.9, 3.75]) {
-    const cloth = box(context, root, [1.42, 1.35, 0.07], [x, 3.58, -3.1], { color: context.theme.accent, castShadow: false });
+  for (const [index, x] of [-4.7, -2.6, -0.5, 1.6, 3.7].entries()) {
+    const cloth = box(context, root, [1.62, 1.05 + (index % 2) * 0.1, 0.07], [x, 3.98 - (index % 2) * 0.05, -3.1], {
+      color: index % 2 === 0 ? context.theme.accent : '#87372f', castShadow: false, surface: 'wood',
+    });
+    box(context, root, [1.45, 0.055, 0.08], [x, 3.62, -3.02], { color: '#d29a62', castShadow: false, surface: 'wood' });
     animated.push({ object: cloth, phase: x, speed: 0.8, amplitude: 0.025, axis: 'z' });
   }
-  glowPanel(context, root, [4.6, 0.82, 0.08], [-0.45, 5.5, -3.08], '#edb95f');
-  box(context, root, [3.95, 0.38, 0.05], [-0.45, 5.5, -3], { color: context.theme.wallDark, castShadow: false });
+  box(context, root, [10.8, 0.24, 0.28], [-0.45, 5.25, -3.08], { color: context.theme.wood, castShadow: false, surface: 'wood' });
+  for (const x of [-5.2, -3.1, -1, 1.1, 3.2]) box(context, root, [0.11, 1.0, 0.18], [x, 4.74, -3.06], { color: context.theme.wallDark, castShadow: false, surface: 'wood' });
+  addWallShelf(context, root, 3.9, 2.65, -3, 2.1, 2);
+  for (const x of [-1.8, -0.7, 0.4, 1.5]) cylinder(context, root, 0.26 + ((x + 2) % 2) * 0.03, 0.42, [x, 1.58, -2.86], '#737a75', 12, 'metal');
   for (const x of [-6.2, -5.7, -5.2]) cylinder(context, root, 0.18, 0.4, [x, 1.55, -2.8], x === -5.7 ? '#d35e4d' : '#efe1bc', 12, 'tile');
+  addPixelLantern(context, root, 5.9, 0.52, 2.65, context.theme.glow, 0.95);
 }
 
 function arcadeCabinet(
@@ -674,42 +803,60 @@ function arcadeCabinet(
   z: number,
   rotation: number,
   color: ColorRepresentation,
+  variant: number,
 ): void {
   const cabinet = new Group();
   cabinet.name = 'focus-occluder:machine';
   cabinet.position.set(x, 0, z);
   cabinet.rotation.y = rotation;
   root.add(cabinet);
-  box(context, cabinet, [1.15, 2.75, 0.86], [0, 1.38, 0], { color: context.theme.wood, metalness: 0.18, surface: 'metal' });
-  box(context, cabinet, [1.28, 0.78, 1.03], [0, 2.45, 0.02], { color: context.theme.ink, surface: 'metal' });
-  glowPanel(context, cabinet, [0.82, 0.62, 0.05], [0, 2.47, 0.54], color);
-  box(context, cabinet, [1.02, 0.18, 0.58], [0, 1.71, 0.46], { color: context.theme.metal, metalness: 0.5, surface: 'metal' });
-  glowPanel(context, cabinet, [0.88, 0.08, 0.05], [0, 1.8, 0.57], color);
+  const bodyWidth = variant % 3 === 0 ? 1.08 : variant % 3 === 1 ? 1.18 : 1.12;
+  const bodyHeight = variant % 2 === 0 ? 2.7 : 2.84;
+  box(context, cabinet, [bodyWidth, bodyHeight, 0.88], [0, bodyHeight / 2, 0], { color: variant % 2 === 0 ? context.theme.wood : '#282d3c', metalness: 0.12, surface: 'metal' });
+  box(context, cabinet, [bodyWidth + 0.12, 0.68 + (variant % 2) * 0.08, 1.02], [0, bodyHeight - 0.34, 0.02], { color: context.theme.ink, surface: 'metal' });
+  glowPanel(context, cabinet, [0.76 + (variant % 3) * 0.04, 0.5 + (variant % 2) * 0.06, 0.05], [0, bodyHeight - 0.36, 0.54], color);
+  box(context, cabinet, [0.96, 0.18, 0.58], [0, 1.67, 0.46], { color: context.theme.metal, metalness: 0.38, surface: 'metal' });
+  box(context, cabinet, [0.82, 0.045, 0.05], [0, bodyHeight + 0.04, 0.48], { color, emissive: color, emissiveIntensity: 0.32, castShadow: false, surface: 'emissive' });
   cylinder(context, cabinet, 0.08, 0.2, [-0.25, 1.66, 0.68], '#f1d477', 8, 'emissive');
   cylinder(context, cabinet, 0.06, 0.14, [0.2, 1.67, 0.68], color, 8, 'emissive');
   markFocusOccluder(context, cabinet, 'machine');
 }
 
 function buildArcade(context: BuildContext, root: Group, animated: AnimatedProp[]): void {
+  // The rear wall is composed like a real late-night arcade: a framed entry,
+  // one calm datum and an illuminated threshold. Keeping this as a compact
+  // silhouette also protects the draw-call budget.
+  box(context, root, [13.3, 0.16, 0.2], [0, 5.92, -3.17], { color: context.theme.woodLight, castShadow: false, surface: 'metal' });
+  box(context, root, [3.35, 0.18, 0.24], [0, 5.32, -3.08], { color: '#4a657d', castShadow: false, surface: 'metal' });
+  for (const x of [-1.58, 1.58]) {
+    box(context, root, [0.17, 3.5, 0.22], [x, 3.55, -3.08], { color: '#405a70', castShadow: false, surface: 'metal' });
+  }
+  box(context, root, [2.86, 0.055, 0.1], [0, 5.08, -2.92], {
+    color: context.theme.neon, emissive: context.theme.neon, emissiveIntensity: 0.2, castShadow: false, surface: 'emissive',
+  });
   const cabinetColliders = VENUE_LAYOUTS.arcade.colliders.filter((collider) => collider.id.includes('cabinet'));
   for (const [index, collider] of cabinetColliders.entries()) {
     const point = worldToDiorama({ x: collider.x + collider.width / 2, y: collider.y + collider.height / 2 });
     const left = collider.id.includes('left');
-    arcadeCabinet(context, root, point.x, point.z, left ? Math.PI / 2 : -Math.PI / 2, index % 2 ? context.theme.accent : context.theme.neon);
+    const screenColor = index % 4 === 3 ? '#d49a55' : index % 2 ? context.theme.accent : context.theme.neon;
+    arcadeCabinet(context, root, point.x, point.z, left ? Math.PI / 2 : -Math.PI / 2, screenColor, index);
   }
   const counter = new Group();
   counter.name = 'focus-occluder:counter';
   root.add(counter);
   box(context, counter, [2.45, 1.1, 0.9], [3.12, 0.55, -2.9], { color: context.theme.wood });
   box(context, counter, [2.65, 0.16, 1.08], [3.12, 1.18, -2.9], { color: context.theme.metal, metalness: 0.42 });
-  for (const x of [2.55, 3.12, 3.69]) glowPanel(context, counter, [0.3, 0.22, 0.04], [x, 1.42, -2.43], x === 3.12 ? context.theme.accent : context.theme.neon);
+  for (const x of [2.55, 3.12, 3.69]) box(context, counter, [0.22, 0.18, 0.04], [x, 1.4, -2.43], {
+    color: x === 3.12 ? context.theme.accent : context.theme.neon, emissive: x === 3.12 ? context.theme.accent : context.theme.neon,
+    emissiveIntensity: 0.28, castShadow: false, surface: 'emissive',
+  });
   markFocusOccluder(context, counter, 'counter');
   const lounge = new Group();
   lounge.name = 'focus-occluder:chair:arcade-lounge';
   root.add(lounge);
-  const loungeSeat = box(context, lounge, [3.1, 0.34, 0.72], [0, 0.26, 2.18], { color: context.theme.woodLight });
+  const loungeSeat = box(context, lounge, [3.1, 0.34, 0.72], [0, 0.26, 2.18], { color: '#4a6379', roughness: 0.9, surface: 'plaster' });
   loungeSeat.name = 'seat-surface:arcade-lounge';
-  const loungeBackrest = box(context, lounge, [3.1, 0.62, 0.18], [0, 0.56, 1.88], { color: context.theme.wood });
+  const loungeBackrest = box(context, lounge, [3.1, 0.62, 0.18], [0, 0.56, 1.88], { color: '#354e64', roughness: 0.9, surface: 'plaster' });
   loungeBackrest.name = 'seat-backrest:arcade-lounge';
   const loungeEdge = box(context, lounge, [3.1, 0.055, 0.04], [0, 0.45, 2.55], {
     color: '#5cdade', emissive: '#5cdade', emissiveIntensity: 0.28, roughness: 0.5, castShadow: false, surface: 'emissive',
@@ -722,20 +869,16 @@ function buildArcade(context: BuildContext, root: Group, animated: AnimatedProp[
     bindSeat(context, loungeSpot, lounge, 'bench', { x: 0, z: 2.18 }, { x: 0, z: 1.88 });
   }
   markFocusOccluder(context, lounge, 'chair');
-  for (const x of [-2.1, 0, 2.1]) glowPanel(context, root, [1.4, 0.035, 0.08], [x, 0.115, 0.35], x === 0 ? context.theme.accent : context.theme.neon);
-  for (const [x, color] of [[-4.8, context.theme.neon], [4.8, context.theme.accent]] as const) {
-    box(context, root, [1.5, 1.9, 0.06], [x, 4.15, -3.24], { color: context.theme.wallDark, surface: 'plaster', castShadow: false });
-    for (let pixelIndex = 0; pixelIndex < 5; pixelIndex += 1) {
-      glowPanel(context, root, [0.2 + (pixelIndex % 2) * 0.18, 0.18, 0.035], [
-        x - 0.42 + (pixelIndex % 3) * 0.38,
-        3.75 + Math.floor(pixelIndex / 3) * 0.42,
-        -3.17,
-      ], color);
-    }
-  }
-  glowPanel(context, root, [6.2, 0.08, 0.08], [0, 5.55, -3.08], context.theme.neon);
-  const sign = glowPanel(context, root, [3.8, 0.72, 0.08], [0, 5.05, -3], context.theme.accent);
-  animated.push({ object: sign, phase: 1, speed: 3.2, amplitude: 0.025, axis: 'y' });
+  box(context, root, [5.2, 0.035, 3.45], [0, 0.12, 1.15], { color: '#4d2736', roughness: 0.95, castShadow: false, surface: 'plaster' });
+  box(context, root, [4.82, 0.02, 3.08], [0, 0.145, 1.15], { color: '#263444', roughness: 0.94, castShadow: false, surface: 'plaster' });
+  for (const offset of [-2.52, 2.52]) box(context, root, [0.16, 0.045, 3.48], [offset, 0.16, 1.15], { color: '#6e354b', castShadow: false, surface: 'plaster' });
+  for (const z of [-0.56, 2.86]) box(context, root, [5.2, 0.045, 0.16], [0, 0.16, z], { color: '#6e354b', castShadow: false, surface: 'plaster' });
+  box(context, root, [2.05, 0.16, 0.42], [0, 4.34, -3.08], { color: context.theme.metal, surface: 'metal' });
+  glowPanel(context, root, [1.72, 0.08, 0.08], [0, 4.34, -2.82], context.theme.neon);
+  addPixelLantern(context, root, -5.65, 4.42, -3.0, '#d5a45e', 0.72);
+  addPixelLantern(context, root, 5.65, 4.42, -3.0, '#d5a45e', 0.72);
+  const ticketLight = glowPanel(context, root, [0.28, 0.16, 0.04], [3.14, 1.5, -2.44], '#d29b55');
+  animated.push({ object: ticketLight, phase: 1, speed: 1.1, amplitude: 0.012, axis: 'y' });
 }
 
 export function buildVenue(venue: VenueKind): DioramaSet {
@@ -752,9 +895,10 @@ export function buildVenue(venue: VenueKind): DioramaSet {
   const materialCache = new Map<string, MeshStandardMaterial>();
   const focusOccluders: FocusOccluder[] = [];
   const seatBindings: SeatVisualBinding[] = [];
+  const lightPoolTexture = createPixelLightPoolTexture();
   const context: BuildContext = {
     geometries, materials, theme, profile, surfaces, usedSurfaceKinds, surfaceMaterials, geometryCache, materialCache,
-    focusOccluders, seatBindings, focusOccluderSerial: 0,
+    focusOccluders, seatBindings, lightPoolTexture, focusOccluderSerial: 0,
   };
   const animatedProps: AnimatedProp[] = [];
   const shell = buildShell(context, root, venue);
@@ -764,14 +908,13 @@ export function buildVenue(venue: VenueKind): DioramaSet {
   else buildArcade(context, root, animatedProps);
 
   const pendants = venue === 'arcade'
-    ? [addPendant(context, root, -3.1, 0.1, theme.neon), addPendant(context, root, 0.2, 0.1, theme.accent), addPendant(context, root, 4.65, -1, theme.neon)]
+    ? [addPendant(context, root, -5.1, -0.5, profile.lights.practical), addPendant(context, root, 5.1, -0.5, profile.lights.practical)]
     : venue === 'ramen'
       ? [
-        addPendant(context, root, -3.6, 0.5, profile.lights.fill),
-        addPendant(context, root, -0.4, 0.5, profile.lights.fill),
-        addPendant(context, root, 4.9, -1.25, profile.lights.practical),
+        addPendant(context, root, -4.35, 0.2, profile.lights.practical),
+        addPendant(context, root, 4.2, -0.2, profile.lights.practical),
       ]
-      : [addPendant(context, root, -3.6, 0.5, theme.glow), addPendant(context, root, -0.4, 0.5, theme.glow), addPendant(context, root, 4.9, -1.25, theme.glow)];
+      : [addPendant(context, root, -4.55, 0.2, theme.glow), addPendant(context, root, 0.1, 0.6, theme.glow), addPendant(context, root, 5.05, -1.15, theme.glow)];
 
   const availableSurfaceKinds = Object.keys(profile.surfaces) as SurfaceKind[];
   for (const kind of availableSurfaceKinds) surfaces.get(kind);
@@ -806,6 +949,7 @@ export function buildVenue(venue: VenueKind): DioramaSet {
       for (const mesh of batchedResources.meshes) mesh.dispose();
       for (const geometry of geometries) geometry.dispose();
       for (const entry of materials) entry.dispose();
+      lightPoolTexture.dispose();
       surfaces.dispose();
       root.removeFromParent();
     },

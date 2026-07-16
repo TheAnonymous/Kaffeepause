@@ -48,7 +48,7 @@ describe('asynchroner Art-Pack-Lader', () => {
     });
     const pack = await loader.load('cafe');
     expect(loader.state).toBe('ready');
-    expect(pack).toMatchObject({ venue: 'cafe', id: 'v3-cafe-filmic-density', disposed: false });
+    expect(pack).toMatchObject({ venue: 'cafe', id: 'v6-cafe-authored-materials', disposed: false });
     expect(pack?.textureForRegion('character-standing')).toBeDefined();
     expect(pack?.textureForRegion('surface-wood')).toBeDefined();
     pack?.dispose();

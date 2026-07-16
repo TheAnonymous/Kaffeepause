@@ -80,7 +80,7 @@ try {
     if (venue !== 'cafe') await page.locator(`[data-venue-choice="${venue}"]`).click();
     const canvas = page.locator('#cafe');
     await page.waitForFunction((expected) => document.querySelector('#cafe')?.getAttribute('data-venue') === expected, venue);
-    await page.waitForFunction((expected) => document.querySelector('#cafe')?.getAttribute('data-art-pack')?.startsWith(`v3-${expected}-`), venue);
+    await page.waitForFunction((expected) => document.querySelector('#cafe')?.getAttribute('data-art-pack')?.startsWith(`v6-${expected}-`), venue);
     const renderCount = Number(await canvas.getAttribute('data-render-count'));
     await page.locator(`[data-venue-choice="${venue}"]`).click();
     await page.waitForFunction((previous) => Number(document.querySelector('#cafe')?.getAttribute('data-render-count')) > previous, renderCount);

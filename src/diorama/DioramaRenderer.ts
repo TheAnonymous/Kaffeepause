@@ -897,10 +897,17 @@ export class DioramaRenderer {
 
   private overviewCameraTransform(): CameraTransform {
     const worldCenter = this.camera.x + this.sceneWidth / 2;
-    const overviewX = cameraPanForWorldX(worldCenter) - DIORAMA.width / 2;
+    const mobileStatic = this.sceneWidth < WORLD_WIDTH && this.reducedMotion;
+    const venueOffset = mobileStatic
+      ? this.venue === 'cafe' ? -1.4 : this.venue === 'ramen' ? -3.1 : 4.5
+      : 0;
+    const overviewX = cameraPanForWorldX(worldCenter) - DIORAMA.width / 2 + venueOffset;
+    const targetY = mobileStatic
+      ? this.venue === 'cafe' ? 2.3 : this.venue === 'ramen' ? 1.8 : 1.45
+      : this.venue === 'arcade' ? 1.9 : 2.55;
     return {
       position: { x: overviewX, y: 6.7, z: 15.8 },
-      target: { x: overviewX, y: 2.55, z: -0.2 },
+      target: { x: overviewX, y: targetY, z: -0.2 },
       fieldOfView: 30,
     };
   }

@@ -62,20 +62,20 @@ describe('diorama look direction', () => {
     const look = calculateDioramaLook('cafe', environment('midday', 'clear'));
 
     expect(look.daylight).toBe(1);
-    expect(look.exposure).toBeCloseTo(1.1, 6);
-    expect(look.ambientIntensity).toBeCloseTo(1.4, 6);
+    expect(look.exposure).toBeCloseTo(1.25, 6);
+    expect(look.ambientIntensity).toBeCloseTo(1.58, 6);
     expect(look.keyIntensity).toBeCloseTo(4.15, 6);
-    expect(look.practicalIntensity).toBeCloseTo(18, 6);
+    expect(look.practicalIntensity).toBeCloseTo(28, 6);
     expect(look.characterEmissive).toBeCloseTo(0.045, 6);
-    expect(look.shadowLift).toBeCloseTo(0.045, 6);
-    expect(look.vignette).toBeCloseTo(0.08, 6);
-    expect(look.lightPoolOpacity).toBeCloseTo(0.06, 6);
+    expect(look.shadowLift).toBeCloseTo(0.06, 6);
+    expect(look.vignette).toBeCloseTo(0.045, 6);
+    expect(look.lightPoolOpacity).toBeCloseTo(0.035, 6);
   });
 
   it.each([
-    ['cafe', 1.04],
-    ['ramen', 1.01],
-    ['arcade', 1.08],
+    ['cafe', 0.98],
+    ['ramen', 0.98],
+    ['arcade', 1.01],
   ] as const)('uses the %s saturation and adds only the bounded night lift', (venue, base) => {
     const day = calculateDioramaLook(venue, environment('midday', 'clear'));
     const night = calculateDioramaLook(venue, environment('night', 'clear'));
@@ -88,7 +88,7 @@ describe('diorama look direction', () => {
   it('caps arcade bloom peaks and character emissive light', () => {
     const look = calculateDioramaLook('arcade', environment('night', 'storm', 'storm', 1, 100));
 
-    expect(look.bloom).toBeCloseTo(0.42, 4);
+    expect(look.bloom).toBeCloseTo(0.3, 4);
     expect(look.characterEmissive).toBeLessThanOrEqual(0.31);
     expect(look.characterEmissive).toBeGreaterThan(0.26);
   });
@@ -100,22 +100,22 @@ describe('diorama look direction', () => {
       for (const phase of phases) {
         for (const progress of [0, 0.25, 0.5, 0.75, 1]) {
           const look = calculateDioramaLook(venue, environment(phase, 'storm', 'clear', progress, 100));
-          expect(look.exposure).toBeGreaterThanOrEqual(1);
-          expect(look.exposure).toBeLessThanOrEqual(1.14);
-          expect(look.ambientIntensity).toBeGreaterThanOrEqual(1.05);
-          expect(look.ambientIntensity).toBeLessThanOrEqual(1.4);
+          expect(look.exposure).toBeGreaterThanOrEqual(1.13);
+          expect(look.exposure).toBeLessThanOrEqual(1.56);
+          expect(look.ambientIntensity).toBeGreaterThanOrEqual(1.3);
+          expect(look.ambientIntensity).toBeLessThanOrEqual(2.35);
           expect(look.keyIntensity).toBeGreaterThanOrEqual(1.15);
           expect(look.keyIntensity).toBeLessThanOrEqual(4.15);
-          expect(look.practicalIntensity).toBeGreaterThanOrEqual(18);
-          expect(look.practicalIntensity).toBeLessThanOrEqual(42);
+          expect(look.practicalIntensity).toBeGreaterThanOrEqual(28);
+          expect(look.practicalIntensity).toBeLessThanOrEqual(62);
           expect(look.characterEmissive).toBeGreaterThanOrEqual(0.045);
           expect(look.characterEmissive).toBeLessThanOrEqual(0.3);
           expect(look.shadowLift).toBeGreaterThanOrEqual(0.045);
           expect(look.shadowLift).toBeLessThanOrEqual(0.2);
-          expect(look.vignette).toBeGreaterThanOrEqual(0.08);
-          expect(look.vignette).toBeLessThanOrEqual(0.12);
-          expect(look.lightPoolOpacity).toBeGreaterThanOrEqual(0.06);
-          expect(look.lightPoolOpacity).toBeLessThanOrEqual(0.24);
+          expect(look.vignette).toBeGreaterThanOrEqual(0.045);
+          expect(look.vignette).toBeLessThanOrEqual(0.07);
+          expect(look.lightPoolOpacity).toBeGreaterThanOrEqual(0.035);
+          expect(look.lightPoolOpacity).toBeLessThanOrEqual(0.13);
           expect(0.006 + look.fog * 0.038).toBeLessThanOrEqual(0.044);
           expect(0.55 - look.wetness * 0.2).toBeGreaterThanOrEqual(0.35);
           expect(0.08 + look.wetness * 0.14).toBeLessThanOrEqual(0.22);

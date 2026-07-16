@@ -8,7 +8,7 @@ import {
 } from 'three';
 import type { Barista, Guest, GuestAppearance, GuestPalette } from '../simulation/types';
 import type { VenueKind } from '../venue';
-import type { LoadedVenueArtPack, PixelAtlasRegion } from './artAssets';
+import type { LoadedVenueArtPack } from './artAssets';
 import type { CharacterTextureCacheStats } from './types';
 import type { CharacterPose, CharacterVisualState } from './characterVisualState';
 import { DIORAMA } from './types';
@@ -413,42 +413,6 @@ function drawSprite(context: PixelContext, description: SpriteDescription): void
   activityProp(context, description, center, seated ? shoulderY + 49 : shoulderY + 43);
 }
 
-interface CharacterAtlasOverlay {
-  readonly image: CanvasImageSource;
-  readonly regions: ReadonlyMap<string, PixelAtlasRegion>;
-}
-
-function characterAtlasRegion(description: SpriteDescription): string {
-  if (description.seated) return 'character-seated';
-  if (description.visual.pose === 'walking') return 'character-walking';
-  if (['wave', 'laugh', 'startle', 'nod'].includes(description.visual.gesture)) return 'character-reacting';
-  if (['compare', 'swap', 'clean'].includes(description.visual.gesture)) return 'character-reaching';
-  if (['drinking', 'serving', 'tasting'].includes(description.visual.pose)
-    || description.visual.gesture === 'toast') return 'character-holding';
-  return 'character-standing';
-}
-
-/** Uses the approved strip as a restrained material/highlight layer while palettes and identities stay procedural. */
-function applyCharacterAtlasOverlay(
-  context: PixelContext,
-  description: SpriteDescription,
-  overlay: CharacterAtlasOverlay | undefined,
-): void {
-  if (!overlay) return;
-  const region = overlay.regions.get(characterAtlasRegion(description));
-  if (!region) return;
-  context.save();
-  context.imageSmoothingEnabled = false;
-  context.globalCompositeOperation = 'source-atop';
-  context.globalAlpha = description.venue === 'arcade' ? 0.055 : 0.075;
-  context.drawImage(
-    overlay.image,
-    region.x, region.y, region.width, region.height,
-    0, 0, DIORAMA.spriteWidth, DIORAMA.spriteHeight,
-  );
-  context.restore();
-}
-
 function configureTexture(canvas: HTMLCanvasElement): CanvasTexture {
   const texture = new CanvasTexture(canvas);
   texture.magFilter = NearestFilter;
@@ -594,7 +558,6 @@ export class CharacterTextureCache<T extends DisposableTexture> {
 
 export class SpriteTextureLibrary {
   private readonly textures = new CharacterTextureCache<CanvasTexture>();
-  private characterAtlas?: CharacterAtlasOverlay;
 
   get cacheSize(): number {
     return this.textures.size;
@@ -612,11 +575,9 @@ export class SpriteTextureLibrary {
     this.textures.endFrame();
   }
 
-  setCharacterAtlas(pack?: LoadedVenueArtPack): void {
-    const image = pack?.sharedTexture.image as CanvasImageSource | undefined;
-    this.characterAtlas = pack && image
-      ? { image, regions: new Map(pack.manifest.shared.regions.map((region) => [region.id, region])) }
-      : undefined;
+  setCharacterAtlas(_pack?: LoadedVenueArtPack): void {
+    // V6 keeps every visible identity and pose in the deterministic sprite pass.
+    // The compatibility atlas remains loadable but never paints generated pixels over a face or silhouette.
     this.textures.clear();
   }
 
@@ -664,7 +625,6 @@ export class SpriteTextureLibrary {
       const context = canvas.getContext('2d', { alpha: true, colorSpace: 'srgb' });
       if (!context) throw new Error('Pixelsprites können in diesem Browser nicht erzeugt werden.');
       drawSprite(context, description);
-      applyCharacterAtlasOverlay(context, description, this.characterAtlas);
       applyOneTexelSilhouette(context, description.venue);
       const texture = configureTexture(canvas);
       texture.name = `character:${key}`;

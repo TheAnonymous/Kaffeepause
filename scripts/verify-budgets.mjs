@@ -49,8 +49,8 @@ for (const file of audioFiles) {
   if (file.endsWith('atmosphere.mp3') && (duration < 30 || duration > 45)) fail(`${file}: loop duration ${duration}`);
 }
 
-const sharedArt = join('public/art/v3/shared', 'character-atlas.webp');
-const venueArt = ['cafe', 'ramen', 'arcade'].map((venue) => join('public/art/v3/venues', `${venue}-atlas.webp`));
+const sharedArt = join('public/art/v6/shared', 'character-atlas.webp');
+const venueArt = ['cafe', 'ramen', 'arcade'].map((venue) => join('public/art/v6/venues', `${venue}-atlas.webp`));
 const sharedAtmosphereArt = join('public/art/v5/shared', 'atmosphere-atlas.webp');
 const venueAtmosphereArt = ['cafe', 'ramen', 'arcade']
   .map((venue) => join('public/art/v5/venues', `${venue}-atlas.webp`));

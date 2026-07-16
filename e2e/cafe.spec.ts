@@ -156,9 +156,9 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
   await expect(canvas).toHaveAttribute('data-selective-bloom', 'half-res-registered');
   await expect(canvas).toHaveAttribute('data-character-bloom', 'excluded');
   await expect(canvas).toHaveAttribute('data-art-assets', 'ready', { timeout: 15_000 });
-  await expect(canvas).toHaveAttribute('data-art-pack', /^v3-cafe-/);
+  await expect(canvas).toHaveAttribute('data-art-pack', /^v6-cafe-/);
   await expect(canvas).toHaveAttribute('data-atmosphere-assets', 'ready', { timeout: 15_000 });
-  await expect(canvas).toHaveAttribute('data-texture-bytes', '392802');
+  await expect(canvas).toHaveAttribute('data-texture-bytes', '94616');
   await expect(canvas).toHaveAttribute('data-atmosphere-wave', 'none');
   await expect(canvas).toHaveAttribute('data-atmosphere-phase', 'idle');
   await expect(canvas).toHaveAttribute('data-atmosphere-zone', 'none');
@@ -181,10 +181,10 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
   await expect(canvas).toHaveAttribute('data-surface-textures', '7');
   await expect(canvas).toHaveAttribute('data-focus-bounds', 'none');
   await expect(canvas).toHaveAttribute('data-focus-safe', 'true');
-  await expect(canvas).toHaveAttribute('data-exposure', '1.10');
+  await expect(canvas).toHaveAttribute('data-exposure', '1.25');
   await expect(canvas).toHaveAttribute('data-character-emissive', '0.05');
-  await expect(canvas).toHaveAttribute('data-shadow-lift', '0.05');
-  await expect(canvas).toHaveAttribute('data-saturation', '1.04');
+  await expect(canvas).toHaveAttribute('data-shadow-lift', '0.06');
+  await expect(canvas).toHaveAttribute('data-saturation', '0.98');
   expect(await canvas.evaluate((element) => {
     const target = element as HTMLCanvasElement;
     return { width: target.width, height: target.height };
@@ -279,7 +279,7 @@ test('entsorgt Figuren- und Art-Texturen bei Kontextverlust und stellt den Ort w
     element.dispatchEvent(new Event('webglcontextrestored'));
   });
   await expect(canvas).toHaveAttribute('data-art-assets', 'ready', { timeout: 15_000 });
-  await expect(canvas).toHaveAttribute('data-art-pack', /^v3-cafe-/);
+  await expect(canvas).toHaveAttribute('data-art-pack', /^v6-cafe-/);
 });
 
 test('kehrt nach beschleunigten Figuren-, Moment-, Atlas- und Ortswechseln zum Ressourcenstand zurück', async ({ page }) => {
@@ -304,7 +304,7 @@ test('kehrt nach beschleunigten Figuren-, Moment-, Atlas- und Ortswechseln zum R
         (window as typeof window & { setDioramaDiagnosticVenue?: (venue: VisualVenue) => void })
           .setDioramaDiagnosticVenue?.(nextVenue);
       }, venue);
-      await expect(canvas).toHaveAttribute('data-art-pack', new RegExp(`^v3-${venue}-`), { timeout: 15_000 });
+      await expect(canvas).toHaveAttribute('data-art-pack', new RegExp(`^v6-${venue}-`), { timeout: 15_000 });
       await stepDiagnosticFrames(page, 2, 0);
       await renderVisualFrame(page);
       await expect.poll(async () => Number(await canvas.getAttribute('data-character-cache'))).toBeLessThanOrEqual(64);
@@ -1000,7 +1000,7 @@ async function setFramePaused(page: Page, paused: boolean): Promise<void> {
 
 async function chooseVenue(page: Page, venue: VisualVenue): Promise<void> {
   if (venue !== 'cafe') await page.locator(`[data-venue-choice="${venue}"]`).click();
-  await expect(page.locator('#cafe')).toHaveAttribute('data-art-pack', new RegExp(`^v3-${venue}-`), { timeout: 15_000 });
+  await expect(page.locator('#cafe')).toHaveAttribute('data-art-pack', new RegExp(`^v6-${venue}-`), { timeout: 15_000 });
   await expect(page.locator('#cafe')).toHaveAttribute('data-art-assets', 'ready', { timeout: 15_000 });
   await expect(page.locator('#cafe')).toHaveAttribute('data-atmosphere-assets', 'ready', { timeout: 15_000 });
 }
