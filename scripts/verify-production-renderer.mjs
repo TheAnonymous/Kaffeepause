@@ -6,7 +6,9 @@ const origin = `http://127.0.0.1:${port}`;
 const drawCallBudgets = { cafe: 220, ramen: 130, arcade: 165 };
 const fail = (message) => { throw new Error(message); };
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-const server = spawn('npm', ['run', 'preview', '--', '--host', '127.0.0.1', '--port', String(port)], {
+const server = spawn(process.execPath, [
+  'node_modules/vite/bin/vite.js', 'preview', '--host', '127.0.0.1', '--port', String(port),
+], {
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let serverOutput = '';
@@ -23,6 +25,19 @@ async function waitForServer() {
     await wait(100);
   }
   fail(`preview did not become ready\n${serverOutput}`);
+}
+
+async function stopServer() {
+  if (server.exitCode !== null) return;
+  const exited = new Promise((resolve) => server.once('exit', resolve));
+  server.kill('SIGTERM');
+  await Promise.race([exited, wait(5_000)]);
+  if (server.exitCode === null) {
+    server.kill('SIGKILL');
+    await Promise.race([exited, wait(5_000)]);
+  }
+  server.stdout.destroy();
+  server.stderr.destroy();
 }
 
 async function readyPage(browser, viewport) {
@@ -118,5 +133,5 @@ try {
   console.log(JSON.stringify({ venues: results, mobile, contextRecovery: 'pass' }));
 } finally {
   await browser?.close();
-  server.kill('SIGTERM');
+  await stopServer();
 }
