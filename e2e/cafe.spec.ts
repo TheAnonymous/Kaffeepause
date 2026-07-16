@@ -104,6 +104,7 @@ async function expectFocusFraming(
 async function expectFocusRestoredByReducedMotion(page: Page): Promise<void> {
   const canvas = page.locator('#cafe');
   await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(page.locator('body')).toHaveAttribute('data-reduced-motion', 'true');
   await expect(canvas).toHaveAttribute('data-camera-focus', 'none');
   await expect(canvas).toHaveAttribute('data-focus-occluders', 'none');
   await expect(canvas).toHaveAttribute('data-focus-occluder-opacity', '1.00');
@@ -156,11 +157,17 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
   await expect(canvas).toHaveAttribute('data-character-bloom', 'excluded');
   await expect(canvas).toHaveAttribute('data-art-assets', 'ready', { timeout: 15_000 });
   await expect(canvas).toHaveAttribute('data-art-pack', /^v3-cafe-/);
-  await expect(canvas).toHaveAttribute('data-texture-bytes', '334304');
+  await expect(canvas).toHaveAttribute('data-atmosphere-assets', 'ready', { timeout: 15_000 });
+  await expect(canvas).toHaveAttribute('data-texture-bytes', '392802');
+  await expect(canvas).toHaveAttribute('data-atmosphere-wave', 'none');
+  await expect(canvas).toHaveAttribute('data-atmosphere-phase', 'idle');
+  await expect(canvas).toHaveAttribute('data-atmosphere-zone', 'none');
+  await expect(canvas).toHaveAttribute('data-atmosphere-intensity', '0.000');
+  await expect(canvas).toHaveAttribute('data-audio-layers', /music-electric-piano/);
   await renderVisualFrame(page);
   await expect.poll(async () => Number(await canvas.getAttribute('data-draw-calls'))).toBeGreaterThan(0);
   await expect(canvas).toHaveAttribute('data-bloom-surfaces', /[1-9]\d*/);
-  await expect(canvas).toHaveAttribute('data-weather-layers', '3');
+  await expect(canvas).toHaveAttribute('data-weather-layers', '1-batched');
   await expect(canvas).toHaveAttribute('data-audio-samples', 'idle');
   await expect(canvas).toHaveAttribute('data-emote-bubbles', '0');
   await expect(canvas).toHaveAttribute('data-camera-focus-target', 'none');
@@ -995,6 +1002,7 @@ async function chooseVenue(page: Page, venue: VisualVenue): Promise<void> {
   if (venue !== 'cafe') await page.locator(`[data-venue-choice="${venue}"]`).click();
   await expect(page.locator('#cafe')).toHaveAttribute('data-art-pack', new RegExp(`^v3-${venue}-`), { timeout: 15_000 });
   await expect(page.locator('#cafe')).toHaveAttribute('data-art-assets', 'ready', { timeout: 15_000 });
+  await expect(page.locator('#cafe')).toHaveAttribute('data-atmosphere-assets', 'ready', { timeout: 15_000 });
 }
 
 async function hideVisualUi(page: Page): Promise<void> {
@@ -1112,4 +1120,119 @@ test('hält Renderer- und Art-Pack-Fallback als V3-Baseline', async ({ page }) =
   await setFramePaused(page, true);
   await hideVisualUi(page);
   await captureBaseline(page, 'v3-renderer-art-fallback');
+});
+
+const atmosphereBaselines = [
+  { name: 'v5-cafe-espresso', venue: 'cafe', wave: 'cafe-espresso-cycle', time: '20:30', weather: 'rain' },
+  { name: 'v5-ramen-broth', venue: 'ramen', wave: 'ramen-broth-breath', time: '20:30', weather: 'rain' },
+  { name: 'v5-arcade-chorus', venue: 'arcade', wave: 'arcade-machine-chorus', time: '22:00', weather: 'clear' },
+  { name: 'v5-rain-surge', venue: 'cafe', wave: 'rain-surge', time: '20:30', weather: 'rain' },
+  { name: 'v5-distant-thunder', venue: 'cafe', wave: 'distant-thunder', time: '20:30', weather: 'storm' },
+  { name: 'v5-snow-quiet', venue: 'cafe', wave: 'snow-quiet', time: '23:30', weather: 'snow' },
+  { name: 'v5-fog-glow', venue: 'cafe', wave: 'fog-glow', time: '06:30', weather: 'fog' },
+] as const;
+
+for (const scene of atmosphereBaselines) {
+  test(`hält ${scene.name} als V5-Baseline`, async ({ page }) => {
+    test.setTimeout(45_000);
+    await page.setViewportSize({ width: 1440, height: 810 });
+    await installFramePause(page);
+    await openCafe(page, `/?time=${scene.time}&weather=${scene.weather}&atmosphere=${scene.wave}&atmospherePhase=hold`, 'balanced');
+    await chooseVenue(page, scene.venue);
+    await pauseBeforeEntry(page);
+    await page.getByTestId('enter').click();
+    const canvas = page.locator('#cafe');
+    await expect(canvas).toHaveAttribute('data-atmosphere-wave', scene.wave, { timeout: 10_000 });
+    await expect(canvas).toHaveAttribute('data-atmosphere-phase', 'hold');
+    await expect.poll(async () => Number(await canvas.getAttribute('data-atmosphere-intensity'))).toBeGreaterThan(0.99);
+    await renderVisualFrame(page);
+    await setFramePaused(page, true);
+    await hideVisualUi(page);
+    await captureBaseline(page, scene.name);
+  });
+}
+
+const mobileAtmosphereBaselines = [
+  { name: 'v5-cafe-mobile-pedestrian', venue: 'cafe', wave: 'pedestrian-poetry', time: '20:30', weather: 'rain' },
+  { name: 'v5-ramen-mobile-wind', venue: 'ramen', wave: 'wind-gust', time: '20:30', weather: 'rain' },
+  { name: 'v5-arcade-mobile-traffic', venue: 'arcade', wave: 'traffic-glow', time: '22:00', weather: 'clear' },
+] as const;
+
+for (const scene of mobileAtmosphereBaselines) {
+  test(`hält ${scene.name} als mobile V5-Baseline`, async ({ page }) => {
+    test.setTimeout(45_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await installFramePause(page);
+    await openCafe(page, `/?time=${scene.time}&weather=${scene.weather}&atmosphere=${scene.wave}&atmospherePhase=hold`, 'balanced');
+    await chooseVenue(page, scene.venue);
+    await pauseBeforeEntry(page);
+    await page.getByTestId('enter').click();
+    const canvas = page.locator('#cafe');
+    await expect(canvas).toHaveAttribute('data-atmosphere-wave', scene.wave, { timeout: 10_000 });
+    await renderVisualFrame(page);
+    await setFramePaused(page, true);
+    await hideVisualUi(page);
+    await captureBaseline(page, scene.name);
+  });
+}
+
+test('hält bewegte Außenwellen bei Reduced Motion als ruhige V5-Überblendung', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await installFramePause(page);
+  await openCafe(page, '/?time=20:30&weather=rain&atmosphere=pedestrian-poetry&atmospherePhase=hold', 'balanced');
+  await chooseVenue(page, 'cafe');
+  await pauseBeforeEntry(page);
+  await page.getByTestId('enter').click();
+  const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-atmosphere-wave', 'pedestrian-poetry', { timeout: 10_000 });
+  await expect(page.locator('body')).toHaveAttribute('data-reduced-motion', 'true');
+  await expect(canvas).toHaveAttribute('data-particles', 'low');
+  await renderVisualFrame(page);
+  await setFramePaused(page, true);
+  await hideVisualUi(page);
+  await captureBaseline(page, 'v5-reduced-motion');
+});
+
+test('hält den V5-Atmosphärenfallback ohne Atlas- oder Bloom-Abhängigkeit', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await installFramePause(page);
+  await openCafe(page, '/?time=20:30&weather=rain&atmosphere=rain-surge&atmospherePhase=hold&atmosphereAssets=fallback', 'fallback');
+  const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-atmosphere-assets', 'failed', { timeout: 15_000 });
+  await pauseBeforeEntry(page);
+  await page.getByTestId('enter').click();
+  await expect(canvas).toHaveAttribute('data-atmosphere-wave', 'rain-surge', { timeout: 10_000 });
+  await expect(canvas).toHaveAttribute('data-bloom-pass', 'off');
+  await renderVisualFrame(page);
+  await setFramePaused(page, true);
+  await hideVisualUi(page);
+  await captureBaseline(page, 'v5-atmosphere-fallback');
+});
+
+test('hält Draw-Call- und Texturbudgets am Höhepunkt aller Venue-Signaturen', async ({ page }) => {
+  test.setTimeout(75_000);
+  const cases = [
+    { venue: 'cafe', wave: 'cafe-espresso-cycle', drawCalls: 220 },
+    { venue: 'ramen', wave: 'ramen-broth-breath', drawCalls: 130 },
+    { venue: 'arcade', wave: 'arcade-machine-chorus', drawCalls: 165 },
+  ] as const;
+  await page.setViewportSize({ width: 1440, height: 810 });
+  for (const entry of cases) {
+    await openCafe(page, `/?time=20:30&weather=rain&atmosphere=${entry.wave}&atmospherePhase=hold`, 'master');
+    await chooseVenue(page, entry.venue);
+    const canvas = page.locator('#cafe');
+    await expect(canvas).toHaveAttribute('data-atmosphere-wave', entry.wave, { timeout: 10_000 });
+    await renderVisualFrame(page);
+    const metrics = await canvas.evaluate((element) => ({
+      drawCalls: Number(element.dataset.drawCalls),
+      textureBytes: Number(element.dataset.estimatedTextureBytes),
+      characterCache: Number(element.dataset.characterCache),
+      renderTargets: Number(element.dataset.renderTargets),
+    }));
+    expect(metrics.drawCalls).toBeLessThanOrEqual(entry.drawCalls);
+    expect(metrics.textureBytes).toBeLessThan(64 * 1024 * 1024);
+    expect(metrics.characterCache).toBeLessThanOrEqual(64);
+    expect(metrics.renderTargets).toBe(4);
+  }
 });

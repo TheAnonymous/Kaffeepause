@@ -5,6 +5,7 @@ import type { VenueKind } from '../venue';
 import type { RenderQualityTier } from './renderQuality';
 import type { SceneSnapshot } from './types';
 import type { PointerSample } from '../diorama/pointerReaction';
+import type { AtmosphereSnapshot } from '../atmosphere/types';
 
 export type RendererState = 'loading' | 'ready' | 'failed';
 
@@ -36,6 +37,7 @@ export interface RendererLifecycle {
   resize(reducedMotion: boolean): void;
   setVenue(venue: VenueKind): void;
   setEnvironment(snapshot: CafeEnvironmentSnapshot): void;
+  setAtmosphere(snapshot: AtmosphereSnapshot): void;
   setQualityTier(tier: RenderQualityTier): void;
   setPointerSample(sample: PointerSample): void;
   clearPointerSample(): void;
