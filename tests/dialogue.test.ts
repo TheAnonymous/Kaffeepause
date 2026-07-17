@@ -30,6 +30,11 @@ function scene(guests: readonly Guest[]): SceneSnapshot {
       sketchbook: 0, 'first-date': 0, 'knit-gift': 0, 'arcade-rivals': 0,
       'order-mixup': 0, 'noodle-mishap': 0, 'glitched-coop': 0,
     },
+    navigation: {
+      movingGuests: 0, yieldingGuests: 0, blockedGuests: 0, replans: 0, recoveries: 0,
+      deadlocks: 0, maxBlockedSeconds: 0, minimumGuestDistance: 0, staticClear: true,
+    },
+    livingDirection: { activeRoutes: [], completedSequences: 0, goldenSequence: 'cafe-window-to-pastry' },
   };
 }
 

@@ -1,5 +1,6 @@
 import type { VenueKind } from '../venue';
 import type { BaristaTask, GuestActivity, Point } from './types';
+import { LIVING_ROUTES_BY_VENUE } from './livingDirection';
 
 export const WORLD_WIDTH = 384;
 export const WORLD_HEIGHT = 216;
@@ -65,6 +66,7 @@ export interface VenueLayout {
   readonly colliders: readonly CollisionRect[];
   readonly queuePlaces: readonly Place[];
   readonly waitPlaces: readonly Place[];
+  readonly passingPlaces: readonly Place[];
   readonly activitySpots: readonly ActivitySpot[];
   readonly staffPlaces: Readonly<Record<BaristaTask, Readonly<Point>>>;
   readonly population: PopulationBounds;
@@ -100,6 +102,11 @@ const cafe: VenueLayout = {
     { id: 'cafe-wait-0', x: 266, y: 196 },
     { id: 'cafe-wait-1', x: 240, y: 202 },
   ],
+  passingPlaces: [
+    { id: 'cafe-pass-window', x: 58, y: 194 },
+    { id: 'cafe-pass-middle', x: 185, y: 160 },
+    { id: 'cafe-pass-counter', x: 228, y: 202 },
+  ],
   activitySpots: [
     { id: 'cafe-window-a', x: 86, y: 160, kind: 'bench', pose: 'seated', seatOrientation: 'front', facing: 1, groupId: 'cafe-window', tags: ['window'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
     { id: 'cafe-window-b', x: 145, y: 160, kind: 'bench', pose: 'seated', seatOrientation: 'front', facing: -1, groupId: 'cafe-window', tags: ['window'], activities: QUIET_ACTIVITIES, focusHeight: 1.58 },
@@ -113,7 +120,7 @@ const cafe: VenueLayout = {
     restocking: { x: 282, y: 132 }, polishing: { x: 365, y: 132 }, grinding: { x: 338, y: 132 }, tasting: { x: 310, y: 132 },
   },
   population: { min: 4, max: 6 },
-  navigation: { minX: 14, maxX: 368, minY: 132, maxY: 204, step: 12 },
+  navigation: { minX: 14, maxX: 368, minY: 130, maxY: 210, step: 10 },
 };
 
 const ramen: VenueLayout = {
@@ -127,14 +134,19 @@ const ramen: VenueLayout = {
     { id: 'ramen-ceramic-shelf', x: 16, y: 132, width: 22, height: 40 },
   ],
   queuePlaces: [
-    { id: 'ramen-queue-0', x: 300, y: 158 },
-    { id: 'ramen-queue-1', x: 320, y: 194 },
-    { id: 'ramen-queue-2', x: 342, y: 198 },
-    { id: 'ramen-queue-3', x: 360, y: 204 },
+    { id: 'ramen-queue-0', x: 300, y: 164 },
+    { id: 'ramen-queue-1', x: 320, y: 164 },
+    { id: 'ramen-queue-2', x: 342, y: 164 },
+    { id: 'ramen-queue-3', x: 362, y: 164 },
   ],
   waitPlaces: [
     { id: 'ramen-wait-0', x: 280, y: 190 },
     { id: 'ramen-wait-1', x: 256, y: 202 },
+  ],
+  passingPlaces: [
+    { id: 'ramen-pass-left', x: 72, y: 198 },
+    { id: 'ramen-pass-middle', x: 230, y: 190 },
+    { id: 'ramen-pass-right', x: 350, y: 170 },
   ],
   activitySpots: [
     { id: 'ramen-counter-1', x: 74, y: 166, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: 1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES, focusHeight: 1.62 },
@@ -150,7 +162,7 @@ const ramen: VenueLayout = {
     restocking: { x: 58, y: 134 }, polishing: { x: 130, y: 134 }, grinding: { x: 250, y: 134 }, tasting: { x: 210, y: 134 },
   },
   population: { min: 5, max: 7 },
-  navigation: { minX: 16, maxX: 370, minY: 132, maxY: 204, step: 12 },
+  navigation: { minX: 16, maxX: 370, minY: 130, maxY: 210, step: 10 },
 };
 
 const arcade: VenueLayout = {
@@ -178,6 +190,11 @@ const arcade: VenueLayout = {
     { id: 'arcade-wait-0', x: 246, y: 162 },
     { id: 'arcade-wait-1', x: 270, y: 176 },
   ],
+  passingPlaces: [
+    { id: 'arcade-pass-rear', x: 192, y: 164 },
+    { id: 'arcade-pass-left', x: 116, y: 186 },
+    { id: 'arcade-pass-right', x: 268, y: 186 },
+  ],
   activitySpots: [
     { id: 'arcade-left-1', x: 76, y: 150, kind: 'arcade-cabinet', pose: 'standing', facing: -1, groupId: 'arcade-pair-1', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES, focusHeight: 2.02 },
     { id: 'arcade-left-2', x: 76, y: 176, kind: 'arcade-cabinet', pose: 'standing', facing: -1, groupId: 'arcade-pair-2', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES, focusHeight: 2.02 },
@@ -192,7 +209,7 @@ const arcade: VenueLayout = {
     restocking: { x: 254, y: 124 }, polishing: { x: 278, y: 124 }, grinding: { x: 262, y: 124 }, tasting: { x: 242, y: 124 },
   },
   population: { min: 4, max: 7 },
-  navigation: { minX: 18, maxX: 366, minY: 130, maxY: 204, step: 12 },
+  navigation: { minX: 18, maxX: 366, minY: 130, maxY: 210, step: 10 },
 };
 
 export const VENUE_LAYOUTS: Readonly<Record<VenueKind, VenueLayout>> = Object.freeze({ cafe, ramen, arcade });
@@ -213,20 +230,84 @@ export function pointHitsVenueCollider(layout: VenueLayout, point: Point, radius
   ));
 }
 
-export function segmentIsClear(layout: VenueLayout, start: Point, end: Point, radius = GUEST_RADIUS): boolean {
-  const steps = Math.max(1, Math.ceil(Math.hypot(start.x - end.x, start.y - end.y) / 2));
-  for (let index = 1; index <= steps; index += 1) {
-    const progress = index / steps;
-    if (pointHitsVenueCollider(layout, {
-      x: start.x + (end.x - start.x) * progress,
-      y: start.y + (end.y - start.y) * progress,
-    }, radius)) return false;
-  }
-  return true;
+export function pointIsOutsideVenue(layout: VenueLayout, point: Point): boolean {
+  if (layout.entryFlow === 'left') return point.x <= 0;
+  if (layout.entryFlow === 'right') return point.x >= WORLD_WIDTH;
+  return point.y <= 126;
 }
 
-export function planVenueRoute(layout: VenueLayout, start: Point, target: Point): Point[] {
-  if (segmentIsClear(layout, start, target)) return [];
+export function pointWithinVenueWalkableArea(layout: VenueLayout, point: Point, radius = GUEST_RADIUS): boolean {
+  const entry = layout.entrance;
+  if (pointIsOutsideVenue(layout, point)) {
+    return layout.entryFlow === 'rear'
+      ? Math.abs(point.x - entry.x) <= radius * 2
+      : Math.abs(point.y - entry.y) <= radius * 2;
+  }
+  const { minX, maxX, minY, maxY } = layout.navigation;
+  if (point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY) return true;
+  if (layout.entryFlow === 'left') return point.x <= entry.x && Math.abs(point.y - entry.y) <= radius * 2;
+  if (layout.entryFlow === 'right') return point.x >= entry.x && Math.abs(point.y - entry.y) <= radius * 2;
+  return point.y <= entry.y && Math.abs(point.x - entry.x) <= radius * 2;
+}
+
+export function segmentIsClear(layout: VenueLayout, start: Point, end: Point, radius = GUEST_RADIUS): boolean {
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  return layout.colliders.every((collider) => {
+    const bounds = {
+      minX: collider.x - radius + 1e-6,
+      maxX: collider.x + collider.width + radius - 1e-6,
+      minY: collider.y - radius + 1e-6,
+      maxY: collider.y + collider.height + radius - 1e-6,
+    };
+    let entry = 0;
+    let exit = 1;
+    let separated = false;
+    for (const [origin, delta, minimum, maximum] of [
+      [start.x, deltaX, bounds.minX, bounds.maxX],
+      [start.y, deltaY, bounds.minY, bounds.maxY],
+    ] as const) {
+      if (Math.abs(delta) < 1e-9) {
+        if (origin <= minimum || origin >= maximum) {
+          separated = true;
+          break;
+        }
+        continue;
+      }
+      const first = (minimum - origin) / delta;
+      const second = (maximum - origin) / delta;
+      entry = Math.max(entry, Math.min(first, second));
+      exit = Math.min(exit, Math.max(first, second));
+      if (entry > exit) {
+        separated = true;
+        break;
+      }
+    }
+    return separated || exit < 0 || entry > 1;
+  });
+}
+
+export function planVenueRoute(
+  layout: VenueLayout,
+  start: Point,
+  target: Point,
+  avoidPoints: readonly Readonly<Point>[] = [],
+): Point[] {
+  const avoidsOccupiedPoint = (point: Point): boolean => avoidPoints.every((occupied) => (
+    Math.hypot(point.x - occupied.x, point.y - occupied.y) >= GUEST_RADIUS * 2.05
+  ));
+  const segmentAvoidsOccupiedPoints = (from: Point, to: Point): boolean => {
+    const steps = Math.max(1, Math.ceil(Math.hypot(from.x - to.x, from.y - to.y) / 2));
+    for (let index = 1; index <= steps; index += 1) {
+      const progress = index / steps;
+      if (!avoidsOccupiedPoint({
+        x: from.x + (to.x - from.x) * progress,
+        y: from.y + (to.y - from.y) * progress,
+      })) return false;
+    }
+    return true;
+  };
+  if (segmentIsClear(layout, start, target) && segmentAvoidsOccupiedPoints(start, target)) return [];
   const { minX, maxX, minY, maxY, step } = layout.navigation;
   const columns = Math.floor((maxX - minX) / step) + 1;
   const rows = Math.floor((maxY - minY) / step) + 1;
@@ -238,7 +319,8 @@ export function planVenueRoute(layout: VenueLayout, start: Point, target: Point)
     for (let row = 0; row < rows; row += 1) {
       for (let column = 0; column < columns; column += 1) {
         const point = pointFor(column, row);
-        if (pointHitsVenueCollider(layout, point) || !segmentIsClear(layout, origin, point)) continue;
+        if (pointHitsVenueCollider(layout, point) || !avoidsOccupiedPoint(point)
+          || !segmentIsClear(layout, origin, point) || !segmentAvoidsOccupiedPoints(origin, point)) continue;
         candidates.push({ key: keyFor(column, row), distance: Math.hypot(origin.x - point.x, origin.y - point.y) });
       }
     }
@@ -261,8 +343,9 @@ export function planVenueRoute(layout: VenueLayout, start: Point, target: Point)
       if (nextColumn < 0 || nextColumn >= columns || nextRow < 0 || nextRow >= rows) continue;
       const nextKey = keyFor(nextColumn, nextRow);
       const nextPoint = pointFor(nextColumn, nextRow);
-      if (visited.has(nextKey) || pointHitsVenueCollider(layout, nextPoint)
-        || !segmentIsClear(layout, pointFor(column, row), nextPoint)) continue;
+      if (visited.has(nextKey) || pointHitsVenueCollider(layout, nextPoint) || !avoidsOccupiedPoint(nextPoint)
+        || !segmentIsClear(layout, pointFor(column, row), nextPoint)
+        || !segmentAvoidsOccupiedPoints(pointFor(column, row), nextPoint)) continue;
       visited.add(nextKey);
       previous.set(nextKey, current);
       queue.push(nextKey);
@@ -299,7 +382,9 @@ export function activitySpotById(layout: VenueLayout, id?: string): ActivitySpot
 export function validateVenueLayout(layout: VenueLayout): VenueLayoutReport {
   const issues: string[] = [];
   const ids = new Set<string>();
-  const resources = [...layout.colliders, ...layout.queuePlaces, ...layout.waitPlaces, ...layout.activitySpots];
+  const resources = [
+    ...layout.colliders, ...layout.queuePlaces, ...layout.waitPlaces, ...layout.passingPlaces, ...layout.activitySpots,
+  ];
   for (const resource of resources) {
     if (ids.has(resource.id)) issues.push(`duplicate-id:${resource.id}`);
     ids.add(resource.id);
@@ -310,7 +395,10 @@ export function validateVenueLayout(layout: VenueLayout): VenueLayoutReport {
       issues.push(`out-of-bounds:${collider.id}`);
     }
   }
-  const places = [...layout.queuePlaces, ...layout.waitPlaces, ...layout.activitySpots, { id: 'entrance', ...layout.entrance }];
+  const places = [
+    ...layout.queuePlaces, ...layout.waitPlaces, ...layout.passingPlaces, ...layout.activitySpots,
+    { id: 'entrance', ...layout.entrance },
+  ];
   for (const place of places) {
     if (pointHitsVenueCollider(layout, place)) issues.push(`blocked-place:${place.id}`);
     if (place.x < 0 || place.x > WORLD_WIDTH || place.y < 0 || place.y > WORLD_HEIGHT) issues.push(`out-of-bounds:${place.id}`);
@@ -331,6 +419,28 @@ export function validateVenueLayout(layout: VenueLayout): VenueLayoutReport {
   if (!routeIsClear(layout, layout.outside, layout.entrance)) issues.push('unreachable-entry');
   for (const place of [...layout.queuePlaces, ...layout.waitPlaces, ...layout.activitySpots]) {
     if (!routeIsClear(layout, layout.entrance, place)) issues.push(`unreachable:${place.id}`);
+  }
+  for (const place of layout.passingPlaces) {
+    if (!routeIsClear(layout, layout.entrance, place)) issues.push(`unreachable-passing-place:${place.id}`);
+  }
+  for (const movementRoute of LIVING_ROUTES_BY_VENUE[layout.venue]) {
+    for (const stop of movementRoute.stops) {
+      if (!pointWithinVenueWalkableArea(layout, stop)) issues.push(`out-of-walkable-area-living-stop:${stop.id}`);
+      if (pointHitsVenueCollider(layout, stop)) issues.push(`blocked-living-stop:${stop.id}`);
+      if (!routeIsClear(layout, layout.entrance, stop)) issues.push(`unreachable-living-stop:${stop.id}`);
+      for (const [index, via] of (stop.via ?? []).entries()) {
+        const id = `${stop.id}:via-${index + 1}`;
+        if (!pointWithinVenueWalkableArea(layout, via)) issues.push(`out-of-walkable-area-living-via:${id}`);
+        if (pointHitsVenueCollider(layout, via)) issues.push(`blocked-living-via:${id}`);
+        if (!routeIsClear(layout, layout.entrance, via)) issues.push(`unreachable-living-via:${id}`);
+      }
+    }
+    for (const [index, via] of movementRoute.returnVia.entries()) {
+      const id = `${movementRoute.id}:return-via-${index + 1}`;
+      if (!pointWithinVenueWalkableArea(layout, via)) issues.push(`out-of-walkable-area-living-via:${id}`);
+      if (pointHitsVenueCollider(layout, via)) issues.push(`blocked-living-via:${id}`);
+      if (!routeIsClear(layout, layout.entrance, via)) issues.push(`unreachable-living-via:${id}`);
+    }
   }
   return { venue: layout.venue, valid: issues.length === 0, score: Math.max(0, 100 - issues.length * 6), issues };
 }

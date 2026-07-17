@@ -37,7 +37,9 @@ describe('CafeSimulation', () => {
     }
     expect(simulation.stats.departures).toBe(1);
     expect(guest?.state).toBe('exiting');
-    expect(states).toEqual(new Set<GuestState>(['entering', 'queueing', 'ordering', 'waiting', 'walking-to-seat', 'activity', 'walking-to-exit', 'exiting']));
+    for (const state of [
+      'entering', 'queueing', 'ordering', 'waiting', 'walking-to-seat', 'activity', 'walking-to-exit', 'exiting',
+    ] satisfies readonly GuestState[]) expect(states).toContain(state);
     expect(simulation.reservations.resourcesOf(guest?.id ?? '')).toEqual([]);
   });
 
@@ -47,7 +49,15 @@ describe('CafeSimulation', () => {
       const simulation = new CafeSimulation({ venue, seed: 11, durationScale: 0.02 });
       simulation.start();
       for (let index = 0; index < 5_000; index += 1) simulation.update(0.1);
-      expect(simulation.guests.length).toBeGreaterThanOrEqual(minimum);
+      expect(simulation.guests.length, JSON.stringify({
+        venue,
+        guests: simulation.guests.map((guest) => ({
+          id: guest.id, state: guest.state, destination: guest.destinationId, position: guest.position,
+        })),
+        target: simulation.crowdTarget,
+        navigation: simulation.getSceneSnapshot().navigation,
+        reservations: [...simulation.reservations.snapshot()],
+      })).toBeGreaterThanOrEqual(minimum);
       expect(simulation.guests.length).toBeLessThanOrEqual(maximum);
       expect(simulation.stats.arrivals).toBeGreaterThanOrEqual(minimum);
       expect(simulation.stats.departures).toBeGreaterThan(0);
@@ -100,7 +110,14 @@ describe('CafeSimulation', () => {
     const arrivals = simulation.stats.arrivals;
     simulation.setEnvironment(environment(0));
     runUntil(simulation, () => simulation.guests.length === 0, 20_000);
-    expect(simulation.guests).toHaveLength(0);
+    expect(simulation.guests, JSON.stringify({
+      guests: simulation.guests.map((guest) => ({
+        id: guest.id, state: guest.state, position: guest.position, target: guest.target,
+        waypoints: guest.waypoints, route: guest.movementRouteId,
+      })),
+      navigation: simulation.getSceneSnapshot().navigation,
+      reservations: [...simulation.reservations.snapshot()],
+    })).toHaveLength(0);
     expect(simulation.stats.arrivals).toBe(arrivals);
     expect(simulation.reservations.snapshot().size).toBe(0);
   });

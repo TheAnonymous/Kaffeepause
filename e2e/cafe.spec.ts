@@ -140,6 +140,11 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
   await expect(canvas).toHaveAttribute('data-speech-language', 'symbolic-emotes');
   await expect(canvas).toHaveAttribute('data-speech-bubble-resolution', '128x96');
   await expect(canvas).toHaveAttribute('data-navigation', 'collision-aware');
+  await expect(canvas).toHaveAttribute('data-navigation-status', 'clear');
+  await expect(canvas).toHaveAttribute('data-navigation-deadlocks', '0');
+  await expect(canvas).toHaveAttribute('data-living-direction', 'idle');
+  await expect(canvas).toHaveAttribute('data-living-route', 'none');
+  await expect(canvas).toHaveAttribute('data-living-completed', '0');
   await expect(canvas).toHaveAttribute('data-proportion-check', 'pass');
   await expect(canvas).toHaveAttribute('data-layout-score', '100');
   await expect(canvas).toHaveAttribute('data-venue-layout', 'cafe');
@@ -147,6 +152,9 @@ test('initialisiert den 6×-Masterrenderer mit vollständigen Qualitätsmetadate
   await expect(canvas).toHaveAttribute('data-layout-capacity', '4-6');
   await expect(canvas).toHaveAttribute('data-layout-check', 'pass');
   await expect(canvas).toHaveAttribute('data-activity-spots', /cafe-window-a:bench:seated/);
+  await expect(canvas).toHaveAttribute('data-passing-places', /cafe-pass-middle/);
+  await expect(canvas).toHaveAttribute('data-living-routes', /cafe-window-to-pastry/);
+  await expect(canvas).toHaveAttribute('data-golden-living-sequence', 'cafe-window-to-pastry');
   await expect(canvas).toHaveAttribute('data-scale-model', '32px-adult');
   await expect(canvas).toHaveAttribute('data-character-variation', '12-silhouettes');
   await expect(canvas).toHaveAttribute('data-character-diversity', '100');
@@ -1014,6 +1022,72 @@ async function captureBaseline(page: Page, name: string): Promise<void> {
   await expect(page.locator('#app')).toHaveScreenshot(`${name}.png`, {
     animations: 'disabled',
     maxDiffPixelRatio: 0.02,
+  });
+}
+
+const livingBaselines = [
+  { venue: 'cafe', sequence: 'cafe-window-to-pastry', time: '20:30', weather: 'rain', captureFrames: 125 },
+  { venue: 'ramen', sequence: 'ramen-counter-water', time: '20:30', weather: 'rain', captureFrames: 90 },
+  { venue: 'arcade', sequence: 'arcade-token-lane', time: '22:00', weather: 'clear', captureFrames: 90 },
+] as const;
+
+for (const scene of livingBaselines) {
+  test(`hält ${scene.venue} während der Golden Living Sequence kollisionsfrei`, async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: 1440, height: 810 });
+    await installFramePause(page);
+    await openCafe(
+      page,
+      `/?livingSequence=${scene.sequence}&time=${scene.time}&weather=${scene.weather}`,
+      'balanced',
+    );
+    await chooseVenue(page, scene.venue);
+    await pauseBeforeEntry(page);
+    await page.getByTestId('enter').click();
+    await stepDiagnosticFrames(page, scene.captureFrames);
+    const canvas = page.locator('#cafe');
+    await expect(canvas).toHaveAttribute('data-living-direction', 'active');
+    await expect(canvas).toHaveAttribute('data-living-route', new RegExp(`(^|,)${scene.sequence}(,|$)`));
+    await expect(canvas).toHaveAttribute('data-navigation-status', 'clear');
+    await expect(canvas).toHaveAttribute('data-navigation-deadlocks', '0');
+    await expect.poll(async () => Number(await canvas.getAttribute('data-navigation-minimum-distance')))
+      .toBeGreaterThanOrEqual(9.5);
+    await renderVisualFrame(page);
+    await hideVisualUi(page);
+    await captureBaseline(page, `v7-living-${scene.venue}`);
+
+    await stepDiagnosticFrames(page, 520);
+    await expect.poll(async () => Number(await canvas.getAttribute('data-living-completed'))).toBeGreaterThan(0);
+    await expect(canvas).toHaveAttribute('data-navigation-status', 'clear');
+    await expect(canvas).toHaveAttribute('data-navigation-deadlocks', '0');
+    await expect.poll(async () => Number(await canvas.getAttribute('data-navigation-max-blocked'))).toBeLessThan(2);
+  });
+}
+
+for (const scene of livingBaselines) {
+  test(`hält ${scene.venue} mobil mit Reduced Motion navigationssicher`, async ({ page }) => {
+    test.setTimeout(45_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await installFramePause(page);
+    await openCafe(
+      page,
+      `/?livingSequence=${scene.sequence}&time=${scene.time}&weather=${scene.weather}`,
+      'balanced',
+    );
+    await chooseVenue(page, scene.venue);
+    await pauseBeforeEntry(page);
+    await page.getByTestId('enter').click();
+    await stepDiagnosticFrames(page, scene.captureFrames);
+    const canvas = page.locator('#cafe');
+    await expect(page.locator('body')).toHaveAttribute('data-reduced-motion', 'true');
+    await expect(canvas).toHaveAttribute('data-particles', 'low');
+    await expect(canvas).toHaveAttribute('data-living-route', new RegExp(`(^|,)${scene.sequence}(,|$)`));
+    await expect(canvas).toHaveAttribute('data-navigation-status', 'clear');
+    await expect(canvas).toHaveAttribute('data-navigation-deadlocks', '0');
+    await stepDiagnosticFrames(page, 520);
+    await expect.poll(async () => Number(await canvas.getAttribute('data-living-completed'))).toBeGreaterThan(0);
+    await expect.poll(async () => Number(await canvas.getAttribute('data-navigation-max-blocked'))).toBeLessThan(2);
   });
 }
 

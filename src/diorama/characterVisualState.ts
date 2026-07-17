@@ -76,11 +76,11 @@ export function characterFrameAt(
 }
 
 export function poseForGuest(guest: Pick<Guest, 'state' | 'activity'>): CharacterPose {
-  if (guest.state === 'entering' || guest.state === 'walking-to-seat' || guest.state === 'walking-to-exit' || guest.state === 'exiting') {
+  if (guest.state === 'entering' || guest.state.includes('walking') || guest.state === 'exiting') {
     return 'walking';
   }
   if (guest.state === 'ordering') return 'ordering';
-  if (guest.state === 'activity') return guest.activity;
+  if (guest.state === 'activity' || guest.state === 'scene-pause') return guest.activity;
   return 'waiting';
 }
 

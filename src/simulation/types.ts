@@ -10,6 +10,9 @@ export type GuestState =
   | 'waiting'
   | 'walking-to-seat'
   | 'activity'
+  | 'walking-scene'
+  | 'scene-pause'
+  | 'walking-back-to-activity'
   | 'walking-to-exit'
   | 'exiting';
 
@@ -93,6 +96,9 @@ export interface Guest {
   activityRounds: number;
   activitySpotId?: string;
   destinationId?: string;
+  movementRouteId?: string;
+  movementStopIndex?: number;
+  movementHomeSpotId?: string;
   accessory?: GuestAccessory;
   palette: GuestPalette;
   appearance: GuestAppearance;
@@ -119,6 +125,31 @@ export interface SimulationStats {
   momentsCompleted: number;
   storyBeatsCompleted: number;
   storiesCompleted: number;
+  livingSequencesCompleted: number;
+  navigationReplans: number;
+  navigationRecoveries: number;
+  navigationDeadlocks: number;
+  navigationMaxBlockedSeconds: number;
+}
+
+export type NavigationMode = 'idle' | 'moving' | 'yielding' | 'replanning' | 'recovering';
+
+export interface NavigationDiagnostics {
+  readonly movingGuests: number;
+  readonly yieldingGuests: number;
+  readonly blockedGuests: number;
+  readonly replans: number;
+  readonly recoveries: number;
+  readonly deadlocks: number;
+  readonly maxBlockedSeconds: number;
+  readonly minimumGuestDistance: number;
+  readonly staticClear: boolean;
+}
+
+export interface LivingDirectionDiagnostics {
+  readonly activeRoutes: readonly string[];
+  readonly completedSequences: number;
+  readonly goldenSequence: string;
 }
 
 export type CafeMomentKind =

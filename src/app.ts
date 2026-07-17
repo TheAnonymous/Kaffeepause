@@ -1,6 +1,7 @@
 import { CafeAudio, REACTION_ACCENT_MAX_GAIN } from './audio';
 import { CafeCamera } from './camera';
 import { CafeSimulation, type CafeSimulationOptions } from './simulation/cafeSimulation';
+import { livingDirectionRoute } from './simulation/livingDirection';
 import type { AccidentKind, CafeMoment, CafeMomentKind, CafeStoryKind } from './simulation/types';
 import { CafeEnvironmentController, parseEnvironmentOverrides } from './environment/cafeEnvironmentController';
 import type { CafeEnvironmentSnapshot } from './environment/types';
@@ -169,6 +170,16 @@ function simulationOptions(): CafeSimulationOptions {
       maxDelaySeconds: 0.35,
       kinds: [requestedStory as CafeStoryKind],
     };
+  }
+  const requestedLivingSequence = parameters.get('livingSequence');
+  const livingSequence = livingDirectionRoute(requestedLivingSequence ?? undefined);
+  if (livingSequence) {
+    options.initialGuests = Math.max(options.initialGuests ?? 0, livingSequence.venue === 'ramen' ? 5 : 4);
+    options.durationScale = 0.12;
+    options.accidents = false;
+    options.moments = false;
+    options.stories = false;
+    options.livingSequence = livingSequence.id;
   }
   return options;
 }

@@ -4,7 +4,11 @@ import {
   WORLD_WIDTH,
   activitySpotById,
   planVenueRoute,
+  pointIsOutsideVenue,
   pointHitsVenueCollider,
+  pointWithinVenueWalkableArea,
+  routeIsClear,
+  segmentIsClear,
   type ActivitySpot,
   type ActivitySpotTag,
   type Place,
@@ -27,6 +31,8 @@ import type {
   GuestActivity,
   GuestAppearance,
   GuestPalette,
+  NavigationDiagnostics,
+  NavigationMode,
   Point,
   RegularId,
   SimulationStats,
@@ -39,6 +45,11 @@ import {
   type MomentDefinition,
 } from './momentRegistry';
 import { SessionPacingDirector } from './sessionPacing';
+import {
+  GOLDEN_LIVING_SEQUENCES,
+  LIVING_ROUTES_BY_VENUE,
+  livingDirectionRoute,
+} from './livingDirection';
 
 const NAMES = ['Fritzi', 'Eli', 'Jun', 'Pia', 'Mika', 'Romy', 'Ari', 'Bo', 'Cleo', 'Dani', 'Emi', 'Flo'] as const;
 const ACTIVITIES: readonly GuestActivity[] = [
@@ -99,6 +110,8 @@ export interface CafeSimulationOptions {
   accidents?: CafeAccidentOptions | false;
   moments?: CafeMomentOptions | false;
   stories?: CafeStoryOptions | false;
+  livingDirection?: boolean;
+  livingSequence?: string;
 }
 
 export interface CafeAccidentOptions {
@@ -175,7 +188,25 @@ interface GuestSnapshot {
   activityRounds: number;
   activitySpotId?: string;
   destinationId?: string;
+  movementRouteId?: string;
+  movementStopIndex?: number;
+  movementHomeSpotId?: string;
   reservedResources: readonly string[];
+}
+
+interface NavigationRuntime {
+  lastPosition: Point;
+  progressOrigin: Point;
+  blockedSeconds: number;
+  replanCooldown: number;
+  recoveryCooldown: number;
+  yieldUntil: number;
+  avoidGuestId?: string;
+  priorityBoostUntil: number;
+  recoveryPlaceId?: string;
+  bypassBlockerId?: string;
+  deadlockReported: boolean;
+  mode: NavigationMode;
 }
 
 interface StoryMomentCandidate {
@@ -263,6 +294,11 @@ export class CafeSimulation {
     momentsCompleted: 0,
     storyBeatsCompleted: 0,
     storiesCompleted: 0,
+    livingSequencesCompleted: 0,
+    navigationReplans: 0,
+    navigationRecoveries: 0,
+    navigationDeadlocks: 0,
+    navigationMaxBlockedSeconds: 0,
   };
 
   private readonly random: SeededRandom;
@@ -324,10 +360,17 @@ export class CafeSimulation {
   private environment?: CafeEnvironmentSnapshot;
   private venue: VenueKind;
   private layout: VenueLayout;
+  private readonly livingDirectionEnabled: boolean;
+  private readonly forcedLivingSequenceId?: string;
+  private readonly movementRouteLastUsed = new Map<string, number>();
+  private lastMovementRouteId?: string;
+  private readonly navigationRuntime = new Map<string, NavigationRuntime>();
 
   constructor(options: CafeSimulationOptions = {}) {
     this.venue = options.venue ?? 'cafe';
     this.layout = VENUE_LAYOUTS[this.venue];
+    this.livingDirectionEnabled = options.livingDirection !== false;
+    this.forcedLivingSequenceId = livingDirectionRoute(options.livingSequence)?.id;
     this.configuredInitialGuests = options.initialGuests;
     this.configuredMinGuests = options.minGuests;
     this.configuredMaxGuests = options.maxGuests;
@@ -430,6 +473,14 @@ export class CafeSimulation {
         .filter((regularId): regularId is RegularId => regularId !== undefined)),
       storyStages: Object.freeze({ ...this.storyProgress }),
       sessionAct: this.sessionPacing.state(this.stats.elapsed, this.venue).act,
+      navigation: Object.freeze(this.navigationDiagnostics()),
+      livingDirection: Object.freeze({
+        activeRoutes: Object.freeze(this.guests
+          .map((guest) => guest.movementRouteId)
+          .filter((id): id is string => id !== undefined)),
+        completedSequences: this.stats.livingSequencesCompleted,
+        goldenSequence: GOLDEN_LIVING_SEQUENCES[this.venue],
+      }),
     });
   }
 
@@ -506,6 +557,7 @@ export class CafeSimulation {
 
     for (const guest of departed) {
       this.reservations.releaseAll(guest.id);
+      this.releaseNavigationRuntime(guest.id);
       const index = this.guests.indexOf(guest);
       if (index >= 0) this.guests.splice(index, 1);
       this.stats.departures += 1;
@@ -1110,6 +1162,9 @@ export class CafeSimulation {
       activityRounds: guest.activityRounds,
       activitySpotId: guest.activitySpotId,
       destinationId: guest.destinationId,
+      movementRouteId: guest.movementRouteId,
+      movementStopIndex: guest.movementStopIndex,
+      movementHomeSpotId: guest.movementHomeSpotId,
       reservedResources: this.reservations.resourcesOf(guest.id),
     };
   }
@@ -1157,6 +1212,9 @@ export class CafeSimulation {
     guest.activityRounds = snapshot.activityRounds;
     guest.activitySpotId = snapshot.activitySpotId;
     guest.destinationId = snapshot.destinationId;
+    guest.movementRouteId = snapshot.movementRouteId;
+    guest.movementStopIndex = snapshot.movementStopIndex;
+    guest.movementHomeSpotId = snapshot.movementHomeSpotId;
 
     this.reservations.releaseAll(guest.id);
     for (const resourceId of snapshot.reservedResources) this.reservations.reserve(resourceId, guest.id);
@@ -1215,6 +1273,15 @@ export class CafeSimulation {
       case 'activity':
         if (guest.stateTime >= guest.stateDuration) this.finishActivity(guest);
         break;
+      case 'walking-scene':
+        if (this.moveToward(guest, delta)) this.beginScenePause(guest);
+        break;
+      case 'scene-pause':
+        if (guest.stateTime >= guest.stateDuration) this.advanceLivingSequence(guest);
+        break;
+      case 'walking-back-to-activity':
+        if (this.moveToward(guest, delta)) this.finishLivingSequence(guest);
+        break;
       case 'walking-to-exit':
         if (this.moveToward(guest, delta)) {
           this.reservations.release('exit-lane', guest.id);
@@ -1251,7 +1318,9 @@ export class CafeSimulation {
     const regular = guest.regularId !== undefined;
     const maxRounds = regular ? 3 : 1;
     const stayChance = regular ? 0.84 : 0.58;
-    if (this.guests.length <= this.desiredGuestCount && guest.activityRounds < maxRounds && this.random.next() < stayChance) {
+    const canStay = this.guests.length <= this.desiredGuestCount && guest.activityRounds < maxRounds;
+    if (canStay && this.beginLivingSequence(guest)) return;
+    if (canStay && this.random.next() < stayChance) {
       guest.activityRounds += 1;
       guest.activity = this.pickActivityFor(guest, guest.activity);
       guest.stateTime = 0;
@@ -1267,7 +1336,149 @@ export class CafeSimulation {
     if (guest.activitySpotId) this.reservations.release(guest.activitySpotId, guest.id);
     guest.activitySpotId = undefined;
     this.transition(guest, 'walking-to-exit', this.layout.entrance);
+    if (this.venue === 'cafe') {
+      this.setGuestTargetVia(guest, this.layout.entrance, [
+        { x: Math.max(58, Math.min(230, guest.position.x)), y: 210 },
+        { x: 58, y: 210 },
+      ]);
+    } else if (this.venue === 'ramen') {
+      this.setGuestTargetVia(guest, this.layout.entrance, [
+        { x: Math.max(72, Math.min(350, guest.position.x)), y: 210 },
+        { x: 350, y: 210 },
+      ]);
+    }
     guest.destinationId = 'exit-lane';
+  }
+
+  private beginLivingSequence(guest: Guest): boolean {
+    if (!this.livingDirectionEnabled || !guest.activitySpotId) return false;
+    if (this.guests.filter((entry) => entry.movementRouteId !== undefined).length >= 2) return false;
+    const home = activitySpotById(this.layout, guest.activitySpotId);
+    if (!home) return false;
+    const forced = livingDirectionRoute(this.forcedLivingSequenceId);
+    const forcedPending = forced?.venue === this.venue
+      && this.stats.livingSequencesCompleted === 0
+      && !this.guests.some((entry) => entry.movementRouteId === forced.id);
+    const forcedAvailable = forcedPending
+      && forced.eligibleTags.some((tag) => home.tags.includes(tag));
+    if (forcedPending && !forcedAvailable) return false;
+    const candidates = LIVING_ROUTES_BY_VENUE[this.venue].filter((route) => (
+      route.eligibleTags.some((tag) => home.tags.includes(tag))
+      && !this.reservations.ownerOf(`living:${route.id}`)
+      && this.stats.elapsed - (this.movementRouteLastUsed.get(route.id) ?? Number.NEGATIVE_INFINITY) >= route.cooldownSeconds
+    ));
+    const pool = forcedAvailable && forced ? [forced] : candidates.filter((route) => route.id !== this.lastMovementRouteId);
+    const selectionPool = pool.length > 0 ? pool : candidates;
+    if (selectionPool.length === 0) return false;
+    const route = this.random.pick(selectionPool);
+    if (!route || !this.reservations.reserve(`living:${route.id}`, guest.id)) return false;
+    // The first completed activity always earns a purposeful walk. Later rounds
+    // stay sparse so room-scale movement reads as intention instead of wandering.
+    if (!forcedAvailable && guest.activityRounds > 0 && this.random.next() > (guest.regularId ? 0.56 : 0.38)) {
+      this.reservations.release(`living:${route.id}`, guest.id);
+      return false;
+    }
+    const first = route.stops[0];
+    if (!first) {
+      this.reservations.release(`living:${route.id}`, guest.id);
+      return false;
+    }
+    guest.movementRouteId = route.id;
+    guest.movementStopIndex = 0;
+    guest.movementHomeSpotId = home.id;
+    guest.activityRounds += 1;
+    guest.activity = first.activity;
+    guest.destinationId = first.id;
+    guest.state = 'walking-scene';
+    guest.stateTime = 0;
+    guest.stateDuration = 0;
+    this.setGuestTargetVia(guest, first, first.via);
+    return true;
+  }
+
+  private beginScenePause(guest: Guest): void {
+    const route = livingDirectionRoute(guest.movementRouteId);
+    const stop = route?.stops[guest.movementStopIndex ?? 0];
+    if (!route || !stop) {
+      this.cancelLivingSequence(guest);
+      return;
+    }
+    guest.state = 'scene-pause';
+    guest.stateTime = 0;
+    guest.stateDuration = this.duration(stop.dwellSeconds);
+    guest.activity = stop.activity;
+    guest.facing = stop.facing;
+  }
+
+  private advanceLivingSequence(guest: Guest): void {
+    const route = livingDirectionRoute(guest.movementRouteId);
+    if (!route) {
+      this.cancelLivingSequence(guest);
+      return;
+    }
+    const nextIndex = (guest.movementStopIndex ?? 0) + 1;
+    const next = route.stops[nextIndex];
+    if (next) {
+      guest.movementStopIndex = nextIndex;
+      guest.destinationId = next.id;
+      guest.state = 'walking-scene';
+      guest.stateTime = 0;
+      guest.stateDuration = 0;
+      this.setGuestTargetVia(guest, next, next.via);
+      return;
+    }
+    const home = activitySpotById(this.layout, guest.movementHomeSpotId);
+    if (!home) {
+      this.cancelLivingSequence(guest);
+      return;
+    }
+    guest.destinationId = home.id;
+    guest.state = 'walking-back-to-activity';
+    guest.stateTime = 0;
+    guest.stateDuration = 0;
+    this.setGuestTargetVia(guest, home, route.returnVia);
+  }
+
+  private finishLivingSequence(guest: Guest): void {
+    const routeId = guest.movementRouteId;
+    const home = activitySpotById(this.layout, guest.movementHomeSpotId);
+    if (routeId) {
+      this.reservations.release(`living:${routeId}`, guest.id);
+      this.movementRouteLastUsed.set(routeId, this.stats.elapsed);
+      this.lastMovementRouteId = routeId;
+      this.stats.livingSequencesCompleted += 1;
+    }
+    guest.state = 'activity';
+    guest.stateTime = 0;
+    guest.stateDuration = this.duration(this.random.range(guest.regularId ? 24 : 14, guest.regularId ? 38 : 26));
+    guest.activity = this.pickActivityFor(guest, guest.activity);
+    guest.destinationId = undefined;
+    guest.movementRouteId = undefined;
+    guest.movementStopIndex = undefined;
+    guest.movementHomeSpotId = undefined;
+    guest.waypoints = undefined;
+    if (home) {
+      guest.position = copyPoint(home);
+      guest.target = copyPoint(home);
+      guest.facing = home.facing;
+    }
+  }
+
+  private cancelLivingSequence(guest: Guest): void {
+    if (guest.movementRouteId) this.reservations.release(`living:${guest.movementRouteId}`, guest.id);
+    const home = activitySpotById(this.layout, guest.movementHomeSpotId ?? guest.activitySpotId);
+    guest.movementRouteId = undefined;
+    guest.movementStopIndex = undefined;
+    guest.movementHomeSpotId = undefined;
+    if (home) {
+      guest.destinationId = home.id;
+      guest.state = 'walking-back-to-activity';
+      this.setGuestTarget(guest, home);
+    } else {
+      guest.state = 'activity';
+      guest.stateTime = 0;
+      guest.stateDuration = this.duration(8);
+    }
   }
 
   private promoteQueue(guest: Guest): void {
@@ -1305,24 +1516,313 @@ export class CafeSimulation {
   }
 
   private setGuestTarget(guest: Guest, target: Point): void {
+    const runtime = this.navigationRuntime.get(guest.id);
+    if (runtime?.recoveryPlaceId) {
+      this.reservations.release(`navigation:${runtime.recoveryPlaceId}`, guest.id);
+      runtime.recoveryPlaceId = undefined;
+    }
+    if (runtime) {
+      runtime.blockedSeconds = 0;
+      runtime.replanCooldown = 0;
+      runtime.recoveryCooldown = 0;
+      runtime.mode = 'moving';
+      runtime.lastPosition = copyPoint(guest.position);
+      runtime.progressOrigin = copyPoint(guest.position);
+      runtime.bypassBlockerId = undefined;
+    }
     guest.target = copyPoint(target);
     guest.waypoints = this.planRoute(guest.position, guest.target);
   }
 
+  private setGuestTargetVia(guest: Guest, target: Point, via: readonly Readonly<Point>[] = []): void {
+    this.setGuestTarget(guest, target);
+    if (via.length === 0) return;
+    const waypoints: Point[] = [];
+    let start = guest.position;
+    for (const point of via) {
+      waypoints.push(...this.planRoute(start, point), copyPoint(point));
+      start = point;
+    }
+    waypoints.push(...this.planRoute(start, target));
+    guest.waypoints = waypoints.filter((point, index) => (
+      distance(point, guest.position) > 0.2
+      && (index === 0 || distance(point, waypoints[index - 1]!) > 0.2)
+      && distance(point, target) > 0.2
+    ));
+  }
+
   private planRoute(start: Point, target: Point): Point[] {
-    return planVenueRoute(this.layout, start, target);
+    const occupied = this.guests
+      .filter((guest) => !this.guestIsMoving(guest)
+        && !this.isOutside(guest.position)
+        && distance(guest.position, start) > 0.2)
+      .map((guest) => guest.position);
+    const planInsideVenue = (from: Point, to: Point): Point[] => {
+      const occupiedAware = planVenueRoute(this.layout, from, to, occupied);
+      // An empty route can mean either "direct" or "no occupied-aware path".
+      // If furniture blocks the direct segment, fall back to the static route
+      // instead of repeatedly attempting an impossible diagonal.
+      return occupiedAware.length > 0 || segmentIsClear(this.layout, from, to)
+        ? occupiedAware
+        : planVenueRoute(this.layout, from, to);
+    };
+    const { minX, maxX, minY } = this.layout.navigation;
+    const beforeEntrance = this.layout.entryFlow === 'left' ? start.x < minX
+      : this.layout.entryFlow === 'right' ? start.x > maxX
+        : start.y < minY;
+    const targetInside = !pointIsOutsideVenue(this.layout, target);
+    if (beforeEntrance && targetInside) {
+      const entrance = copyPoint(this.layout.entrance);
+      const inside = planInsideVenue(entrance, target);
+      return [entrance, ...inside].filter((point, index, points) => (
+        distance(point, start) > 0.2
+        && (index === 0 || distance(point, points[index - 1]!) > 0.2)
+        && distance(point, target) > 0.2
+      ));
+    }
+    return planInsideVenue(start, target);
+  }
+
+  private navigationFor(guest: Guest): NavigationRuntime {
+    const current = this.navigationRuntime.get(guest.id);
+    if (current) return current;
+    const created: NavigationRuntime = {
+      lastPosition: copyPoint(guest.position),
+      progressOrigin: copyPoint(guest.position),
+      blockedSeconds: 0,
+      replanCooldown: 0,
+      recoveryCooldown: 0,
+      yieldUntil: 0,
+      priorityBoostUntil: 0,
+      deadlockReported: false,
+      mode: 'idle',
+    };
+    this.navigationRuntime.set(guest.id, created);
+    return created;
+  }
+
+  private releaseNavigationRuntime(guestId: string): void {
+    const runtime = this.navigationRuntime.get(guestId);
+    if (runtime?.recoveryPlaceId) this.reservations.release(`navigation:${runtime.recoveryPlaceId}`, guestId);
+    this.navigationRuntime.delete(guestId);
+  }
+
+  private guestIsMoving(guest: Guest): boolean {
+    return guest.state === 'entering'
+      || guest.state === 'exiting'
+      || guest.state === 'queueing'
+      || guest.state === 'waiting'
+      || guest.state.includes('walking');
+  }
+
+  private guestClearance(other: Guest): number {
+    if (other.state === 'activity' || other.state === 'scene-pause') return GUEST_RADIUS * 2.05;
+    return GUEST_RADIUS * 1.96;
+  }
+
+  private occupancyBlocker(guest: Guest, candidate: Point): Guest | undefined {
+    if (this.isOutside(candidate)) return undefined;
+    return this.guests.find((other) => (
+      other !== guest
+      && !this.isOutside(other.position)
+      && distance(candidate, other.position) < this.guestClearance(other)
+    ));
   }
 
   private canOccupy(guest: Guest, candidate: Point): boolean {
-    if (pointHitsVenueCollider(this.layout, candidate)) return false;
-    // Draußen vor der Tür dürfen sich Gäste kurz überblenden; sonst könnte eine
-    // eintretende Person den Ausgang dauerhaft versperren.
-    if (guest.state === 'exiting' || this.isOutside(candidate)) return true;
-    return !this.guests.some((other) => (
-      other !== guest
-      && other.state !== 'exiting'
-      && distance(candidate, other.position) < (other.state === 'activity' ? GUEST_RADIUS * 1.05 : GUEST_RADIUS * 1.72)
-    ));
+    return this.withinWalkableEnvelope(candidate)
+      && !pointHitsVenueCollider(this.layout, candidate)
+      && this.occupancyBlocker(guest, candidate) === undefined;
+  }
+
+  private withinWalkableEnvelope(point: Point): boolean {
+    return pointWithinVenueWalkableArea(this.layout, point);
+  }
+
+  private movementPriority(guest: Guest): number {
+    const runtime = this.navigationFor(guest);
+    // Recovery may win against peers, but never invert the semantic order of
+    // the room. In particular an exiting guest must keep right of way through
+    // a doorway instead of being frozen by a boosted waiting guest.
+    const boosted = runtime.priorityBoostUntil > this.stats.elapsed ? -400 : 0;
+    const rank = guest.state === 'walking-to-exit' || guest.state === 'exiting' ? 0
+      : guest.state === 'entering' ? 1
+        : guest.state === 'walking-to-seat' ? 2
+          : guest.state === 'walking-back-to-activity' ? 3
+            : guest.state === 'walking-scene' ? 4
+              : guest.state === 'queueing' ? 5 : 6;
+    const numericId = Number.parseInt(guest.id.replace(/\D/g, ''), 10) || 0;
+    return boosted + rank * 1_000 + numericId;
+  }
+
+  private requestYield(guest: Guest, blocker: Guest): void {
+    if (!this.guestIsMoving(blocker)) return;
+    const blockerRuntime = this.navigationFor(blocker);
+    if (this.movementPriority(guest) >= this.movementPriority(blocker)) return;
+    const existingPriorityGuest = blockerRuntime.yieldUntil > this.stats.elapsed
+      ? this.guests.find((entry) => entry.id === blockerRuntime.avoidGuestId)
+      : undefined;
+    if (existingPriorityGuest && this.movementPriority(existingPriorityGuest) <= this.movementPriority(guest)) return;
+    blockerRuntime.yieldUntil = Math.max(blockerRuntime.yieldUntil, this.stats.elapsed + 0.55);
+    blockerRuntime.avoidGuestId = guest.id;
+    blockerRuntime.mode = 'yielding';
+  }
+
+  private tryAvoidanceStep(guest: Guest, blocker: Guest, step: number): boolean {
+    const awayX = guest.position.x - blocker.position.x;
+    const awayY = guest.position.y - blocker.position.y;
+    const awayLength = Math.hypot(awayX, awayY);
+    const targetX = guest.target.x - guest.position.x;
+    const targetY = guest.target.y - guest.position.y;
+    const targetLength = Math.max(0.001, Math.hypot(targetX, targetY));
+    const baseAngle = awayLength > 0.01
+      ? Math.atan2(awayY, awayX)
+      : Math.atan2(-targetX / targetLength, targetY / targetLength);
+    const candidates = [0, Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3, Math.PI / 2, -Math.PI / 2]
+      .map((offset) => ({
+        x: guest.position.x + Math.cos(baseAngle + offset) * step,
+        y: guest.position.y + Math.sin(baseAngle + offset) * step,
+      }))
+      .filter((candidate) => this.canOccupy(guest, candidate))
+      .sort((left, right) => {
+        const leftScore = distance(left, blocker.position) * 3 - distance(left, guest.target) * 0.12;
+        const rightScore = distance(right, blocker.position) * 3 - distance(right, guest.target) * 0.12;
+        return rightScore - leftScore;
+      });
+    const selected = candidates[0];
+    if (!selected) return false;
+    guest.position = selected;
+    if (Math.abs(selected.x - this.navigationFor(guest).lastPosition.x) > 0.1) {
+      guest.facing = selected.x < this.navigationFor(guest).lastPosition.x ? -1 : 1;
+    }
+    const runtime = this.navigationFor(guest);
+    runtime.lastPosition = copyPoint(guest.position);
+    runtime.mode = 'yielding';
+    return true;
+  }
+
+  private installDynamicBypass(guest: Guest, blocker: Guest, runtime: NavigationRuntime): boolean {
+    if (runtime.bypassBlockerId === blocker.id && runtime.replanCooldown > 0) return false;
+    const goal = guest.target;
+    const goalX = goal.x - blocker.position.x;
+    const goalY = goal.y - blocker.position.y;
+    const goalLength = Math.max(0.001, Math.hypot(goalX, goalY));
+    const forwardX = goalX / goalLength;
+    const forwardY = goalY / goalLength;
+    const normalX = -forwardY;
+    const normalY = forwardX;
+    const candidates = [2.45, 2.9, 3.35].flatMap((radiusScale) => [1, -1].map((side) => ({
+      x: blocker.position.x + normalX * GUEST_RADIUS * radiusScale * side + forwardX * GUEST_RADIUS * 0.8,
+      y: blocker.position.y + normalY * GUEST_RADIUS * radiusScale * side + forwardY * GUEST_RADIUS * 0.8,
+    }))).filter((candidate) => this.canOccupy(guest, candidate)
+      && !pointHitsVenueCollider(this.layout, candidate, GUEST_RADIUS + 1.25)
+      && segmentIsClear(this.layout, guest.position, candidate))
+      .map((candidate) => ({
+        point: candidate,
+        score: distance(guest.position, candidate) + distance(candidate, goal) * 0.18,
+      }))
+      .sort((left, right) => left.score - right.score);
+    const selected = candidates[0];
+    if (!selected) return false;
+    const existing = guest.waypoints ?? [];
+    let safeIndex = 0;
+    while (safeIndex < existing.length && distance(existing[safeIndex]!, blocker.position) < GUEST_RADIUS * 2.7) {
+      safeIndex += 1;
+    }
+    const retained = existing.slice(safeIndex);
+    const afterBypass = retained.length > 0 ? retained : this.planRoute(selected.point, guest.target);
+    guest.waypoints = [selected.point, ...afterBypass];
+    runtime.bypassBlockerId = blocker.id;
+    runtime.replanCooldown = 0.65;
+    runtime.mode = 'replanning';
+    this.stats.navigationReplans += 1;
+    return true;
+  }
+
+  private noteNavigationProgress(guest: Guest, mode: NavigationRuntime['mode'] = 'moving'): void {
+    const runtime = this.navigationFor(guest);
+    runtime.lastPosition = copyPoint(guest.position);
+    runtime.mode = mode;
+    const goal = guest.waypoints?.[0] ?? guest.target;
+    if (distance(guest.position, runtime.progressOrigin) >= GUEST_RADIUS * 0.5 || distance(guest.position, goal) <= 0.2) {
+      runtime.progressOrigin = copyPoint(guest.position);
+      runtime.blockedSeconds = 0;
+      runtime.deadlockReported = false;
+    }
+  }
+
+  private replanGuest(guest: Guest, runtime: NavigationRuntime): void {
+    if (runtime.replanCooldown > 0) return;
+    const route = this.planRoute(guest.position, guest.target);
+    if (routeIsClear(this.layout, guest.position, guest.target)) guest.waypoints = route;
+    runtime.replanCooldown = 0.55;
+    runtime.mode = 'replanning';
+    this.stats.navigationReplans += 1;
+  }
+
+  private tryNavigationRecovery(guest: Guest, runtime: NavigationRuntime, blocker?: Guest): boolean {
+    if (runtime.recoveryCooldown > 0) return false;
+    const candidates = this.layout.passingPlaces
+      .filter((place) => {
+        const owner = this.reservations.ownerOf(`navigation:${place.id}`);
+        if (owner && owner !== guest.id) return false;
+        if (pointHitsVenueCollider(this.layout, place)) return false;
+        return !this.guests.some((other) => other !== guest
+          && !this.isOutside(other.position)
+          && distance(place, other.position) < GUEST_RADIUS * 2.15);
+      })
+      .filter((place) => distance(place, guest.position) > GUEST_RADIUS * 1.4)
+      .map((place) => ({
+        place,
+        route: this.planRoute(guest.position, place),
+        score: distance(place, guest.target) + distance(guest.position, place) * 0.28 + (() => {
+          if (!blocker) return 0;
+          const placeX = place.x - guest.position.x;
+          const placeY = place.y - guest.position.y;
+          const blockerX = blocker.position.x - guest.position.x;
+          const blockerY = blocker.position.y - guest.position.y;
+          const alignment = (placeX * blockerX + placeY * blockerY)
+            / Math.max(0.001, Math.hypot(placeX, placeY) * Math.hypot(blockerX, blockerY));
+          // A recovery place behind the blocker simply recreates the same
+          // queue. Prefer a pocket in the opposite half-plane.
+          return Math.max(0, alignment) * 180;
+        })(),
+      }))
+      .filter((candidate) => routeIsClear(this.layout, guest.position, candidate.place))
+      .sort((left, right) => left.score - right.score);
+    const selected = candidates[0];
+    if (!selected || !this.reservations.reserve(`navigation:${selected.place.id}`, guest.id)) {
+      runtime.recoveryCooldown = 0.7;
+      return false;
+    }
+    if (runtime.recoveryPlaceId && runtime.recoveryPlaceId !== selected.place.id) {
+      this.reservations.release(`navigation:${runtime.recoveryPlaceId}`, guest.id);
+    }
+    runtime.recoveryPlaceId = selected.place.id;
+    const afterRecovery = this.planRoute(selected.place, guest.target);
+    guest.waypoints = [...selected.route, copyPoint(selected.place), ...afterRecovery];
+    runtime.recoveryCooldown = 1.4;
+    runtime.priorityBoostUntil = this.stats.elapsed + 2.6;
+    runtime.mode = 'recovering';
+    this.stats.navigationRecoveries += 1;
+    return true;
+  }
+
+  private noteNavigationBlocked(guest: Guest, blocker: Guest | undefined, delta: number): void {
+    const runtime = this.navigationFor(guest);
+    runtime.blockedSeconds += delta;
+    runtime.replanCooldown = Math.max(0, runtime.replanCooldown - delta);
+    runtime.recoveryCooldown = Math.max(0, runtime.recoveryCooldown - delta);
+    this.stats.navigationMaxBlockedSeconds = Math.max(this.stats.navigationMaxBlockedSeconds, runtime.blockedSeconds);
+    if (blocker) this.requestYield(guest, blocker);
+    if (blocker && runtime.blockedSeconds >= 0.25 && this.installDynamicBypass(guest, blocker, runtime)) return;
+    if (runtime.blockedSeconds >= 0.35) this.replanGuest(guest, runtime);
+    if (runtime.blockedSeconds >= 0.85 && this.tryNavigationRecovery(guest, runtime, blocker)) return;
+    if (runtime.blockedSeconds >= 1.5) runtime.priorityBoostUntil = this.stats.elapsed + 2.8;
+    if (runtime.blockedSeconds >= 6 && !runtime.deadlockReported) {
+      runtime.deadlockReported = true;
+      this.stats.navigationDeadlocks += 1;
+    }
   }
 
   private transition(guest: Guest, state: Guest['state'], target: Point): void {
@@ -1333,6 +1833,26 @@ export class CafeSimulation {
   }
 
   private moveToward(guest: Guest, delta: number): boolean {
+    const runtime = this.navigationFor(guest);
+    runtime.replanCooldown = Math.max(0, runtime.replanCooldown - delta);
+    runtime.recoveryCooldown = Math.max(0, runtime.recoveryCooldown - delta);
+    if (runtime.yieldUntil > this.stats.elapsed && runtime.avoidGuestId) {
+      const priorityGuest = this.guests.find((entry) => entry.id === runtime.avoidGuestId);
+      if (priorityGuest) {
+        if (this.tryAvoidanceStep(guest, priorityGuest, Math.min(2.4, guest.speed * delta))) {
+          this.noteNavigationBlocked(guest, priorityGuest, delta);
+          this.noteNavigationProgress(guest, 'yielding');
+          return false;
+        }
+        // Yielding still counts as blocked progress. Without this accounting a
+        // busy doorway could keep extending yieldUntil forever while recovery
+        // and the deadlock guard never got a chance to run.
+        this.noteNavigationBlocked(guest, priorityGuest, delta);
+        return false;
+      }
+      runtime.yieldUntil = 0;
+    }
+    runtime.avoidGuestId = undefined;
     const waypoint = guest.waypoints?.[0];
     const target = waypoint ?? guest.target;
     const dx = target.x - guest.position.x;
@@ -1340,10 +1860,23 @@ export class CafeSimulation {
     const remaining = Math.hypot(dx, dy);
     if (remaining <= 0.15) {
       guest.position = copyPoint(target);
+      this.noteNavigationProgress(guest);
       if (waypoint) {
         guest.waypoints?.shift();
+        if (runtime.recoveryPlaceId) {
+          const recovery = this.layout.passingPlaces.find((place) => place.id === runtime.recoveryPlaceId);
+          if (recovery && distance(guest.position, recovery) <= 0.3) {
+            this.reservations.release(`navigation:${recovery.id}`, guest.id);
+            runtime.recoveryPlaceId = undefined;
+          }
+        }
         return false;
       }
+      if (runtime.recoveryPlaceId) {
+        this.reservations.release(`navigation:${runtime.recoveryPlaceId}`, guest.id);
+        runtime.recoveryPlaceId = undefined;
+      }
+      runtime.mode = 'idle';
       return true;
     }
     const step = Math.min(remaining, guest.speed * delta);
@@ -1351,35 +1884,50 @@ export class CafeSimulation {
       x: guest.position.x + (dx / remaining) * step,
       y: guest.position.y + (dy / remaining) * step,
     };
-    if (!this.canOccupy(guest, candidate)) {
-      if (pointHitsVenueCollider(this.layout, candidate)) {
+    const staticBlocked = !this.withinWalkableEnvelope(candidate) || pointHitsVenueCollider(this.layout, candidate);
+    const blocker = staticBlocked ? undefined : this.occupancyBlocker(guest, candidate);
+    if (staticBlocked || blocker) {
+      if (staticBlocked) {
         const reroute = this.planRoute(guest.position, guest.target);
         if (reroute.length > 0) {
           guest.waypoints = reroute;
+          runtime.mode = 'replanning';
+          runtime.replanCooldown = 0.55;
+          this.stats.navigationReplans += 1;
           return false;
         }
       }
-      const sideways = Math.min(2.5, step);
-      const direction = Number.parseInt(guest.id.replace(/\D/g, ''), 10) % 2 === 0 ? 1 : -1;
-      for (const sign of [direction, -direction]) {
-        const detour = {
-          x: guest.position.x + (-dy / remaining) * sideways * sign,
-          y: guest.position.y + (dx / remaining) * sideways * sign,
-        };
-        if (!this.canOccupy(guest, detour)) continue;
-        guest.position = detour;
+      if (blocker && (!this.guestIsMoving(blocker) || this.movementPriority(guest) >= this.movementPriority(blocker))
+        && this.tryAvoidanceStep(guest, blocker, Math.min(2.4, step))) {
+        this.noteNavigationBlocked(guest, blocker, delta);
+        this.noteNavigationProgress(guest, 'yielding');
         return false;
       }
+      this.noteNavigationBlocked(guest, blocker, delta);
       return false;
     }
     guest.position = candidate;
+    this.noteNavigationProgress(guest, runtime.mode === 'recovering' ? 'recovering' : 'moving');
     if (Math.abs(dx) > 0.2) guest.facing = dx < 0 ? -1 : 1;
     if (step < remaining) return false;
     guest.position = copyPoint(target);
+    this.noteNavigationProgress(guest);
     if (waypoint) {
       guest.waypoints?.shift();
+      if (runtime.recoveryPlaceId) {
+        const recovery = this.layout.passingPlaces.find((place) => place.id === runtime.recoveryPlaceId);
+        if (recovery && distance(guest.position, recovery) <= 0.3) {
+          this.reservations.release(`navigation:${recovery.id}`, guest.id);
+          runtime.recoveryPlaceId = undefined;
+        }
+      }
       return false;
     }
+    if (runtime.recoveryPlaceId) {
+      this.reservations.release(`navigation:${runtime.recoveryPlaceId}`, guest.id);
+      runtime.recoveryPlaceId = undefined;
+    }
+    runtime.mode = 'idle';
     return true;
   }
 
@@ -1393,10 +1941,37 @@ export class CafeSimulation {
       .find((place) => place.id === placeId);
   }
 
+  private navigationDiagnostics(): NavigationDiagnostics {
+    let minimumGuestDistance = Number.POSITIVE_INFINITY;
+    for (let left = 0; left < this.guests.length; left += 1) {
+      const first = this.guests[left];
+      if (!first || this.isOutside(first.position)) continue;
+      for (let right = left + 1; right < this.guests.length; right += 1) {
+        const second = this.guests[right];
+        if (!second || this.isOutside(second.position)) continue;
+        minimumGuestDistance = Math.min(minimumGuestDistance, distance(first.position, second.position));
+      }
+    }
+    const runtimes = this.guests.map((guest) => this.navigationFor(guest));
+    return {
+      movingGuests: this.guests.filter((guest) => this.guestIsMoving(guest)
+        && distance(guest.position, guest.target) > 0.2).length,
+      yieldingGuests: runtimes.filter((runtime) => runtime.mode === 'yielding').length,
+      blockedGuests: runtimes.filter((runtime) => runtime.blockedSeconds >= 0.6).length,
+      replans: this.stats.navigationReplans,
+      recoveries: this.stats.navigationRecoveries,
+      deadlocks: this.stats.navigationDeadlocks,
+      maxBlockedSeconds: this.stats.navigationMaxBlockedSeconds,
+      minimumGuestDistance: Number.isFinite(minimumGuestDistance) ? minimumGuestDistance : 0,
+      staticClear: this.guests.every((guest) => (
+        (this.isOutside(guest.position) || this.withinWalkableEnvelope(guest.position))
+        && !pointHitsVenueCollider(this.layout, guest.position)
+      )) && !pointHitsVenueCollider(this.layout, this.barista.position, 3),
+    };
+  }
+
   private isOutside(point: Point): boolean {
-    if (this.layout.entryFlow === 'left') return point.x <= 0;
-    if (this.layout.entryFlow === 'right') return point.x >= WORLD_WIDTH;
-    return point.y <= 126;
+    return pointIsOutsideVenue(this.layout, point);
   }
 
   private applyVenueLimits(): void {
