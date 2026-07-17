@@ -47,8 +47,13 @@ Die mittige Spielgasse ordnet das Bild. Automaten rahmen Menschen und Weg, nicht
 
 - Bewegungen haben Vorbereitung, Aktion und Nachklang.
 - Kleine Posenunterschiede und zeitliche Versätze sind wichtiger als zusätzliche Animationssysteme.
+- Figuren laufen nur auf benannten, venue-spezifischen Wegen mit Ziel, kurzem Aufenthalt und Rückkehr; zufälliges Umherwandern ist ausgeschlossen.
+- Vordergassen, Türkorridore und Ausweichpunkte bleiben als echte räumliche Infrastruktur frei. Eine Figur darf kein Möbel schneiden, keine andere Figur durchqueren und nicht sichtbar teleportieren.
+- Blockaden werden durch Vorfahrt, tangentiales Ausweichen, Neuplanung und reservierte Ausweichpunkte gelöst. Stillstand oder mechanisches Seitwärtszittern gelten als Fehler.
 - Dampf, Regen, CRT-Pulse und Pflanzenbewegung bleiben ortsgebunden und langsam.
 - Reduced Motion zeigt dieselbe Komposition ohne Verlust der räumlichen Lesbarkeit.
+
+Die vollständige Choreografie und ihr Prüfvertrag stehen in [`living-direction.md`](./living-direction.md).
 
 ## Anti-Slop-Grenzen
 

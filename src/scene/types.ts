@@ -1,4 +1,13 @@
-import type { Barista, CafeAccident, CafeMoment, CafeStoryKind, Guest, RegularId } from '../simulation/types';
+import type {
+  Barista,
+  CafeAccident,
+  CafeMoment,
+  CafeStoryKind,
+  Guest,
+  LivingDirectionDiagnostics,
+  NavigationDiagnostics,
+  RegularId,
+} from '../simulation/types';
 import type { VenueKind } from '../venue';
 import type { SessionAct } from '../simulation/sessionPacing';
 
@@ -12,4 +21,6 @@ export interface SceneSnapshot {
   readonly regularIds: readonly RegularId[];
   readonly storyStages: Readonly<Record<CafeStoryKind, number>>;
   readonly sessionAct?: SessionAct;
+  readonly navigation: NavigationDiagnostics;
+  readonly livingDirection: LivingDirectionDiagnostics;
 }

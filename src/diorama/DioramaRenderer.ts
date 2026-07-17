@@ -120,6 +120,7 @@ import { FixedRenderPipeline } from './fixedRenderPipeline';
 import { GpuFrameTimer } from './gpuTimer';
 import { AtmosphereArtLoader, type AtmosphereArtPack } from './atmosphereAssets';
 import { AtmosphereLayer, atmosphereLightCue } from './atmosphereLayer';
+import { GOLDEN_LIVING_SEQUENCES, LIVING_ROUTES_BY_VENUE } from '../simulation/livingDirection';
 
 interface CharacterNode {
   readonly root: Group;
@@ -295,6 +296,15 @@ export class DioramaRenderer {
     canvas.dataset.characterRasterHeight = String(DIORAMA.spriteHeight);
     canvas.dataset.characterDetail = `${DIORAMA.spriteWidth}x${DIORAMA.spriteHeight}-original-pixel-sprite`;
     canvas.dataset.navigation = 'collision-aware';
+    canvas.dataset.navigationStatus = 'clear';
+    canvas.dataset.navigationBlocked = '0';
+    canvas.dataset.navigationReplans = '0';
+    canvas.dataset.navigationRecoveries = '0';
+    canvas.dataset.navigationDeadlocks = '0';
+    canvas.dataset.navigationMaxBlocked = '0.00';
+    canvas.dataset.livingDirection = 'idle';
+    canvas.dataset.livingRoute = 'none';
+    canvas.dataset.livingCompleted = '0';
     canvas.dataset.optics = 'hd-2d-diorama';
     canvas.dataset.speechLanguage = 'symbolic-emotes';
     canvas.dataset.speechBubbleResolution = SPEECH_BUBBLE_RESOLUTION;
@@ -1380,6 +1390,9 @@ export class DioramaRenderer {
     this.canvas.dataset.activitySpots = layout.activitySpots
       .map((spot) => `${spot.id}:${spot.kind}:${spot.pose}`)
       .join('|');
+    this.canvas.dataset.passingPlaces = layout.passingPlaces.map((place) => place.id).join('|');
+    this.canvas.dataset.livingRoutes = LIVING_ROUTES_BY_VENUE[venue].map((route) => route.id).join('|');
+    this.canvas.dataset.goldenLivingSequence = GOLDEN_LIVING_SEQUENCES[venue];
   }
 
   private estimateTextureBytes(characterCacheBytes: number): number {
@@ -1431,6 +1444,20 @@ export class DioramaRenderer {
     this.canvas.dataset.moment = moment?.kind ?? 'none';
     this.canvas.dataset.momentPhase = moment?.phase ?? 'none';
     this.canvas.dataset.sessionAct = snapshot.sessionAct ?? 'arrival';
+    this.canvas.dataset.navigationStatus = snapshot.navigation.staticClear && snapshot.navigation.deadlocks === 0
+      ? 'clear'
+      : 'warning';
+    this.canvas.dataset.navigationMoving = String(snapshot.navigation.movingGuests);
+    this.canvas.dataset.navigationYielding = String(snapshot.navigation.yieldingGuests);
+    this.canvas.dataset.navigationBlocked = String(snapshot.navigation.blockedGuests);
+    this.canvas.dataset.navigationReplans = String(snapshot.navigation.replans);
+    this.canvas.dataset.navigationRecoveries = String(snapshot.navigation.recoveries);
+    this.canvas.dataset.navigationDeadlocks = String(snapshot.navigation.deadlocks);
+    this.canvas.dataset.navigationMaxBlocked = snapshot.navigation.maxBlockedSeconds.toFixed(2);
+    this.canvas.dataset.navigationMinimumDistance = snapshot.navigation.minimumGuestDistance.toFixed(2);
+    this.canvas.dataset.livingDirection = snapshot.livingDirection.activeRoutes.length > 0 ? 'active' : 'idle';
+    this.canvas.dataset.livingRoute = snapshot.livingDirection.activeRoutes.join(',') || 'none';
+    this.canvas.dataset.livingCompleted = String(snapshot.livingDirection.completedSequences);
     this.canvas.dataset.cameraPhase = this.focusState.phase;
     this.canvas.dataset.shotBeat = this.focusState.shotBeat;
     this.canvas.dataset.cameraSequence = this.focusState.sequenceId;

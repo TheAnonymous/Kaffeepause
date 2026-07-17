@@ -20,8 +20,11 @@ function guest(overrides: Partial<Guest> = {}): Guest {
 describe('zentraler Figurenstatus', () => {
   it('ordnet Gehen, Warten, Bestellen und alle Tätigkeiten einer Pose zu', () => {
     expect(poseForGuest(guest({ state: 'walking-to-seat' }))).toBe('walking');
+    expect(poseForGuest(guest({ state: 'walking-scene' }))).toBe('walking');
+    expect(poseForGuest(guest({ state: 'walking-back-to-activity' }))).toBe('walking');
     expect(poseForGuest(guest({ state: 'waiting' }))).toBe('waiting');
     expect(poseForGuest(guest({ state: 'ordering' }))).toBe('ordering');
+    expect(poseForGuest(guest({ state: 'scene-pause', activity: 'talking' }))).toBe('talking');
     for (const activity of ['reading', 'typing', 'talking', 'drinking', 'phone', 'sketching', 'journaling', 'knitting', 'board-game'] as const) {
       expect(poseForGuest(guest({ activity }))).toBe(activity);
     }
