@@ -32,7 +32,6 @@ import type { CafeEnvironmentSnapshot } from '../environment/types';
 import type { AtmosphereSnapshot } from '../atmosphere/types';
 import {
   VENUE_LAYOUTS,
-  VENUE_LAYOUT_REPORTS,
   WORLD_HEIGHT,
   WORLD_WIDTH,
   activitySpotById,
@@ -41,8 +40,6 @@ import type { Barista, Guest } from '../simulation/types';
 import { momentDefinition } from '../simulation/momentRegistry';
 import type { SceneSnapshot } from '../scene/types';
 import type { VenueKind } from '../venue';
-import { APPEARANCE_LIBRARY_REPORT } from '../simulation/appearance';
-import { SCENE_PROPORTION_REPORT, SCENE_PROPORTIONS } from '../scene/proportions';
 import {
   RENDER_QUALITY_PROFILES,
   type RenderQualityProfile,
@@ -52,7 +49,6 @@ import type { RendererFrameMetrics } from '../scene/rendererLifecycle';
 import { calculateDioramaLook, type DioramaLook } from './look';
 import { calculateDialogue, type DialogueLine } from './dialogue';
 import {
-  SPEECH_BUBBLE_RESOLUTION,
   SPEECH_BUBBLE_WORLD_HEIGHT,
   SPEECH_BUBBLE_WORLD_WIDTH,
   SpeechBubble,
@@ -80,23 +76,21 @@ import {
   type CameraFocusState,
   type FocusFrameElement,
 } from './cameraFocus';
-import { resolveBubblePlacements, type BubbleBounds } from './bubbleLayout';
+import { keepBubblesOnScreen, resolveBubblePlacements, type BubbleBounds } from './bubbleLayout';
 import {
   fadeFocusOccluder,
-  focusOccluderOpacity,
   restoreFocusOccluders,
   selectFocusOccluders,
   type FocusVisibilityTarget,
 } from './focusOcclusion';
 import {
   DIORAMA,
-  DIORAMA_SCALE_REPORT,
   cameraPanForWorldX,
   worldToCharacterDiorama,
   type DioramaSet,
   type FocusOccluder,
 } from './types';
-import { buildVenue, validateSeatAlignment } from './venueBuilder';
+import { buildVenue } from './venueBuilder';
 import {
   VENUE_VISUAL_PROFILES,
   focusBoundsAreSafe,
@@ -120,7 +114,6 @@ import { FixedRenderPipeline } from './fixedRenderPipeline';
 import { GpuFrameTimer } from './gpuTimer';
 import { AtmosphereArtLoader, type AtmosphereArtPack } from './atmosphereAssets';
 import { AtmosphereLayer, atmosphereLightCue } from './atmosphereLayer';
-import { GOLDEN_LIVING_SEQUENCES, LIVING_ROUTES_BY_VENUE } from '../simulation/livingDirection';
 
 interface CharacterNode {
   readonly root: Group;
@@ -238,8 +231,6 @@ export class DioramaRenderer {
       powerPreference: 'high-performance',
     });
     this.webgl.setPixelRatio(1);
-    // Aggregate the selective-bloom and final composer passes into one truthful frame diagnostic.
-    this.webgl.info.autoReset = false;
     this.webgl.outputColorSpace = SRGBColorSpace;
     this.webgl.toneMapping = ACESFilmicToneMapping;
     this.webgl.shadowMap.enabled = true;
@@ -280,84 +271,15 @@ export class DioramaRenderer {
     this.gpuTimer = new GpuFrameTimer(this.webgl.getContext());
     this.applyQualityProfile();
 
-    const layoutScore = Math.min(...Object.values(VENUE_LAYOUT_REPORTS).map((report) => report.score));
-    const checksPass = SCENE_PROPORTION_REPORT.valid && Object.values(VENUE_LAYOUT_REPORTS).every((report) => report.valid)
-      && APPEARANCE_LIBRARY_REPORT.valid && DIORAMA_SCALE_REPORT.valid;
-    canvas.dataset.proportionCheck = checksPass ? 'pass' : 'warning';
-    canvas.dataset.layoutScore = String(Math.min(SCENE_PROPORTION_REPORT.score, layoutScore, DIORAMA_SCALE_REPORT.score));
-    canvas.dataset.dioramaScaleCheck = DIORAMA_SCALE_REPORT.valid ? 'pass' : 'warning';
-    canvas.dataset.scaleModel = `${SCENE_PROPORTIONS.character.standingHeight}px-adult`;
-    canvas.dataset.characterVariation = `${APPEARANCE_LIBRARY_REPORT.uniqueSilhouettes}-silhouettes`;
-    canvas.dataset.characterDiversity = String(APPEARANCE_LIBRARY_REPORT.score);
-    canvas.dataset.renderer = 'webgl-diorama';
-    canvas.dataset.depthModel = 'physical-2.5d';
-    canvas.dataset.renderQuality = `webgl-diorama-${qualityTier}`;
-    canvas.dataset.masterResolution = '2304x1296';
-    canvas.dataset.characterRasterHeight = String(DIORAMA.spriteHeight);
-    canvas.dataset.characterDetail = `${DIORAMA.spriteWidth}x${DIORAMA.spriteHeight}-original-pixel-sprite`;
-    canvas.dataset.navigation = 'collision-aware';
-    canvas.dataset.navigationStatus = 'clear';
-    canvas.dataset.navigationBlocked = '0';
-    canvas.dataset.navigationReplans = '0';
-    canvas.dataset.navigationRecoveries = '0';
-    canvas.dataset.navigationDeadlocks = '0';
-    canvas.dataset.navigationMaxBlocked = '0.00';
-    canvas.dataset.livingDirection = 'idle';
-    canvas.dataset.livingRoute = 'none';
-    canvas.dataset.livingCompleted = '0';
-    canvas.dataset.optics = 'hd-2d-diorama';
-    canvas.dataset.speechLanguage = 'symbolic-emotes';
-    canvas.dataset.speechBubbleResolution = SPEECH_BUBBLE_RESOLUTION;
     canvas.dataset.renderCount = '0';
     canvas.dataset.visualRenderCount = '0';
     canvas.dataset.reactingCharacter = 'none';
-    canvas.dataset.pointerHit = 'none';
-    canvas.dataset.reaction = 'none';
     canvas.dataset.cameraFocus = 'none';
     canvas.dataset.cameraFocusSource = 'none';
-    canvas.dataset.cameraFocusTarget = 'none';
-    canvas.dataset.cameraFocusFov = '30.00';
-    canvas.dataset.cameraFocusAmount = '0.00';
-    canvas.dataset.cameraPhase = 'overview';
-    canvas.dataset.focusParticipants = 'none';
-    canvas.dataset.focusOccluders = 'none';
-    canvas.dataset.focusOccluderOpacity = '1.00';
-    canvas.dataset.visualProfile = this.venue;
-    canvas.dataset.surfaceTextures = String(this.venueSet.surfaceTextureCount);
-    canvas.dataset.focusBounds = 'none';
-    canvas.dataset.focusSafe = 'true';
-    canvas.dataset.focusLight = 'off';
-    canvas.dataset.visibleEmotes = 'none';
     canvas.dataset.emoteBubbles = '0';
-    canvas.dataset.bloomSurfaces = String(this.venueSet.bloomSurfaceCount);
-    canvas.dataset.characterBloom = 'excluded';
-    canvas.dataset.weatherLayers = '1-batched';
-    canvas.dataset.shotBeat = 'overview';
-    canvas.dataset.cameraSequence = 'none';
-    canvas.dataset.cameraSequenceProgress = '0.000';
     canvas.dataset.artAssets = 'loading';
     canvas.dataset.artPack = 'procedural';
-    canvas.dataset.atmosphereWave = 'none';
-    canvas.dataset.atmospherePhase = 'idle';
-    canvas.dataset.atmosphereZone = 'none';
-    canvas.dataset.atmosphereIntensity = '0.000';
-    canvas.dataset.atmosphereSeed = '0';
     canvas.dataset.atmosphereAssets = 'loading';
-    canvas.dataset.drawCalls = '0';
-    canvas.dataset.renderCpuP95 = '0.00';
-    canvas.dataset.gpuP95 = 'unavailable';
-    canvas.dataset.triangles = '0';
-    canvas.dataset.geometries = '0';
-    canvas.dataset.gpuTextures = '0';
-    canvas.dataset.estimatedTextureBytes = '0';
-    canvas.dataset.characterCache = '0';
-    canvas.dataset.qualityReason = 'initial-device-profile';
-    canvas.dataset.staticBatches = String(this.venueSet.batchedResources.batchCount);
-    canvas.dataset.staticInstances = String(this.venueSet.batchedResources.primitiveCount);
-    canvas.dataset.v3GeometryBaseline = String(this.venueSet.batchedResources.v3GeometryBaseline);
-    canvas.dataset.renderTargets = String(this.pipeline.renderTargetCount);
-    canvas.dataset.textureBytes = '0';
-    this.applyLayoutDatasets(this.venue);
     this.canvas.addEventListener('webglcontextlost', this.contextLost);
     this.canvas.addEventListener('webglcontextrestored', this.contextRestored);
     this.requestVenueArt(this.venue);
@@ -377,13 +299,11 @@ export class DioramaRenderer {
       ? hit.id
       : undefined;
     this.pointerSample = { ...sample, targetId };
-    this.canvas.dataset.pointerHit = targetId ?? 'none';
   }
 
   clearPointerSample(): void {
     this.pointerSample = undefined;
     this.pointerReactions.clearPointer();
-    this.canvas.dataset.pointerHit = 'none';
   }
 
   private readonly contextLost = (event: Event): void => {
@@ -407,7 +327,6 @@ export class DioramaRenderer {
   private setArtState(state: ArtAssetState, pack = 'procedural'): void {
     this.canvas.dataset.artAssets = state;
     this.canvas.dataset.artPack = pack;
-    this.canvas.dataset.textureBytes = String((this.artPack?.textureBytes ?? 0) + (this.atmospherePack?.textureBytes ?? 0));
   }
 
   private requestVenueArt(venue: VenueKind): void {
@@ -452,8 +371,6 @@ export class DioramaRenderer {
 
   private releaseVenueArt(): void {
     this.spriteTextures.setCharacterAtlas(undefined);
-    this.canvas.dataset.characterCache = String(this.spriteTextures.cacheStats.textures);
-    this.canvas.dataset.textureCache = String(this.spriteTextures.cacheStats.textures);
     for (const node of this.guestNodes.values()) node.textureName = '';
     this.baristaNode.textureName = '';
     this.artDecoration?.dispose();
@@ -481,7 +398,6 @@ export class DioramaRenderer {
       this.atmospherePack = pack;
       this.atmosphereLayer.setAssets(pack);
       this.canvas.dataset.atmosphereAssets = pack.state;
-      this.canvas.dataset.textureBytes = String((this.artPack?.textureBytes ?? 0) + pack.textureBytes);
     });
   }
 
@@ -490,7 +406,6 @@ export class DioramaRenderer {
     this.atmospherePack?.dispose();
     this.atmospherePack = undefined;
     this.canvas.dataset.atmosphereAssets = 'procedural';
-    this.canvas.dataset.textureBytes = String(this.artPack?.textureBytes ?? 0);
   }
 
   setQualityTier(tier: RenderQualityTier): void {
@@ -520,36 +435,20 @@ export class DioramaRenderer {
       this.requestAtmosphereArt(venue);
     }
     this.look = calculateDioramaLook(this.venue, this.environment);
-    const profile = VENUE_VISUAL_PROFILES[venue];
     this.applyCharacterRimColor();
     this.canvas.dataset.venue = venue;
-    this.canvas.dataset.visualProfile = profile.id;
-    this.canvas.dataset.surfaceTextures = String(this.venueSet.surfaceTextureCount);
-    this.canvas.dataset.bloomSurfaces = String(this.venueSet.bloomSurfaceCount);
-    this.canvas.dataset.staticBatches = String(this.venueSet.batchedResources.batchCount);
-    this.canvas.dataset.staticInstances = String(this.venueSet.batchedResources.primitiveCount);
-    this.canvas.dataset.v3GeometryBaseline = String(this.venueSet.batchedResources.v3GeometryBaseline);
-    this.applyLayoutDatasets(venue);
   }
 
   setEnvironment(snapshot: CafeEnvironmentSnapshot): void {
     this.environment = snapshot;
     this.look = calculateDioramaLook(this.venue, snapshot);
-    this.canvas.dataset.dayPhase = snapshot.dayPhase;
     this.canvas.dataset.weather = snapshot.weather.kind;
     this.canvas.dataset.weatherSource = snapshot.weatherSource;
-    this.canvas.dataset.localTime = snapshot.localTimeText;
     this.canvas.dataset.locationState = snapshot.locationState;
-    this.canvas.dataset.crowdTarget = String(snapshot.targetCrowd);
   }
 
   setAtmosphere(snapshot: AtmosphereSnapshot): void {
     this.atmosphere = snapshot;
-    this.canvas.dataset.atmosphereWave = snapshot.wave;
-    this.canvas.dataset.atmospherePhase = snapshot.phase;
-    this.canvas.dataset.atmosphereZone = snapshot.zone;
-    this.canvas.dataset.atmosphereIntensity = snapshot.intensity.toFixed(3);
-    this.canvas.dataset.atmosphereSeed = String(snapshot.seed);
   }
 
   resize(reducedMotion: boolean): void {
@@ -563,13 +462,8 @@ export class DioramaRenderer {
     const height = WORLD_HEIGHT * this.qualityProfile.renderScale;
     this.webgl.setSize(width, height, false);
     this.pipeline.resize(width, height);
-    this.canvas.dataset.bloomResolution = this.pipeline.bloomResolution;
     this.perspective.aspect = width / height;
     this.perspective.updateProjectionMatrix();
-    this.canvas.dataset.logicalWidth = String(width);
-    this.canvas.dataset.sceneWidth = String(this.sceneWidth);
-    this.canvas.dataset.renderScale = String(this.qualityProfile.renderScale);
-    this.canvas.dataset.particles = reducedMotion ? 'low' : 'full';
     this.camera.configure(this.sceneWidth, mobile, reducedMotion);
     this.canvas.dataset.cameraMode = this.camera.mode;
   }
@@ -585,7 +479,6 @@ export class DioramaRenderer {
   private renderFrame(elapsed: number, snapshot: SceneSnapshot, drawVisualFrame: boolean): RendererFrameMetrics {
     const cpuStart = performance.now();
     let gpuMs = this.gpuTimer.poll();
-    if (drawVisualFrame) this.webgl.info.reset();
     const time = this.active ? elapsed : 0;
     this.applyLook(time);
     this.updatePointerReaction(snapshot, time);
@@ -611,22 +504,11 @@ export class DioramaRenderer {
     }
     this.renderCount += 1;
     this.canvas.dataset.renderCount = String(this.renderCount);
-    this.canvas.dataset.textureBytes = String((this.artPack?.textureBytes ?? 0) + (this.atmospherePack?.textureBytes ?? 0));
-    const cache = this.spriteTextures.cacheStats;
-    const metrics: RendererFrameMetrics = {
+    this.updateDatasets(snapshot);
+    return {
       cpuMs: Math.max(0, performance.now() - cpuStart),
       ...(gpuMs === undefined ? {} : { gpuMs }),
-      drawCalls: this.webgl.info.render.calls,
-      triangles: this.webgl.info.render.triangles,
-      geometries: this.webgl.info.memory.geometries,
-      textures: this.webgl.info.memory.textures,
-      estimatedTextureBytes: this.estimateTextureBytes(cache.rawPixelBytes),
-      characterCacheSize: cache.textures,
-      renderTargets: this.pipeline.renderTargetCount,
     };
-    this.publishFrameMetrics(metrics);
-    this.updateDatasets(snapshot);
-    return metrics;
   }
 
   dispose(): void {
@@ -708,17 +590,6 @@ export class DioramaRenderer {
     this.keyLight.shadow.map?.dispose();
     this.keyLight.shadow.map = null;
     this.keyLight.shadow.mapSize.set(profile.shadowMapSize, profile.shadowMapSize);
-    this.canvas.dataset.qualityTier = profile.tier;
-    this.canvas.dataset.renderScale = String(profile.renderScale);
-    this.canvas.dataset.renderQuality = `webgl-diorama-${profile.tier}`;
-    this.canvas.dataset.shadowMapSize = String(profile.shadowMapSize);
-    this.canvas.dataset.bloomPass = profile.bloom;
-    this.canvas.dataset.selectiveBloom = profile.bloom === 'off'
-      ? 'fallback-off'
-      : profile.tier === 'master' ? 'half-res-registered' : 'quarter-res-registered';
-    this.canvas.dataset.bloomResolution = this.pipeline.bloomResolution;
-    this.canvas.dataset.miniatureBlur = profile.miniatureBlur;
-    this.canvas.dataset.characterFrameRate = String(profile.characterFrameRate);
   }
 
   private updatePointerReaction(snapshot: SceneSnapshot, time: number): void {
@@ -1077,15 +948,17 @@ export class DioramaRenderer {
     snapshot: SceneSnapshot,
     dialogue: readonly DialogueLine[],
   ): ReadonlyMap<string, SpeechBubblePlacement> {
-    if (dialogue.length < 2) return new Map(dialogue.map((line) => [line.speakerId, {
-      visible: true, offsetX: 0, offsetY: 0,
-    }]));
+    if (dialogue.length === 0) return new Map();
     this.perspective.updateMatrixWorld(true);
     const bounds = dialogue
       .map((line) => this.projectBubbleBounds(line, snapshot))
       .filter((entry): entry is BubbleBounds => entry !== undefined);
     const projected = new Map(bounds.map((entry) => [entry.speakerId, entry]));
-    const placements = resolveBubblePlacements(bounds);
+    const placements = keepBubblesOnScreen(
+      bounds,
+      resolveBubblePlacements(bounds),
+      this.canvas.getBoundingClientRect().width,
+    );
     return new Map(dialogue.map((line) => {
       const placement = placements.find((entry) => entry.speakerId === line.speakerId);
       const bubbleBounds = projected.get(line.speakerId);
@@ -1378,145 +1251,24 @@ export class DioramaRenderer {
     this.eventAccent.scale.setScalar(scale);
   }
 
-  private applyLayoutDatasets(venue: VenueKind): void {
-    const layout = VENUE_LAYOUTS[venue];
-    const seatReport = validateSeatAlignment(layout, this.venueSet.seatBindings);
-    this.canvas.dataset.venueLayout = layout.venue;
-    this.canvas.dataset.entryFlow = layout.entryFlow;
-    this.canvas.dataset.layoutCapacity = `${layout.population.min}-${layout.population.max}`;
-    this.canvas.dataset.layoutCheck = VENUE_LAYOUT_REPORTS[venue].valid ? 'pass' : 'warning';
-    this.canvas.dataset.seatAlignment = seatReport.valid ? 'pass' : 'warning';
-    this.canvas.dataset.seatBindings = String(seatReport.bindingCount);
-    this.canvas.dataset.activitySpots = layout.activitySpots
-      .map((spot) => `${spot.id}:${spot.kind}:${spot.pose}`)
-      .join('|');
-    this.canvas.dataset.passingPlaces = layout.passingPlaces.map((place) => place.id).join('|');
-    this.canvas.dataset.livingRoutes = LIVING_ROUTES_BY_VENUE[venue].map((route) => route.id).join('|');
-    this.canvas.dataset.goldenLivingSequence = GOLDEN_LIVING_SEQUENCES[venue];
-  }
-
-  private estimateTextureBytes(characterCacheBytes: number): number {
-    const textures = new Map<string, Texture>();
-    this.scene.traverse((entry) => {
-      if (!(entry instanceof Mesh)) return;
-      const materials = Array.isArray(entry.material) ? entry.material : [entry.material];
-      for (const material of materials) {
-        const values = material as unknown as Record<string, unknown>;
-        for (const key of ['map', 'emissiveMap', 'roughnessMap', 'bumpMap', 'alphaMap']) {
-          const texture = values[key];
-          if (texture instanceof Texture && !texture.name.startsWith('character:')) textures.set(texture.uuid, texture);
-        }
-      }
-    });
-    let sceneTextureBytes = 0;
-    for (const texture of textures.values()) {
-      const source = texture.source.data as { width?: unknown; height?: unknown } | undefined;
-      const image = texture.image as { width?: unknown; height?: unknown } | undefined;
-      const width = typeof source?.width === 'number' ? source.width : typeof image?.width === 'number' ? image.width : 0;
-      const height = typeof source?.height === 'number' ? source.height : typeof image?.height === 'number' ? image.height : 0;
-      sceneTextureBytes += Math.max(0, width * height * 4);
-    }
-    const shadowMapBytes = this.qualityProfile.shadowMapSize ** 2 * 4;
-    return characterCacheBytes
-      + Math.max(sceneTextureBytes, this.venueSet.surfaceTextureBytes)
-      + this.pipeline.estimatedTextureBytes
-      + shadowMapBytes;
-  }
-
-  private publishFrameMetrics(metrics: RendererFrameMetrics): void {
-    this.canvas.dataset.drawCalls = String(metrics.drawCalls);
-    this.canvas.dataset.renderCpu = metrics.cpuMs.toFixed(2);
-    if (metrics.gpuMs !== undefined) this.canvas.dataset.gpu = metrics.gpuMs.toFixed(2);
-    this.canvas.dataset.triangles = String(metrics.triangles);
-    this.canvas.dataset.geometries = String(metrics.geometries);
-    this.canvas.dataset.gpuTextures = String(metrics.textures);
-    this.canvas.dataset.estimatedTextureBytes = String(metrics.estimatedTextureBytes);
-    this.canvas.dataset.characterCache = String(metrics.characterCacheSize);
-    this.canvas.dataset.renderTargets = String(metrics.renderTargets);
-  }
-
   private updateDatasets(snapshot: SceneSnapshot): void {
     const { accident, moment } = snapshot;
     this.canvas.dataset.cameraX = this.camera.x.toFixed(1);
     this.canvas.dataset.guestCount = String(snapshot.guests.length);
     this.canvas.dataset.accident = accident?.kind ?? 'none';
-    this.canvas.dataset.accidentPhase = accident?.phase ?? 'none';
     this.canvas.dataset.moment = moment?.kind ?? 'none';
-    this.canvas.dataset.momentPhase = moment?.phase ?? 'none';
-    this.canvas.dataset.sessionAct = snapshot.sessionAct ?? 'arrival';
-    this.canvas.dataset.navigationStatus = snapshot.navigation.staticClear && snapshot.navigation.deadlocks === 0
-      ? 'clear'
-      : 'warning';
-    this.canvas.dataset.navigationMoving = String(snapshot.navigation.movingGuests);
-    this.canvas.dataset.navigationYielding = String(snapshot.navigation.yieldingGuests);
-    this.canvas.dataset.navigationBlocked = String(snapshot.navigation.blockedGuests);
-    this.canvas.dataset.navigationReplans = String(snapshot.navigation.replans);
-    this.canvas.dataset.navigationRecoveries = String(snapshot.navigation.recoveries);
-    this.canvas.dataset.navigationDeadlocks = String(snapshot.navigation.deadlocks);
-    this.canvas.dataset.navigationMaxBlocked = snapshot.navigation.maxBlockedSeconds.toFixed(2);
-    this.canvas.dataset.navigationMinimumDistance = snapshot.navigation.minimumGuestDistance.toFixed(2);
-    this.canvas.dataset.livingDirection = snapshot.livingDirection.activeRoutes.length > 0 ? 'active' : 'idle';
-    this.canvas.dataset.livingRoute = snapshot.livingDirection.activeRoutes.join(',') || 'none';
-    this.canvas.dataset.livingCompleted = String(snapshot.livingDirection.completedSequences);
-    this.canvas.dataset.cameraPhase = this.focusState.phase;
-    this.canvas.dataset.shotBeat = this.focusState.shotBeat;
-    this.canvas.dataset.cameraSequence = this.focusState.sequenceId;
-    this.canvas.dataset.cameraSequenceProgress = this.focusState.sequenceProgress.toFixed(3);
     this.canvas.dataset.story = moment?.story ?? 'none';
     this.canvas.dataset.storyStep = String(moment?.storyStep ?? 0);
     this.canvas.dataset.regulars = snapshot.regularIds.join(',');
     this.canvas.dataset.venue = snapshot.venue;
-    this.canvas.dataset.lighting = this.look.night > 0.5 ? 'lamplit' : this.look.daylight > 0.45 ? 'daylight' : 'soft';
-    this.canvas.dataset.material = this.look.wetness > 0.12 ? 'wet' : this.look.fog > 0.15 ? 'misty' : 'dry';
-    this.canvas.dataset.venueActivity = snapshot.barista.task;
-    const layout = VENUE_LAYOUTS[snapshot.venue];
-    const occupied = snapshot.guests.filter((guest) => guest.state === 'activity' && guest.activitySpotId);
-    this.canvas.dataset.occupiedSpots = occupied.map((guest) => guest.activitySpotId).join(',') || 'none';
-    this.canvas.dataset.occupiedTables = String(occupied.filter((guest) => {
-      const kind = activitySpotById(layout, guest.activitySpotId)?.kind;
-      return kind === 'table' || kind === 'bench' || kind === 'counter-stool';
-    }).length);
-    this.canvas.dataset.door = this.doorOpen > 0.03 ? 'opening' : 'closed';
-    this.canvas.dataset.doorOpen = this.doorOpen.toFixed(2);
-    this.canvas.dataset.bloom = this.look.bloom.toFixed(2);
-    this.canvas.dataset.exposure = this.look.exposure.toFixed(2);
-    this.canvas.dataset.characterEmissive = this.look.characterEmissive.toFixed(2);
-    this.canvas.dataset.shadowLift = this.look.shadowLift.toFixed(2);
-    this.canvas.dataset.saturation = this.look.saturation.toFixed(2);
-    this.canvas.dataset.clock = 'analog';
     this.canvas.dataset.clockTime = this.environment?.localTimeText ?? '00:00';
-    this.canvas.dataset.speechBubbles = String(this.activeSpeechBubbles);
     this.canvas.dataset.emoteBubbles = String(this.activeSpeechBubbles);
     this.canvas.dataset.reactingCharacter = this.activeReaction?.characterId ?? 'none';
-    this.canvas.dataset.reaction = this.activeReaction?.gesture ?? 'none';
     this.canvas.dataset.cameraFocus = this.focusState.active ? 'active' : 'none';
     this.canvas.dataset.cameraFocusSource = this.focusState.source ?? 'none';
-    this.canvas.dataset.cameraFocusTarget = this.focusState.target
-      ? `${this.focusState.target.x.toFixed(1)},${this.focusState.target.y.toFixed(1)},${(this.focusState.targetHeight ?? 0).toFixed(2)}`
-      : 'none';
-    this.canvas.dataset.cameraFocusFov = this.perspective.fov.toFixed(2);
-    this.canvas.dataset.cameraFocusAmount = this.focusState.amount.toFixed(2);
-    this.canvas.dataset.focusParticipants = this.focusState.participantIds.join(',') || 'none';
-    this.canvas.dataset.focusOccluders = this.activeFocusOccluders.map((occluder) => occluder.id).join(',') || 'none';
-    this.canvas.dataset.focusOccluderOpacity = this.activeFocusOccluders.length > 0
-      ? focusOccluderOpacity(this.focusState.amount).toFixed(2)
-      : '1.00';
-    this.canvas.dataset.focusBounds = this.focusFrameBounds
-      ? [this.focusFrameBounds.left, this.focusFrameBounds.top, this.focusFrameBounds.right, this.focusFrameBounds.bottom]
-        .map((value) => value.toFixed(3)).join(',')
-      : 'none';
-    this.canvas.dataset.focusSafe = String(this.focusFrameSafe);
-    this.canvas.dataset.focusLight = this.focusLight.intensity > 0.01 ? this.focusLight.intensity.toFixed(2) : 'off';
-    this.canvas.dataset.visibleEmotes = this.visibleDialogue
-      .map((line) => `${line.speakerId}:${line.visibleEmotes.join('+')}`)
-      .join('|') || 'none';
-    this.canvas.dataset.mobileTourPaused = String(this.camera.mode === 'tour' && this.focusState.active);
-    this.canvas.dataset.characterFrameRate = String(this.qualityProfile.characterFrameRate);
     this.canvas.dataset.reactionTargets = this.reactionTargets
       .map((target) => `${target.id}:${Math.round(target.x)},${Math.round(target.y)}`)
       .join('|');
-    this.canvas.dataset.textureCache = String(this.spriteTextures.cacheSize);
-    this.canvas.dataset.inactiveTextures = '0';
   }
 
   private createCharacterNode(name: string): CharacterNode {

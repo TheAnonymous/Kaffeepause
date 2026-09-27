@@ -62,12 +62,12 @@ describe('diorama look direction', () => {
     const look = calculateDioramaLook('cafe', environment('midday', 'clear'));
 
     expect(look.daylight).toBe(1);
-    expect(look.exposure).toBeCloseTo(1.25, 6);
+    expect(look.exposure).toBeCloseTo(1.28, 6);
     expect(look.ambientIntensity).toBeCloseTo(1.58, 6);
     expect(look.keyIntensity).toBeCloseTo(4.15, 6);
-    expect(look.practicalIntensity).toBeCloseTo(28, 6);
+    expect(look.practicalIntensity).toBeCloseTo(22, 6);
     expect(look.characterEmissive).toBeCloseTo(0.045, 6);
-    expect(look.shadowLift).toBeCloseTo(0.06, 6);
+    expect(look.shadowLift).toBeCloseTo(0.018, 6);
     expect(look.vignette).toBeCloseTo(0.045, 6);
     expect(look.lightPoolOpacity).toBeCloseTo(0.035, 6);
   });
@@ -100,18 +100,18 @@ describe('diorama look direction', () => {
       for (const phase of phases) {
         for (const progress of [0, 0.25, 0.5, 0.75, 1]) {
           const look = calculateDioramaLook(venue, environment(phase, 'storm', 'clear', progress, 100));
-          expect(look.exposure).toBeGreaterThanOrEqual(1.13);
-          expect(look.exposure).toBeLessThanOrEqual(1.56);
+          expect(look.exposure).toBeGreaterThanOrEqual(1.14);
+          expect(look.exposure).toBeLessThanOrEqual(1.48);
           expect(look.ambientIntensity).toBeGreaterThanOrEqual(1.3);
           expect(look.ambientIntensity).toBeLessThanOrEqual(2.35);
           expect(look.keyIntensity).toBeGreaterThanOrEqual(1.15);
           expect(look.keyIntensity).toBeLessThanOrEqual(4.15);
-          expect(look.practicalIntensity).toBeGreaterThanOrEqual(28);
-          expect(look.practicalIntensity).toBeLessThanOrEqual(62);
+          expect(look.practicalIntensity).toBeGreaterThanOrEqual(22);
+          expect(look.practicalIntensity).toBeLessThanOrEqual(42);
           expect(look.characterEmissive).toBeGreaterThanOrEqual(0.045);
           expect(look.characterEmissive).toBeLessThanOrEqual(0.3);
-          expect(look.shadowLift).toBeGreaterThanOrEqual(0.045);
-          expect(look.shadowLift).toBeLessThanOrEqual(0.2);
+          expect(look.shadowLift).toBeGreaterThanOrEqual(0.018);
+          expect(look.shadowLift).toBeLessThanOrEqual(0.044);
           expect(look.vignette).toBeGreaterThanOrEqual(0.045);
           expect(look.vignette).toBeLessThanOrEqual(0.07);
           expect(look.lightPoolOpacity).toBeGreaterThanOrEqual(0.035);

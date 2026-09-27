@@ -12,13 +12,6 @@ export type RendererState = 'loading' | 'ready' | 'failed';
 export interface RendererFrameMetrics {
   readonly cpuMs: number;
   readonly gpuMs?: number;
-  readonly drawCalls: number;
-  readonly triangles: number;
-  readonly geometries: number;
-  readonly textures: number;
-  readonly estimatedTextureBytes: number;
-  readonly characterCacheSize: number;
-  readonly renderTargets: number;
 }
 
 export interface RendererLifecycleOptions {

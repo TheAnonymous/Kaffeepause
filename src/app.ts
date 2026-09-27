@@ -12,7 +12,6 @@ import {
   type RendererState,
 } from './scene/rendererLifecycle';
 import {
-  FrameBudgetProbe,
   initialRenderQualityTier,
   parseRenderQualityOverride,
   RenderQualityGovernor,
@@ -23,10 +22,22 @@ import { parseAtmosphereDevelopmentOverrides } from './atmosphere/types';
 
 const UI_IDLE_DELAY = 2_500;
 
-const ACCIDENT_MESSAGES: Readonly<Record<AccidentKind, string>> = {
-  'tray-drop': 'Oh! Dem Barista ist ein Tablett heruntergefallen. Schon wird aufgeräumt.',
-  'coffee-spill': 'Hoppla! Ein Gast hat Kaffee verschüttet und wischt den Tisch sauber.',
-  'umbrella-pop': 'Plopp! Ein Regenschirm ist im Café aufgegangen und wird wieder eingefangen.',
+const ACCIDENT_MESSAGES: Readonly<Record<VenueKind, Readonly<Record<AccidentKind, string>>>> = {
+  cafe: {
+    'tray-drop': 'Oh! Dem Barista ist ein Tablett heruntergefallen. Schon wird aufgeräumt.',
+    'coffee-spill': 'Hoppla! Ein Gast hat Kaffee verschüttet und wischt den Tisch sauber.',
+    'umbrella-pop': 'Plopp! Ein Regenschirm ist im Café aufgegangen und wird wieder eingefangen.',
+  },
+  ramen: {
+    'tray-drop': 'Oh! Hinter der Theke ist ein Tablett heruntergefallen. Schon wird aufgeräumt.',
+    'coffee-spill': 'Hoppla! Ein Gast hat seinen Tee verschüttet und wischt die Theke sauber.',
+    'umbrella-pop': 'Plopp! Ein Regenschirm ist unter dem Vorhang aufgegangen und wird wieder eingefangen.',
+  },
+  arcade: {
+    'tray-drop': 'Oh! Am Tresen ist ein Tablett heruntergefallen. Schon wird aufgeräumt.',
+    'coffee-spill': 'Hoppla! Ein Gast hat seinen Becher verschüttet und wischt alles sauber.',
+    'umbrella-pop': 'Plopp! Ein Regenschirm ist zwischen den Automaten aufgegangen und wird wieder eingefangen.',
+  },
 };
 
 const MOMENT_MESSAGES: Readonly<Record<CafeMomentKind, string>> = {
@@ -77,7 +88,6 @@ const STORY_MESSAGES: Readonly<Record<CafeStoryKind, readonly string[]>> = {
     'Noor und Toni stoßen leise an – aus dem ersten Treffen ist ein guter Abend geworden.',
   ],
   'knit-gift': [
-    'Linn legt jemandem gegenüber ein kleines selbstgestricktes Geschenk hin.',
     'Linn legt jemandem gegenüber ein kleines selbstgestricktes Geschenk hin.',
   ],
   'arcade-rivals': [
@@ -215,7 +225,6 @@ export class KaffeepauseApp {
     ? undefined
     : new RenderQualityGovernor(this.initialQualityTier);
   private qualityTier: RenderQualityTier = this.initialQualityTier;
-  private readonly frameBudget = new FrameBudgetProbe();
   private lifecycle?: RendererLifecycle;
   private rendererState: RendererState = 'loading';
   private rendererGeneration = 0;
@@ -242,8 +251,6 @@ export class KaffeepauseApp {
   start(): void {
     this.setRendererState('loading');
     this.canvas.dataset.audioSamples = this.audio.getSampleState();
-    this.canvas.dataset.audioLayers = this.audio.getLayerSummary();
-    this.canvas.dataset.performanceBudget = 'warming-up';
     this.updateMotionPreference();
     this.environmentUnsubscribe = this.environment.subscribe((snapshot) => this.applyEnvironment(snapshot));
     this.environment.start();
@@ -410,9 +417,6 @@ export class KaffeepauseApp {
       candidate.setAtmosphere(initialAtmosphere);
       this.audio.setAtmosphereWave(initialAtmosphere);
       candidate.renderOnce(this.elapsed, initialScene);
-      this.canvas.dataset.qualityReason = this.forcedQualityTier
-        ? 'development-override'
-        : window.innerWidth < 700 ? 'initial-mobile-balanced' : 'initial-desktop-master';
       this.lifecycle = candidate;
       this.canvas.dataset.renderLoop = 'single-frame';
       this.setRendererState('ready');
@@ -434,8 +438,6 @@ export class KaffeepauseApp {
   private setRendererState(state: RendererState): void {
     this.rendererState = state;
     this.canvas.dataset.rendererState = state;
-    this.canvas.dataset.qualityTier = this.qualityTier;
-    this.canvas.dataset.masterResolution = '2304x1296';
     if (state === 'loading') {
       this.enterButton.disabled = true;
       this.enterButton.setAttribute('aria-busy', 'true');
@@ -565,7 +567,7 @@ export class KaffeepauseApp {
     const accident = scene.accident;
     if (accident && accident.id !== this.lastAnnouncedAccidentId) {
       this.lastAnnouncedAccidentId = accident.id;
-      this.status.textContent = ACCIDENT_MESSAGES[accident.kind];
+      this.status.textContent = ACCIDENT_MESSAGES[scene.venue][accident.kind];
       this.audio.playAccident(accident.kind);
     }
     const moment = scene.moment;
@@ -576,7 +578,6 @@ export class KaffeepauseApp {
     }
     const metrics = this.lifecycle.renderOnce(this.elapsed, scene);
     this.canvas.dataset.audioSamples = this.audio.getSampleState();
-    this.canvas.dataset.audioLayers = this.audio.getLayerSummary();
     const reactionToken = Number(this.canvas.dataset.reactionToken ?? 0);
     if (reactionToken > this.lastReactionAudioToken) {
       this.lastReactionAudioToken = reactionToken;
@@ -593,22 +594,10 @@ export class KaffeepauseApp {
       visible: !document.hidden,
       reducedMotion: this.motionQuery.matches,
     });
-    const performanceWindow = this.qualityGovernor?.lastWindow;
-    if (performanceWindow) {
-      this.canvas.dataset.renderCpuP95 = performanceWindow.cpuP95.toFixed(2);
-      this.canvas.dataset.gpuP95 = performanceWindow.gpuP95?.toFixed(2) ?? 'unavailable';
-    }
     if (decision) {
       this.qualityTier = decision.tier;
-      this.canvas.dataset.qualityReason = `${decision.action}:${decision.reason}`;
       this.lifecycle.setQualityTier(decision.tier);
       this.lifecycle.renderOnce(this.elapsed, scene);
-    }
-    const frameReport = this.frameBudget.observe(frameDurationMs, window.innerWidth < 700);
-    if (frameReport) {
-      this.canvas.dataset.frameMedian = frameReport.median.toFixed(2);
-      this.canvas.dataset.frameP95 = frameReport.p95.toFixed(2);
-      this.canvas.dataset.performanceBudget = frameReport.valid ? 'pass' : 'warning';
     }
     this.startFrameLoop();
   };

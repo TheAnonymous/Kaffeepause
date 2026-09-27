@@ -104,7 +104,7 @@ export const VENUE_VISUAL_PROFILES: Readonly<Record<VenueKind, VenueVisualProfil
       emissive: surface('emissive', '#ffffff', '#e9c27d', '#ffffff', 0.24, 0.02, [2, 2]),
     },
     bloom: { minimum: 0.12, maximum: 0.22, threshold: 0.9, radius: 0.34 },
-    contrast: { minimumShadowLift: 0.06, maximumShadowLift: 0.15, minimumCharacterContrast: 2.3, saturation: [0.98, 1.05] },
+    contrast: { minimumShadowLift: 0.018, maximumShadowLift: 0.035, minimumCharacterContrast: 2.3, saturation: [0.98, 1.05] },
     camera: { focusFov: [22, 26], safeArea: SAFE_AREA },
   },
   ramen: {
@@ -126,7 +126,7 @@ export const VENUE_VISUAL_PROFILES: Readonly<Record<VenueKind, VenueVisualProfil
       emissive: surface('emissive', '#ffffff', '#e8a35d', '#ffffff', 0.22, 0.02, [2, 2]),
     },
     bloom: { minimum: 0.12, maximum: 0.23, threshold: 0.9, radius: 0.34 },
-    contrast: { minimumShadowLift: 0.065, maximumShadowLift: 0.16, minimumCharacterContrast: 2.35, saturation: [0.98, 1.04] },
+    contrast: { minimumShadowLift: 0.02, maximumShadowLift: 0.038, minimumCharacterContrast: 2.35, saturation: [0.98, 1.04] },
     camera: { focusFov: [22, 26], safeArea: SAFE_AREA },
   },
   arcade: {
@@ -148,7 +148,7 @@ export const VENUE_VISUAL_PROFILES: Readonly<Record<VenueKind, VenueVisualProfil
       emissive: surface('emissive', '#ffffff', '#68dfe5', '#ffffff', 0.18, 0.08, [2, 2]),
     },
     bloom: { minimum: 0.16, maximum: 0.3, threshold: 0.91, radius: 0.3 },
-    contrast: { minimumShadowLift: 0.075, maximumShadowLift: 0.18, minimumCharacterContrast: 2.5, saturation: [1.01, 1.08] },
+    contrast: { minimumShadowLift: 0.024, maximumShadowLift: 0.044, minimumCharacterContrast: 2.5, saturation: [1.01, 1.08] },
     camera: { focusFov: [22, 26], safeArea: SAFE_AREA },
   },
 };

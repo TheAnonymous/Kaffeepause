@@ -19,7 +19,8 @@ describe('VenueVisualProfile-Registry', () => {
     expect(profile.bloom.minimum).toBeLessThan(profile.bloom.maximum);
     expect(profile.bloom.maximum).toBeLessThanOrEqual(venue === 'arcade' ? 0.42 : 0.3);
     expect(profile.bloom.threshold).toBeGreaterThanOrEqual(0.9);
-    expect(profile.contrast.minimumShadowLift).toBeGreaterThanOrEqual(0.045);
+    expect(profile.contrast.minimumShadowLift).toBeGreaterThanOrEqual(0.01);
+    expect(profile.contrast.minimumShadowLift).toBeLessThan(profile.contrast.maximumShadowLift);
     expect(colorLuminance(profile.palette.ink)).toBeGreaterThan(0.009);
     expect(colorContrast(profile.palette.ink, profile.lights.characterRim))
       .toBeGreaterThanOrEqual(profile.contrast.minimumCharacterContrast);

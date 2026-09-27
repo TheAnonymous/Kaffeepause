@@ -109,12 +109,6 @@ export class CafeAudio {
   playReaction(): boolean { return this.engine?.playReaction() ?? false; }
   getState(): AudioState { return this.unavailable ? 'unavailable' : this.engine?.getState() ?? 'idle'; }
   getSampleState(): VenueSampleState { return this.engine?.getSampleState() ?? 'idle'; }
-  getLayerSummary(): string {
-    if (this.engine) return this.engine.getLayerSummary();
-    const voice = this.venue === 'cafe' ? 'electric-piano' : this.venue === 'ramen' ? 'wood-ceramic' : 'fm-chip';
-    return `exterior-glass|room-${this.venue}|music-${voice}|procedural|wave-${this.wave?.wave ?? 'none'}`;
-  }
-
   async destroy(): Promise<void> {
     if (this.engine) await this.engine.destroy();
     else if (this.activatedContext && this.activatedContext.state !== 'closed') await this.activatedContext.close();

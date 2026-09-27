@@ -68,3 +68,28 @@ export function resolveBubblePlacements(bounds: readonly BubbleBounds[]): readon
   }
   return placements;
 }
+
+const SCREEN_MARGIN = 6;
+
+/**
+ * Pushes bubbles back inside the visible canvas. A bubble that would need to
+ * move by most of its width belongs to a speaker outside the frame (for
+ * example during the mobile tour) and is hidden instead of showing a sliver.
+ */
+export function keepBubblesOnScreen(
+  bounds: readonly BubbleBounds[],
+  placements: readonly BubblePlacement[],
+  screenWidth: number,
+): readonly BubblePlacement[] {
+  return placements.map((placement) => {
+    const entry = bounds.find((candidate) => candidate.speakerId === placement.speakerId);
+    if (!entry || !placement.visible) return placement;
+    const left = entry.x + placement.offsetX - entry.width / 2;
+    const right = entry.x + placement.offsetX + entry.width / 2;
+    let shift = 0;
+    if (left < SCREEN_MARGIN) shift = SCREEN_MARGIN - left;
+    else if (right > screenWidth - SCREEN_MARGIN) shift = screenWidth - SCREEN_MARGIN - right;
+    if (Math.abs(shift) > entry.width * 0.6) return { ...placement, visible: false };
+    return shift === 0 ? placement : { ...placement, offsetX: placement.offsetX + shift };
+  });
+}

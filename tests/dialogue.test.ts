@@ -4,7 +4,7 @@ import {
   calculateDialogue,
   dialogueAnimation,
 } from '../src/diorama/dialogue';
-import { resolveBubblePlacements } from '../src/diorama/bubbleLayout';
+import { keepBubblesOnScreen, resolveBubblePlacements } from '../src/diorama/bubbleLayout';
 import { emotesForDialogue } from '../src/diorama/emotes';
 import type { SceneSnapshot } from '../src/scene/types';
 import type { Guest } from '../src/simulation/types';
@@ -108,5 +108,31 @@ describe('Gesprächsregie', () => {
       moment: { id: 1, kind: 'shared-cake', startedAt: 0, participantIds: ['guest-1', 'guest-2'], elapsed: 1, duration: 8 },
     };
     expect(calculateDialogue(snapshot, 1.2, 'cafe').length).toBeLessThanOrEqual(2);
+  });
+});
+
+describe('Sprechblasen am Bildrand', () => {
+  const bubble = (speakerId: string, x: number) => ({ speakerId, kind: 'conversation' as const, x, y: 100, width: 80, height: 60 });
+  const shown = (speakerId: string) => ({ speakerId, visible: true, offsetX: 0, offsetY: 0 });
+
+  it('schiebt eine angeschnittene Blase ins Bild zurück', () => {
+    const [placement] = keepBubblesOnScreen([bubble('guest-1', 20)], [shown('guest-1')], 390);
+    expect(placement?.visible).toBe(true);
+    expect(20 + (placement?.offsetX ?? 0) - 40).toBeGreaterThanOrEqual(6);
+  });
+
+  it('blendet die Blase einer Figur außerhalb des Bildes aus', () => {
+    const [left, right] = keepBubblesOnScreen(
+      [bubble('guest-1', -30), bubble('guest-2', 430)],
+      [shown('guest-1'), shown('guest-2')],
+      390,
+    );
+    expect(left?.visible).toBe(false);
+    expect(right?.visible).toBe(false);
+  });
+
+  it('lässt Blasen mitten im Bild unverändert', () => {
+    const placements = [shown('guest-1')];
+    expect(keepBubblesOnScreen([bubble('guest-1', 200)], placements, 390)).toEqual(placements);
   });
 });

@@ -108,6 +108,9 @@ const COMPOSITE_FRAGMENT = `
     color.b -= warmth * 0.012;
     color.rgb *= 1.0 + sin(time * 0.37) * 0.002;
     gl_FragColor = color;
+    // Die Szene liegt linear im Zwischenpuffer; erst hier Belichtung und sRGB.
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
   }
 `;
 
@@ -160,7 +163,7 @@ export class FixedRenderPipeline {
     fragmentShader: COMPOSITE_FRAGMENT,
     depthTest: false,
     depthWrite: false,
-    toneMapped: false,
+    toneMapped: true,
   });
   private readonly quad = new Mesh(this.geometry, this.compositeMaterial);
   private readonly bloomBackground = new Color('#000000');
@@ -177,14 +180,6 @@ export class FixedRenderPipeline {
     this.applyProfile(profile);
   }
 
-  get renderTargetCount(): number { return 4; }
-  get estimatedTextureBytes(): number {
-    return (this.width * this.height + this.bloomWidth * this.bloomHeight * 3) * 4;
-  }
-  get bloomResolution(): string {
-    const mode = this.profile.tier === 'master' ? 'half' : this.profile.tier === 'balanced' ? 'quarter' : 'off';
-    return `${mode}:${this.bloomWidth}x${this.bloomHeight}`;
-  }
 
   applyProfile(profile: RenderQualityProfile): void {
     this.profile = profile;

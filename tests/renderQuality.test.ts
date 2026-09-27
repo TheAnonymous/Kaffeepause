@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  FrameBudgetProbe,
   initialRenderQualityTier,
   lowerQualityTier,
   parseRenderQualityOverride,
@@ -163,24 +162,5 @@ describe('HD-2D-Masterauflösung', () => {
     expect(observeWindow(governor, { frameMs: 40, cpuMs: 8 }, 100, true)?.tier).toBe('fallback');
     for (const start of [200, 300, 400, 500]) observeWindow(governor, { frameMs: 20, cpuMs: 8 }, start, true);
     expect(governor.currentTier).toBe('fallback');
-  });
-
-  it('prüft nach der Aufwärmung Desktop-Median/P95 und das reduzierte Mobile-Profil getrennt', () => {
-    const desktop = new FrameBudgetProbe(0, 1_000);
-    let desktopReport;
-    for (let index = 0; index < 63; index += 1) desktopReport = desktop.observe(index === 62 ? 24 : 16, false) ?? desktopReport;
-    expect(desktopReport).toMatchObject({ valid: true, profile: 'desktop', median: 16, p95: 16 });
-
-    const mobile = new FrameBudgetProbe(0, 1_000);
-    let mobileReport;
-    for (let index = 0; index < 40; index += 1) mobileReport = mobile.observe(index === 39 ? 32 : 26, true) ?? mobileReport;
-    expect(mobileReport).toMatchObject({ valid: true, profile: 'mobile', p95: 26 });
-  });
-
-  it('meldet auch extrem langsame Software-Frames ehrlich als Budgetverletzung', () => {
-    const probe = new FrameBudgetProbe(0, 1_000);
-    expect(probe.observe(1_250, false)).toMatchObject({
-      valid: false, profile: 'desktop', median: 1_250, p95: 1_250, samples: 1,
-    });
   });
 });

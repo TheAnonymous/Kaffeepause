@@ -4,7 +4,7 @@ import type { CafeEnvironmentSnapshot } from './environment/types';
 import type { VenueKind } from './venue';
 import { loadVenueSamplePack, samplesForVenue, type VenueSampleState } from './audioSamples';
 import { momentDefinition, type MomentFoleyCue } from './simulation/momentRegistry';
-import { VENUE_ATMOSPHERE_PROFILES, type AtmosphereSnapshot } from './atmosphere/types';
+import type { AtmosphereSnapshot } from './atmosphere/types';
 
 export type AudioState = 'idle' | 'playing' | 'muted' | 'unavailable';
 export const REACTION_ACCENT_MAX_GAIN = 0.008;
@@ -166,13 +166,6 @@ export class CafeAudioEngine {
       if (snapshot.wave !== 'none') this.playAtmosphereAccent(snapshot);
     }
     this.applyAtmosphere();
-  }
-
-  getLayerSummary(): string {
-    const voice = VENUE_ATMOSPHERE_PROFILES[this.venue].musicVoice;
-    const sample = this.sampleState === 'ready' || this.sampleState === 'partial' ? 'sample' : 'procedural';
-    const wave = this.atmosphereWave?.wave ?? 'none';
-    return `exterior-glass|room-${this.venue}|music-${voice}|${sample}|wave-${wave}`;
   }
 
   setVenue(venue: VenueKind): void {
