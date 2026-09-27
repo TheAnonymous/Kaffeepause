@@ -10,6 +10,14 @@
 
 Die Simulation rechnet in Szenenkoordinaten von 384 × 216. Der Renderer übersetzt sie in einen Raum von 16 × 8,8 × 7,2 Einheiten; Figuren sind Pixel-Billboards zwischen echten 3D-Möbeln. Tragende Maße stehen in `src/scene/proportions.ts` und `src/diorama/types.ts`.
 
+## Figuren
+
+Figuren sind Pixel-Sprites (144 × 208) auf senkrechten Tafeln, die sich nur um die Hochachse zur Kamera drehen. Alle Figuren nutzen denselben Maßstab: Die Schuhzeile `SPRITE_FLOOR_ROW` steht genau auf der Bodenoberkante (`FLOOR_SURFACE_Y`), und eine stehende Figur ist `DIORAMA.standingHeight` hoch. Sitzende Gäste werden auf die Sitzfläche ihres Möbels gesetzt (`seatBindings`) und je nach Platz von vorn (Bank, Lounge), im Profil (Tischende) oder von hinten (Ramen-Theke) gezeichnet. Die Hüfte liegt dabei auf der Sitzhöhe aus `SEAT_TOP_HEIGHT` in `spriteFactory.ts`.
+
+Gezeichnet wird auf voller Auflösung, danach bekommt jede Figur eine leichte zylindrische Schattierung (`applyVolumeShading`) und wird auf halbe Auflösung vergröbert, bevor die Kontur entsteht. Die Tafeln werfen echte Schatten; die Form schneidet der `alphaTest` aus.
+
+Tische werden aus den Tischflächen in `src/simulation/layout.ts` gebaut. Wer einen Tisch verschiebt oder vergrößert, ändert also Simulation und Bild zugleich.
+
 ## Licht und Farbe
 
 Die Szene wird zuerst linear in einen Zwischenpuffer gerendert. Erst der letzte Schritt in `fixedRenderPipeline.ts` wendet Belichtung, Tone-Mapping und die sRGB-Umrechnung an (`#include <tonemapping_fragment>` und `#include <colorspace_fragment>`). Fehlen diese beiden Zeilen, wird das Bild deutlich zu dunkel und zu satt.
@@ -33,8 +41,12 @@ Nur im Entwicklungsserver (`npm run dev`); Produktionsbuilds ignorieren sie.
 | `?cinematicShot=establishing\|detail\|reaction` | eine Einstellung einfrieren |
 | `?art=fallback` | ohne Grafikatlanten rendern |
 | `?atmosphere=<Welle>&atmospherePhase=fade-in\|hold\|fade-out&atmosphereScale=<Faktor>` | Außenwellen reproduzierbar zeigen |
+| `?friends=demo` | vier Beispiel-Freunde vorbeikommen lassen |
+| `?season=halloween\|winter-lights\|none` | Jahreszeiten-Deko unabhängig vom Datum zeigen |
 | `?quality=master\|balanced\|fallback` | Qualitätsstufe erzwingen |
 | `?testRender=diagnostic` | Frames nur auf Anfrage zeichnen (für Tests) |
+
+Unabhängig davon wählt `#cafe`, `#ramen` oder `#arcade` in der Adresse den Ort vor; das gilt auch im fertigen Build.
 
 Mit `testRender=diagnostic` stehen im Fenster `stepDioramaDiagnosticFrame(sekunden)` und `renderDioramaVisualFrame()` bereit; die Browser-Tests in `e2e/helpers.ts` nutzen sie, um Szenen reproduzierbar vorzuspulen.
 

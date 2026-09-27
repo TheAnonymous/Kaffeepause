@@ -7,11 +7,12 @@ import {
   type Texture,
 } from 'three';
 import type { Barista, Guest, GuestAppearance, GuestPalette } from '../simulation/types';
+import type { ActivitySpotKind } from '../simulation/layout';
 import type { VenueKind } from '../venue';
 import type { LoadedVenueArtPack } from './artAssets';
 import type { CharacterTextureCacheStats } from './types';
 import type { CharacterPose, CharacterVisualState } from './characterVisualState';
-import { DIORAMA } from './types';
+import { DIORAMA, FLOOR_SURFACE_Y } from './types';
 import { VENUE_VISUAL_PROFILES } from './visualProfiles';
 
 type PixelContext = CanvasRenderingContext2D;
@@ -274,6 +275,17 @@ function activityProp(context: PixelContext, description: SpriteDescription, cen
       pixel(context, '#f1cf82', centerX - 22, y - 8, 3, 24);
       pixel(context, '#f1cf82', centerX + 19, y - 8, 3, 24);
       break;
+    case 'handheld':
+      // Ein kleiner grauer Handheld mit grünem Bildschirm.
+      pixel(context, '#9e9b93', centerX - 11, y - 14, 22, 30);
+      pixel(context, '#c9c6bd', centerX - 10, y - 14, 20, 28);
+      pixel(context, '#306230', centerX - 7, y - 11, 14, 11);
+      pixel(context, '#8bac0f', centerX - 6, y - 10, 12, 9);
+      pixel(context, '#3b3a40', centerX - 7, y + 3, 7, 3);
+      pixel(context, '#3b3a40', centerX - 5, y + 1, 3, 7);
+      pixel(context, '#9a2257', centerX + 3, y + 3, 3, 3);
+      pixel(context, '#9a2257', centerX + 6, y + 1, 3, 3);
+      break;
     case 'board-game':
       pixel(context, '#d5ad64', centerX - 25, y + 3, 50, 13);
       pixel(context, '#7d4c53', centerX - 13, y - 3, 8, 8);
@@ -318,52 +330,152 @@ function activityProp(context: PixelContext, description: SpriteDescription, cen
   }
 }
 
+/** Unterkante der Schuhe im Sprite. Diese Zeile steht im Renderer genau auf dem Boden. */
+export const SPRITE_FLOOR_ROW = 160;
+const STANDING_HEAD_ROW = 19;
+/** Ein gemeinsamer Maßstab für stehende und sitzende Figuren. */
+export const SPRITE_ROWS_PER_UNIT = (SPRITE_FLOOR_ROW - STANDING_HEAD_ROW) / DIORAMA.standingHeight;
+const SEATED_TORSO_ROWS = 54;
+/** Kantenlänge eines sichtbaren Pixels in Zeichen-Einheiten. */
+const SPRITE_PIXEL_SIZE = 2;
+const TABLE_TOP_HEIGHT = 0.98 - FLOOR_SURFACE_Y;
+
+/** Oberkante der Sitzfläche über dem Boden je Möbel, passend zu `venueBuilder.ts`. */
+export const SEAT_TOP_HEIGHT: Readonly<Record<ActivitySpotKind, number>> = {
+  bench: 0.67 - FLOOR_SURFACE_Y,
+  table: 0.58 - FLOOR_SURFACE_Y,
+  'counter-stool': 0.64 - FLOOR_SURFACE_Y,
+  lounge: 0.43 - FLOOR_SURFACE_Y,
+  'arcade-cabinet': 0.58 - FLOOR_SURFACE_Y,
+};
+
+/** Kopfhöhe einer sitzenden Figur über dem Boden. */
+export function seatedHeadHeight(kind: ActivitySpotKind | undefined): number {
+  const seatRows = Math.round(SEAT_TOP_HEIGHT[kind ?? 'table'] * SPRITE_ROWS_PER_UNIT);
+  return (seatRows + SEATED_TORSO_ROWS + 38) / SPRITE_ROWS_PER_UNIT;
+}
+
+function rowAbove(height: number): number {
+  return SPRITE_FLOOR_ROW - Math.round(height * SPRITE_ROWS_PER_UNIT);
+}
+
+function backOfHead(context: PixelContext, description: SpriteDescription, headX: number, top: number, headWidth: number, headHeight: number): void {
+  const { palette, appearance } = description;
+  const color = palette.hair;
+  const dark = shade(color, -0.32);
+  const light = shade(color, 0.2);
+  const center = headX + headWidth / 2;
+  pixel(context, shade(palette.skin, -0.2), headX - 4, top + 15, 5, 9);
+  pixel(context, shade(palette.skin, -0.2), headX + headWidth - 1, top + 15, 5, 9);
+  pixel(context, dark, headX - 3, top + 3, headWidth + 6, headHeight - 8);
+  pixel(context, color, headX, top, headWidth, headHeight - 10);
+  pixel(context, light, headX + 5, top + 3, headWidth - 14, 3);
+  if (appearance.hair === 'crop' || appearance.hair === 'undercut') {
+    pixel(context, shade(palette.skin, -0.12), headX + 4, top + headHeight - 12, headWidth - 8, 4);
+  }
+  if (appearance.hair === 'bun') {
+    pixel(context, dark, center - 8, top - 10, 16, 13);
+    pixel(context, color, center - 6, top - 12, 12, 10);
+  } else if (appearance.hair === 'ponytail') {
+    pixel(context, dark, center - 5, top + headHeight - 14, 10, 30);
+    pixel(context, color, center - 3, top + headHeight - 14, 6, 26);
+  } else if (appearance.hair === 'long' || appearance.hair === 'waves') {
+    pixel(context, dark, headX - 3, top + headHeight - 12, headWidth + 6, 26);
+    pixel(context, color, headX, top + headHeight - 12, headWidth, 22);
+  } else if (appearance.hair === 'bob') {
+    pixel(context, dark, headX - 4, top + headHeight - 12, headWidth + 8, 8);
+  } else if (appearance.hair === 'curls') {
+    for (const [x, y] of [[-5, 4], [8, -4], [22, -4], [30, 6], [-4, 18], [30, 18], [12, 22]] as const) {
+      pixel(context, color, headX + x, top + y, 9, 9);
+      pixel(context, light, headX + x + 2, top + y + 1, 3, 3);
+    }
+  }
+}
+
+function drawLegs(context: PixelContext, description: SpriteDescription, center: number, hipRow: number, legTop: number): void {
+  const { palette } = description;
+  const trousersDark = shade(palette.trousers, -0.2);
+  const floor = SPRITE_FLOOR_ROW;
+  if (!description.seated) {
+    const gait = description.visual.pose === 'walking' ? (description.visual.frame === 1 ? 5 : description.visual.frame === 3 ? -5 : 0) : 0;
+    pixel(context, palette.trousers, center - 19 + gait, legTop, 15, floor - 10 - legTop + 6);
+    pixel(context, trousersDark, center + 4 - gait, legTop, 15, floor - 10 - legTop + 6);
+    pixel(context, palette.shoes, center - 23 + gait, floor - 10, 23, 10);
+    pixel(context, palette.shoes, center + 3 - gait, floor - 10, 23, 10);
+    return;
+  }
+  const view = description.visual.seatView ?? 'front';
+  if (view === 'side') {
+    // Oberschenkel waagerecht zum Tisch, Unterschenkel senkrecht zum Boden.
+    pixel(context, trousersDark, center - 12, hipRow - 7, 44, 13);
+    pixel(context, palette.trousers, center - 12, hipRow - 7, 42, 10);
+    pixel(context, trousersDark, center + 20, hipRow + 3, 12, floor - 9 - hipRow - 3);
+    pixel(context, palette.shoes, center + 18, floor - 9, 21, 9);
+    return;
+  }
+  if (view === 'back') {
+    pixel(context, trousersDark, center - 20, hipRow - 4, 40, 10);
+    pixel(context, trousersDark, center - 17, hipRow + 6, 11, floor - 9 - hipRow - 6);
+    pixel(context, trousersDark, center + 6, hipRow + 6, 11, floor - 9 - hipRow - 6);
+    pixel(context, palette.shoes, center - 19, floor - 9, 15, 9);
+    pixel(context, palette.shoes, center + 4, floor - 9, 15, 9);
+    return;
+  }
+  // Von vorn: Knie kommen auf die Kamera zu, Unterschenkel stehen auf dem Boden.
+  pixel(context, palette.trousers, center - 23, hipRow - 4, 22, 13);
+  pixel(context, trousersDark, center + 1, hipRow - 4, 22, 13);
+  pixel(context, palette.trousers, center - 20, hipRow + 9, 15, floor - 9 - hipRow - 9);
+  pixel(context, trousersDark, center + 5, hipRow + 9, 15, floor - 9 - hipRow - 9);
+  pixel(context, palette.shoes, center - 24, floor - 9, 21, 9);
+  pixel(context, palette.shoes, center + 3, floor - 9, 21, 9);
+}
+
 function drawSprite(context: PixelContext, description: SpriteDescription): void {
   context.clearRect(0, 0, DIORAMA.spriteWidth, DIORAMA.spriteHeight);
   context.imageSmoothingEnabled = false;
   const { palette, appearance, seated } = description;
-  const center = DIORAMA.spriteWidth / 2;
-  const bodyWidth = 43 + appearance.widthOffset * 3 + (appearance.body === 'broad' ? 7 : appearance.body === 'slim' ? -5 : 0);
+  const view = seated ? description.visual.seatView ?? 'front' : 'front';
+  // Im Profil sitzt der Körper etwas zurück, damit Beine und Hände zum Tisch reichen.
+  const center = DIORAMA.spriteWidth / 2 - (view === 'side' ? 10 : 0);
+  const fullBodyWidth = 43 + appearance.widthOffset * 3 + (appearance.body === 'broad' ? 7 : appearance.body === 'slim' ? -5 : 0);
+  const bodyWidth = view === 'side' ? Math.round(fullBodyWidth * 0.72) : fullBodyWidth;
   const headWidth = appearance.face === 'narrow' ? 33 : appearance.face === 'square' ? 41 : 37;
   const headHeight = appearance.face === 'round' ? 37 : 40;
   const headX = center - headWidth / 2;
   const nod = description.visual.gesture === 'nod' && (description.visual.frame === 1 || description.visual.frame === 2) ? 4 : 0;
-  const headY = 19 + (seated ? 22 : 0) - appearance.heightOffset * 2 + nod;
-  const shoulderY = headY + headHeight - 2;
-  const torsoHeight = seated ? 48 : 60;
+  const hipRow = seated ? rowAbove(SEAT_TOP_HEIGHT[description.visual.activitySpotKind ?? 'table']) : 0;
+  const shoulderY = seated
+    ? hipRow - SEATED_TORSO_ROWS - appearance.heightOffset * 2 + nod
+    : STANDING_HEAD_ROW - appearance.heightOffset * 2 + nod + headHeight - 2;
+  const headY = shoulderY - headHeight + 2;
+  const torsoHeight = seated ? hipRow - shoulderY + 4 : 60;
   const torsoX = center - bodyWidth / 2;
   const legTop = shoulderY + torsoHeight - 4;
   const skinDark = shade(palette.skin, -0.22);
   const coatDark = shade(palette.coat, -0.28);
   const coatLight = shade(palette.coat, 0.18);
 
-  if (!seated) {
-    const gait = description.visual.pose === 'walking' ? (description.visual.frame === 1 ? 5 : description.visual.frame === 3 ? -5 : 0) : 0;
-    pixel(context, palette.trousers, center - 19 + gait, legTop, 15, 43);
-    pixel(context, shade(palette.trousers, -0.2), center + 4 - gait, legTop, 15, 43);
-    pixel(context, palette.shoes, center - 23 + gait, legTop + 37, 23, 10);
-    pixel(context, palette.shoes, center + 3 - gait, legTop + 37, 23, 10);
-  } else {
-    pixel(context, palette.trousers, center - 22, legTop - 3, 20, 28);
-    pixel(context, shade(palette.trousers, -0.2), center + 2, legTop - 3, 20, 28);
-    pixel(context, palette.shoes, center - 25, legTop + 19, 21, 8);
-    pixel(context, palette.shoes, center + 5, legTop + 19, 21, 8);
-  }
+  drawLegs(context, description, center, hipRow, legTop);
 
   pixel(context, coatDark, torsoX - 2, shoulderY + 5, bodyWidth + 4, torsoHeight - 3);
   pixel(context, palette.coat, torsoX, shoulderY, bodyWidth, torsoHeight - 7);
-  pixel(context, coatLight, torsoX + 5, shoulderY + 4, 7, torsoHeight - 15);
-  if (appearance.outfit === 'cardigan' || appearance.outfit === 'jacket') {
-    pixel(context, palette.accent, center - 3, shoulderY + 5, 6, torsoHeight - 11);
-    for (let y = shoulderY + 14; y < shoulderY + torsoHeight - 8; y += 12) pixel(context, '#f0d3a3', center - 1, y, 3, 3);
+  pixel(context, coatLight, torsoX + (view === 'back' ? bodyWidth - 12 : 5), shoulderY + 4, 7, torsoHeight - 15);
+  if (view === 'back') {
+    if (appearance.outfit === 'hoodie') pixel(context, coatDark, center - 13, shoulderY - 2, 26, 14);
+    if (appearance.outfit === 'overalls') pixel(context, palette.accent, center - 15, shoulderY + torsoHeight - 24, 30, 14);
+    if (appearance.outfit === 'dress') pixel(context, palette.accent, torsoX - 5, shoulderY + torsoHeight - 22, bodyWidth + 10, 19);
+  } else if (appearance.outfit === 'cardigan' || appearance.outfit === 'jacket') {
+    const placket = view === 'side' ? center + 5 : center - 3;
+    pixel(context, palette.accent, placket, shoulderY + 5, 6, torsoHeight - 11);
+    for (let y = shoulderY + 14; y < shoulderY + torsoHeight - 8; y += 12) pixel(context, '#f0d3a3', placket + 2, y, 3, 3);
   } else if (appearance.outfit === 'hoodie') {
     pixel(context, coatDark, center - 14, shoulderY - 3, 28, 11);
     pixel(context, palette.accent, center - 10, shoulderY + 12, 3, 24);
-    pixel(context, palette.accent, center + 7, shoulderY + 12, 3, 24);
+    if (view !== 'side') pixel(context, palette.accent, center + 7, shoulderY + 12, 3, 24);
   } else if (appearance.outfit === 'overalls') {
-    pixel(context, palette.accent, center - 15, shoulderY + 9, 30, torsoHeight - 15);
+    pixel(context, palette.accent, center - (view === 'side' ? 9 : 15), shoulderY + 9, view === 'side' ? 22 : 30, torsoHeight - 15);
     pixel(context, '#f1d09b', center - 10, shoulderY + 17, 4, 4);
-    pixel(context, '#f1d09b', center + 6, shoulderY + 17, 4, 4);
+    if (view !== 'side') pixel(context, '#f1d09b', center + 6, shoulderY + 17, 4, 4);
   } else if (appearance.outfit === 'dress') {
     pixel(context, palette.accent, torsoX - 5, shoulderY + torsoHeight - 22, bodyWidth + 10, 19);
   } else {
@@ -372,28 +484,58 @@ function drawSprite(context: PixelContext, description: SpriteDescription): void
 
   // Arme sind immer am Schultergelenk verankert. Die Hände enden am jeweiligen Requisit.
   const armY = shoulderY + 8;
-  const handY = seated ? shoulderY + 48 : shoulderY + 38;
-  const gestureLift = description.visual.frame === 1 || description.visual.frame === 2 ? 8 : 3;
-  const poseMotion = ([0, -5, 0, 4] as const)[description.visual.frame];
-  const activePose = description.visual.pose !== 'waiting';
-  const baseLeftHandY = description.visual.pose === 'walking' ? handY + poseMotion : activePose ? handY + Math.min(0, poseMotion) : handY;
-  const baseRightHandY = description.visual.pose === 'walking' ? handY - poseMotion : activePose ? handY - Math.max(0, poseMotion) : handY;
-  const leftHandY = description.visual.gesture === 'wave' ? shoulderY - 13 + gestureLift : description.visual.gesture === 'compare' ? handY - 12 : baseLeftHandY;
-  const rightHandY = description.visual.gesture === 'toast' || description.visual.gesture === 'swap' ? handY - 17
-    : description.visual.gesture === 'startle' || description.visual.gesture === 'clean' ? handY - 12 : baseRightHandY;
-  pixel(context, coatDark, torsoX - 10, Math.min(armY, leftHandY), 11, Math.abs(leftHandY - armY) + 9);
-  pixel(context, palette.coat, torsoX - 8, Math.min(armY + 2, leftHandY), 8, Math.abs(leftHandY - armY) + 4);
-  pixel(context, coatDark, torsoX + bodyWidth - 1, Math.min(armY, rightHandY), 11, Math.abs(rightHandY - armY) + 9);
-  pixel(context, palette.coat, torsoX + bodyWidth, Math.min(armY + 2, rightHandY), 8, Math.abs(rightHandY - armY) + 4);
-  pixel(context, skinDark, torsoX - 9, leftHandY, 11, 10);
-  pixel(context, palette.skin, torsoX + bodyWidth - 1, rightHandY, 11, 10);
+  let propX = center;
+  let propY = seated ? shoulderY + 49 : shoulderY + 43;
+  if (view === 'side') {
+    // Der vordere Arm greift zur Tischplatte; der hintere verschwindet hinter dem Körper.
+    const tableRow = rowAbove(TABLE_TOP_HEIGHT);
+    const reach = description.visual.frame === 1 ? 2 : 0;
+    pixel(context, coatDark, center - 2, armY, 11, tableRow - armY + 2);
+    pixel(context, palette.coat, center, armY + 2, 8, tableRow - armY - 2);
+    pixel(context, coatDark, center, tableRow - 8, 28 + reach, 10);
+    pixel(context, palette.coat, center + 2, tableRow - 7, 25 + reach, 7);
+    pixel(context, palette.skin, center + 27 + reach, tableRow - 8, 10, 9);
+    // Den Handheld hält man in der Hand, alles andere liegt auf dem Tisch.
+    propX = description.activity === 'handheld' ? center + 30 : center + 46;
+    propY = description.activity === 'handheld' ? tableRow - 20 : tableRow - 16;
+  } else if (view === 'back') {
+    // Von hinten: Ellbogen seitlich, Hände vorn an der Theke und damit verdeckt.
+    for (const side of [-1, 1] as const) {
+      const x = side < 0 ? torsoX - 9 : torsoX + bodyWidth - 2;
+      pixel(context, coatDark, x, armY, 11, 34);
+      pixel(context, palette.coat, x + 1, armY + 2, 8, 29);
+    }
+  } else {
+    const handY = seated ? shoulderY + 48 : shoulderY + 38;
+    const gestureLift = description.visual.frame === 1 || description.visual.frame === 2 ? 8 : 3;
+    const poseMotion = ([0, -5, 0, 4] as const)[description.visual.frame];
+    const activePose = description.visual.pose !== 'waiting';
+    const baseLeftHandY = description.visual.pose === 'walking' ? handY + poseMotion : activePose ? handY + Math.min(0, poseMotion) : handY;
+    const baseRightHandY = description.visual.pose === 'walking' ? handY - poseMotion : activePose ? handY - Math.max(0, poseMotion) : handY;
+    const leftHandY = description.visual.gesture === 'wave' ? shoulderY - 13 + gestureLift : description.visual.gesture === 'compare' ? handY - 12 : baseLeftHandY;
+    const rightHandY = description.visual.gesture === 'toast' || description.visual.gesture === 'swap' ? handY - 17
+      : description.visual.gesture === 'startle' || description.visual.gesture === 'clean' ? handY - 12 : baseRightHandY;
+    pixel(context, coatDark, torsoX - 10, Math.min(armY, leftHandY), 11, Math.abs(leftHandY - armY) + 9);
+    pixel(context, palette.coat, torsoX - 8, Math.min(armY + 2, leftHandY), 8, Math.abs(leftHandY - armY) + 4);
+    pixel(context, coatDark, torsoX + bodyWidth - 1, Math.min(armY, rightHandY), 11, Math.abs(rightHandY - armY) + 9);
+    pixel(context, palette.coat, torsoX + bodyWidth, Math.min(armY + 2, rightHandY), 8, Math.abs(rightHandY - armY) + 4);
+    pixel(context, skinDark, torsoX - 9, leftHandY, 11, 10);
+    pixel(context, palette.skin, torsoX + bodyWidth - 1, rightHandY, 11, 10);
+  }
 
-  face(context, description, headX, headY + 4, headWidth, headHeight);
-  hair(context, description, headX, headY, headWidth);
-  pixel(context, skinDark, center - 7, shoulderY - 6, 14, 9);
+  if (view === 'back') {
+    pixel(context, skinDark, center - 7, shoulderY - 6, 14, 9);
+    backOfHead(context, description, headX, headY, headWidth, headHeight);
+  } else {
+    // Im Profil ist das Gesicht leicht zum Tisch gedreht.
+    const faceShift = view === 'side' ? 5 : 0;
+    face(context, description, headX + faceShift, headY + 4, headWidth, headHeight);
+    hair(context, description, headX, headY, headWidth);
+    pixel(context, skinDark, center - 7 + faceShift, shoulderY - 6, 14, 9);
+    if (appearance.detail === 'hairclip') pixel(context, '#f0c766', headX + headWidth - 6, headY + 7, 7, 4);
+  }
 
-  if (appearance.detail === 'hairclip') pixel(context, '#f0c766', headX + headWidth - 6, headY + 7, 7, 4);
-  if (description.regular) {
+  if (description.regular && view !== 'back') {
     pixel(context, '#f2ca74', torsoX - 5, shoulderY + 12, 4, 14);
     pixel(context, '#fff1b2', torsoX - 4, shoulderY + 14, 2, 5);
   }
@@ -404,13 +546,44 @@ function drawSprite(context: PixelContext, description: SpriteDescription): void
   }
   if (description.accessory === 'scarf') pixel(context, palette.accent, center - 20, shoulderY - 1, 40, 10);
   if (description.accessory === 'coat') pixel(context, shade(palette.coat, -0.12), torsoX - 5, shoulderY + 5, 8, torsoHeight - 4);
-  if (description.accessory === 'sunglasses') pixel(context, '#242431', headX + 4, headY + 16, headWidth - 8, 6);
-  if (description.accessory === 'umbrella') {
+  if (description.accessory === 'sunglasses' && view !== 'back') pixel(context, '#242431', headX + 4, headY + 16, headWidth - 8, 6);
+  if (description.accessory === 'umbrella' && !seated) {
     pixel(context, '#e0bb70', torsoX - 15, shoulderY + 15, 3, 74);
     pixel(context, '#4a5260', torsoX - 35, shoulderY + 12, 42, 5);
   }
 
-  activityProp(context, description, center, seated ? shoulderY + 49 : shoulderY + 43);
+  // Von hinten liegen Schüssel und Becher vorn auf der Theke und sind echte 3D-Objekte.
+  if (view !== 'back') activityProp(context, description, propX, propY);
+}
+
+/**
+ * Zylindrische Schattierung: Pro Zeile wird die Lichtseite leicht aufgehellt und
+ * die abgewandte Seite abgedunkelt. So wirken die Figuren rund statt ausgeschnitten.
+ */
+export function applyVolumeShading(context: PixelContext): void {
+  const { width, height } = context.canvas;
+  const image = context.getImageData(0, 0, width, height);
+  const data = image.data;
+  for (let y = 0; y < height; y += 1) {
+    let left = -1;
+    let right = -1;
+    for (let x = 0; x < width; x += 1) {
+      if ((data[(y * width + x) * 4 + 3] ?? 0) === 0) continue;
+      if (left < 0) left = x;
+      right = x;
+    }
+    if (left < 0 || right - left < 6) continue;
+    for (let x = left; x <= right; x += 1) {
+      const index = (y * width + x) * 4;
+      if ((data[index + 3] ?? 0) === 0) continue;
+      const t = (x - left) / (right - left);
+      const factor = t > 0.62 ? 1 - 0.28 * (t - 0.62) / 0.38 : t < 0.2 ? 1 + 0.14 * (0.2 - t) / 0.2 : 1;
+      data[index] = Math.min(255, Math.round((data[index] ?? 0) * factor));
+      data[index + 1] = Math.min(255, Math.round((data[index + 1] ?? 0) * factor));
+      data[index + 2] = Math.min(255, Math.round((data[index + 2] ?? 0) * factor));
+    }
+  }
+  context.putImageData(image, 0, 0);
 }
 
 function configureTexture(canvas: HTMLCanvasElement): CanvasTexture {
@@ -457,7 +630,7 @@ function spriteKey(description: SpriteDescription): string {
     description.palette.accent, description.palette.trousers, description.palette.shoes,
     description.appearance.body, description.appearance.face, description.appearance.hair,
     description.appearance.outfit, description.appearance.detail, description.appearance.maturity,
-    description.seated, description.activity, description.visual.activitySpotKind, description.accessory, description.regular, description.barista,
+    description.seated, description.visual.seatView, description.activity, description.visual.activitySpotKind, description.accessory, description.regular, description.barista,
     description.visual.frame, description.visual.expression, description.visual.gesture, description.visual.momentKind].join('|');
 }
 
@@ -625,8 +798,17 @@ export class SpriteTextureLibrary {
       const context = canvas.getContext('2d', { alpha: true, colorSpace: 'srgb' });
       if (!context) throw new Error('Pixelsprites können in diesem Browser nicht erzeugt werden.');
       drawSprite(context, description);
-      applyOneTexelSilhouette(context, description.venue);
-      const texture = configureTexture(canvas);
+      applyVolumeShading(context);
+      // Wie bei HD-2D: grobe Pixel auf halber Auflösung, Kontur erst danach.
+      const pixelCanvas = document.createElement('canvas');
+      pixelCanvas.width = DIORAMA.spriteWidth / SPRITE_PIXEL_SIZE;
+      pixelCanvas.height = DIORAMA.spriteHeight / SPRITE_PIXEL_SIZE;
+      const pixelContext = pixelCanvas.getContext('2d', { alpha: true, colorSpace: 'srgb' });
+      if (!pixelContext) throw new Error('Pixelsprites können in diesem Browser nicht erzeugt werden.');
+      pixelContext.imageSmoothingEnabled = false;
+      pixelContext.drawImage(canvas, 0, 0, pixelCanvas.width, pixelCanvas.height);
+      applyOneTexelSilhouette(pixelContext, description.venue);
+      const texture = configureTexture(pixelCanvas);
       texture.name = `character:${key}`;
       return texture;
     });

@@ -260,6 +260,36 @@ h1 {
 
 .attribution a { color: inherit; }
 
+/* Sichtbare Untertitel für Geschichten, Momente und ankommende Freunde. */
+.caption {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: max(2.4rem, calc(env(safe-area-inset-bottom) + 1.6rem));
+  max-width: min(34rem, calc(100vw - 2rem));
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid rgba(255, 232, 187, 0.36);
+  color: #f6e8cf;
+  background: rgba(28, 20, 29, 0.74);
+  box-shadow: 3px 3px 0 rgba(7, 5, 10, 0.35);
+  font-family: system-ui, sans-serif;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  text-align: center;
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 0.4rem);
+  transition: opacity 420ms ease, transform 420ms ease, visibility 420ms;
+  pointer-events: none;
+}
+
+.caption.is-visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
 button {
   border: 0;
   font: inherit;
@@ -373,6 +403,7 @@ body[data-entered="true"][data-ui-idle="true"] .controls:not(:focus-within) {
   #enter, .venue-option { transition: none; }
   .controls { transition: none; }
   .control { transition: none; }
+  .caption { transition: opacity 120ms ease, visibility 120ms; transform: translate(-50%, 0); }
 }
 
 @media (max-width: 540px) {

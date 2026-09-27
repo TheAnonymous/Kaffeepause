@@ -10,11 +10,25 @@ Ein kleines Pixel-Art-Diorama zum Zuschauen – für mich und meine Freunde.
 
 Du suchst dir einen Ort aus: ein gemütliches Café, ein warmes Ramen-Restaurant oder eine ruhige Arcade-Halle. Danach läuft alles von selbst. Gäste kommen und gehen, bestellen, lesen, stricken, zeichnen, reden und spielen. Zwölf Stammgäste bringen kleine Geschichten mit, von Maras Skizzenbuch über eine vertauschte Bestellung bis zur widerspenstigen Nudel. Ab und zu passiert ein harmloses Missgeschick, und danach geht alles ruhig weiter.
 
-- Tageszeit und Wetter verändern Licht, Fenster und Geräusche.
+- Kleine Untertitel erzählen, was gerade passiert.
+- Tageszeit und Wetter verändern Licht, Fenster und Geräusche; auch spät nachts sitzen noch ein paar Nachteulen da.
+- Im Café wohnt Mochi, eine Katze. Sie schläft meistens auf der Fensterbank und schnurrt, wenn du sie mit der Maus streichelst.
+- Um Halloween stehen Kürbisse herum, im Dezember hängen Lichterketten.
 - Wenn du mit der Maus auf einer Figur verweilst, reagiert sie.
 - Lo-fi-Musik und Raumklang lassen sich ausschalten; es gibt einen Vollbildmodus.
-- Auf dem Handy fährt die Kamera langsam durch den Raum.
-- Bei reduzierter Bewegung bleibt die Kamera still.
+- Auf dem Handy fährt die Kamera langsam durch den Raum. Bei reduzierter Bewegung bleibt sie still.
+
+Mit einem Direktlink landet man gleich am richtigen Ort: [#cafe](https://kaffeepause.jodie-oesterling.de/#cafe), [#ramen](https://kaffeepause.jodie-oesterling.de/#ramen) oder [#arcade](https://kaffeepause.jodie-oesterling.de/#arcade).
+
+## Freunde als Stammgäste
+
+In [`src/friends.ts`](src/friends.ts) lassen sich Freunde eintragen: Name, Lieblingsort, typische Beschäftigung und nach Wunsch Frisur, Haar- und Kleidungsfarbe, Brille oder Bart. Sie kommen dann bevorzugt vorbei, und ein Untertitel sagt Bescheid, wenn jemand hereinkommt.
+
+```ts
+export const FRIENDS: readonly Friend[] = [
+  { name: 'Sam', venue: 'ramen', activity: 'journaling', hair: 'curls', hairColor: '#3a2a22', outfitColor: '#4f7c68', detail: 'glasses' },
+];
+```
 
 ## Standort und Wetter
 

@@ -56,25 +56,32 @@ afterEach(() => {
 
 describe('Belegungsprofil', () => {
   it('interpoliert alle Anker und Zeitgrenzen', () => {
-    expect(baseCrowdTarget(0)).toBe(0);
-    expect(baseCrowdTarget(330)).toBe(0);
-    expect(baseCrowdTarget(420)).toBe(3);
+    expect(baseCrowdTarget(0)).toBe(2);
+    expect(baseCrowdTarget(330)).toBe(2);
+    expect(baseCrowdTarget(420)).toBe(3.5);
     expect(baseCrowdTarget(510)).toBe(8);
     expect(baseCrowdTarget(750)).toBe(8);
-    expect(baseCrowdTarget(1440)).toBe(0);
+    expect(baseCrowdTarget(1440)).toBe(2);
   });
 
   it('korrigiert Wetter nur in den vorgesehenen Zeitfenstern', () => {
     expect(correctedCrowdTarget(750, weather('rain'))).toBe(8);
     expect(correctedCrowdTarget(990, weather('snow'))).toBe(4);
     expect(correctedCrowdTarget(1_200, weather('storm', 60))).toBe(2);
-    expect(correctedCrowdTarget(1_380, weather('rain'))).toBeLessThanOrEqual(1);
-    expect(correctedCrowdTarget(300, weather('storm', 60))).toBe(0);
+    expect(correctedCrowdTarget(1_380, weather('rain'))).toBe(3);
+    expect(correctedCrowdTarget(300, weather('storm', 60))).toBe(1);
+  });
+
+  it('lässt nachts eine kleine Nachtschicht im Raum', () => {
+    for (const minute of [0, 60, 180, 300, 1_350, 1_430]) {
+      expect(correctedCrowdTarget(minute, weather())).toBeGreaterThanOrEqual(2);
+      expect(correctedCrowdTarget(minute, weather())).toBeLessThanOrEqual(3);
+    }
   });
 
   it('verhindert Flattern mit einer 0,6-Gast-Hysterese', () => {
-    expect(correctedCrowdTarget(397, weather(), 1)).toBe(1);
-    expect(correctedCrowdTarget(400, weather(), 1)).toBe(2);
+    expect(correctedCrowdTarget(460, weather(), 5)).toBe(5);
+    expect(correctedCrowdTarget(470, weather(), 5)).toBe(6);
   });
 });
 

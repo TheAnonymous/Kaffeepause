@@ -19,6 +19,7 @@ import { ReservationManager } from './reservations';
 import { appearanceForGuestNumber, REGULAR_APPEARANCES } from './appearance';
 import type { CafeEnvironmentSnapshot } from '../environment/types';
 import type { VenueKind } from '../venue';
+import type { Friend } from '../friends';
 import type {
   AccidentKind,
   AccidentPhase,
@@ -79,7 +80,7 @@ interface RegularProfile {
   favoriteActivity: GuestActivity;
 }
 
-const REGULARS: readonly RegularProfile[] = [
+const STORY_REGULARS: readonly RegularProfile[] = [
   { id: 'mara', name: 'Mara', venue: 'cafe', palette: { skin: '#d8a071', hair: '#2d242b', coat: '#557b78', accent: '#e5b568', trousers: '#343b46', shoes: '#171820' }, appearance: REGULAR_APPEARANCES.mara, favoriteActivity: 'sketching' },
   { id: 'noor', name: 'Noor', venue: 'cafe', palette: { skin: '#8f5c48', hair: '#241c25', coat: '#a5544e', accent: '#e6c589', trousers: '#41343d', shoes: '#201b21' }, appearance: REGULAR_APPEARANCES.noor, favoriteActivity: 'talking' },
   { id: 'toni', name: 'Toni', venue: 'cafe', palette: { skin: '#edc39a', hair: '#6d4938', coat: '#5c668c', accent: '#d98f5f', trousers: '#343a55', shoes: '#26202a' }, appearance: REGULAR_APPEARANCES.toni, favoriteActivity: 'drinking' },
@@ -94,11 +95,39 @@ const REGULARS: readonly RegularProfile[] = [
   { id: 'mika', name: 'Mika', venue: 'arcade', palette: PALETTES[11] as GuestPalette, appearance: REGULAR_APPEARANCES.mika, favoriteActivity: 'typing' },
 ];
 
-const REGULARS_BY_VENUE: Readonly<Record<VenueKind, readonly RegularProfile[]>> = {
-  cafe: REGULARS.filter((profile) => profile.venue === 'cafe'),
-  ramen: REGULARS.filter((profile) => profile.venue === 'ramen'),
-  arcade: REGULARS.filter((profile) => profile.venue === 'arcade'),
-};
+function nameSeed(name: string): number {
+  let hash = 2_166_136_261;
+  for (const character of name) hash = Math.imul(hash ^ character.codePointAt(0)!, 16_777_619);
+  return hash >>> 0;
+}
+
+/** Macht aus einem Eintrag in `src/friends.ts` einen Stammgast. */
+export function friendProfile(friend: Friend): RegularProfile {
+  const seed = nameSeed(friend.name);
+  const palette = PALETTES[seed % PALETTES.length] as GuestPalette;
+  const appearance = appearanceForGuestNumber(seed % 997 + 1);
+  const slug = friend.name.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || String(seed);
+  return {
+    id: `friend:${slug}`,
+    name: friend.name,
+    venue: friend.venue,
+    palette: {
+      ...palette,
+      skin: friend.skin ?? palette.skin,
+      hair: friend.hairColor ?? palette.hair,
+      coat: friend.outfitColor ?? palette.coat,
+      accent: friend.accentColor ?? palette.accent,
+    },
+    appearance: {
+      ...appearance,
+      body: friend.body ?? appearance.body,
+      hair: friend.hair ?? appearance.hair,
+      outfit: friend.outfit ?? appearance.outfit,
+      detail: friend.detail ?? appearance.detail,
+    },
+    favoriteActivity: friend.activity,
+  };
+}
 
 export interface CafeSimulationOptions {
   seed?: number;
@@ -112,6 +141,7 @@ export interface CafeSimulationOptions {
   stories?: CafeStoryOptions | false;
   livingDirection?: boolean;
   livingSequence?: string;
+  friends?: readonly Friend[];
 }
 
 export interface CafeAccidentOptions {
@@ -277,6 +307,13 @@ function isLateDay(snapshot?: CafeEnvironmentSnapshot): boolean {
   return ['dusk', 'evening', 'night'].includes(snapshot?.dayPhase ?? 'evening');
 }
 
+function isNightShift(snapshot?: CafeEnvironmentSnapshot): boolean {
+  return snapshot?.dayPhase === 'night';
+}
+
+// Nachts beschäftigen sich Gäste ruhiger.
+const QUIET_ACTIVITIES: readonly GuestActivity[] = ['reading', 'knitting', 'journaling', 'drinking', 'sketching'];
+
 function isCoffeeTime(snapshot?: CafeEnvironmentSnapshot): boolean {
   return ['dawn', 'morning', 'midday', 'afternoon'].includes(snapshot?.dayPhase ?? 'afternoon');
 }
@@ -302,6 +339,9 @@ export class CafeSimulation {
   };
 
   private readonly random: SeededRandom;
+  // Freunde stehen vorn, damit sie bei der Stammgast-Auswahl zuerst drankommen.
+  private readonly regulars: readonly RegularProfile[];
+  private readonly regularsByVenue: Readonly<Record<VenueKind, readonly RegularProfile[]>>;
   private initialGuests: number;
   private minGuests: number;
   private maxGuests: number;
@@ -367,6 +407,12 @@ export class CafeSimulation {
   private readonly navigationRuntime = new Map<string, NavigationRuntime>();
 
   constructor(options: CafeSimulationOptions = {}) {
+    this.regulars = [...(options.friends ?? []).map(friendProfile), ...STORY_REGULARS];
+    this.regularsByVenue = {
+      cafe: this.regulars.filter((profile) => profile.venue === 'cafe'),
+      ramen: this.regulars.filter((profile) => profile.venue === 'ramen'),
+      arcade: this.regulars.filter((profile) => profile.venue === 'arcade'),
+    };
     this.venue = options.venue ?? 'cafe';
     this.layout = VENUE_LAYOUTS[this.venue];
     this.livingDirectionEnabled = options.livingDirection !== false;
@@ -569,7 +615,7 @@ export class CafeSimulation {
   }
 
   private addInitialGuest(): void {
-    const homeRegulars = REGULARS_BY_VENUE[this.venue];
+    const homeRegulars = this.regularsByVenue[this.venue];
     const regularsPresent = this.guests.filter((guest) => guest.regularId !== undefined).length;
     const guest = this.makeGuest('activity', this.layout.entrance, regularsPresent < homeRegulars.length);
     const activitySpot = this.findAvailableActivitySpot(guest);
@@ -610,7 +656,7 @@ export class CafeSimulation {
   }
 
   private pickRegular(force = false): RegularProfile | undefined {
-    const homeRegulars = REGULARS_BY_VENUE[this.venue];
+    const homeRegulars = this.regularsByVenue[this.venue];
     const available = homeRegulars.filter((profile) => !this.guests.some((guest) => guest.regularId === profile.id));
     if (available.length === 0) return undefined;
     const shouldIntroduce = force || this.random.next() < 0.78;
@@ -629,10 +675,13 @@ export class CafeSimulation {
   private pickActivityFor(guest: Guest, excluding?: GuestActivity): GuestActivity {
     const spot = activitySpotById(this.layout, guest.activitySpotId);
     const allowed = spot?.activities ?? ACTIVITIES;
-    const regular = REGULARS.find((profile) => profile.id === guest.regularId);
+    const regular = this.regulars.find((profile) => profile.id === guest.regularId);
     if (regular && allowed.includes(regular.favoriteActivity) && regular.favoriteActivity !== excluding) return regular.favoriteActivity;
-    const choices = allowed.filter((activity) => activity !== excluding);
-    return this.random.pick(choices.length > 0 ? choices : allowed);
+    // Handheld-Spielen bleibt Freunden vorbehalten, die es sich wünschen.
+    const choices = allowed.filter((activity) => activity !== excluding && activity !== 'handheld');
+    const quiet = isNightShift(this.environment) ? choices.filter((activity) => QUIET_ACTIVITIES.includes(activity)) : [];
+    if (quiet.length > 0) return this.random.pick(quiet);
+    return this.random.pick(choices.length > 0 ? choices : allowed.filter((activity) => activity !== 'handheld'));
   }
 
   private findAvailableActivitySpot(guest: Guest): ActivitySpot | undefined {
@@ -1508,9 +1557,11 @@ export class CafeSimulation {
     const waiting = this.guests.some((guest) => guest.state === 'waiting' || guest.state === 'ordering');
     barista.task = waiting
       ? this.random.pick(['machine', 'machine', 'grinding', 'serving'] as const)
-      : this.desiredGuestCount <= 2
-        ? this.random.pick(['wiping', 'restocking', 'polishing', 'polishing', 'tasting'] as const)
-        : this.random.pick(['machine', 'grinding', 'wiping', 'restocking'] as const);
+      : isNightShift(this.environment)
+        ? this.random.pick(['wiping', 'wiping', 'polishing', 'restocking'] as const)
+        : this.desiredGuestCount <= 2
+          ? this.random.pick(['wiping', 'restocking', 'polishing', 'polishing', 'tasting'] as const)
+          : this.random.pick(['machine', 'grinding', 'wiping', 'restocking'] as const);
     barista.target = copyPoint(this.layout.staffPlaces[barista.task]);
     barista.taskDuration = this.random.range(6, 11);
   }

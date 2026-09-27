@@ -37,7 +37,7 @@ describe('physical diorama scale', () => {
     expect(DIORAMA_SCALE_REPORT.valid).toBe(true);
     expect(DIORAMA_SCALE_REPORT.score).toBe(100);
     expect(validateDioramaScale().issues).toEqual([]);
-    expect(DIORAMA).toMatchObject({ standingHeight: 2.14, seatedHeight: 1.67 });
+    expect(DIORAMA).toMatchObject({ standingHeight: 2.14, seatedHeight: 1.9 });
   });
 
   it('maps simulation coordinates monotonically into the physical floor', () => {

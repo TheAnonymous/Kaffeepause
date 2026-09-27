@@ -108,6 +108,16 @@ for (const venue of [
   });
 }
 
+test('öffnet über einen Direktlink den gewünschten Ort und merkt sich die Wahl in der Adresse', async ({ page }) => {
+  await openCafe(page, '/#ramen');
+  await expect(page.locator('body')).toHaveAttribute('data-venue', 'ramen');
+  await expect(page.getByRole('button', { name: 'Ramen-Restaurant betreten' })).toBeVisible();
+  await page.getByRole('radio', { name: /Arcade/ }).click();
+  await expect(page).toHaveURL(/#arcade$/);
+  await page.evaluate(() => { window.location.hash = 'cafe'; });
+  await expect(page.locator('body')).toHaveAttribute('data-venue', 'cafe');
+});
+
 test('bedient die Ortswahl als Tastatur-Radiogruppe', async ({ page }) => {
   await openCafe(page);
   const cafe = page.getByRole('radio', { name: /Café/ });
@@ -371,6 +381,8 @@ for (const scenario of [
     await expect(canvas).toHaveAttribute('data-story-step', '1');
     await expect(canvas).toHaveAttribute('data-regulars', scenario.regulars);
     await expect(page.locator('#status')).toHaveText(scenario.message);
+    await expect(page.getByTestId('caption')).toBeVisible();
+    await expect(page.getByTestId('caption')).toHaveText(scenario.message);
   });
 }
 
@@ -419,6 +431,15 @@ const openMeteoPayload = {
     is_day: 1,
   },
 };
+
+test('lässt eingetragene Freunde vorbeikommen und kündigt sie an', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await openCafe(page, '/?friends=demo&time=12:30&weather=clear');
+  await page.getByTestId('enter').click();
+  const canvas = page.locator('#cafe');
+  await expect(canvas).toHaveAttribute('data-regulars', /friend:sam/, { timeout: 10_000 });
+  await expect(page.getByTestId('caption')).toHaveText(/Sam|Robin/, { timeout: 10_000 });
+});
 
 test('fragt Live-Wetter nur mit gerundetem Standort ab', async ({ context, page }) => {
   await context.grantPermissions(['geolocation']);

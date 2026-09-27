@@ -25,7 +25,8 @@ export type GuestActivity =
   | 'sketching'
   | 'journaling'
   | 'knitting'
-  | 'board-game';
+  | 'board-game'
+  | 'handheld';
 
 export type GuestAccessory = 'umbrella' | 'coat' | 'scarf' | 'sunglasses';
 
@@ -48,7 +49,7 @@ export interface GuestAppearance {
   pattern: number;
 }
 
-export type RegularId =
+export type StoryRegularId =
   | 'mara'
   | 'noor'
   | 'toni'
@@ -61,6 +62,9 @@ export type RegularId =
   | 'kai'
   | 'ari'
   | 'mika';
+
+/** Feste Stammgäste mit Geschichten sowie Freunde aus `src/friends.ts`. */
+export type RegularId = StoryRegularId | `friend:${string}`;
 
 export type CafeStoryKind =
   | 'sketchbook'

@@ -81,21 +81,21 @@ const COMPOSITE_FRAGMENT = `
 
   void main() {
     float distanceFromFocus = abs(vUv.y - focusBand);
-    float miniatureBlur = smoothstep(0.18, 0.49, distanceFromFocus);
-    vec2 offset = vec2(blurStrength * miniatureBlur, blurStrength * 0.62 * miniatureBlur);
+    // Miniatur-Tiefenunschärfe: scharfes Band in der Mitte, weich nach oben und unten.
+    float miniatureBlur = smoothstep(0.24, 0.52, distanceFromFocus);
+    vec2 radius = vec2(blurStrength, blurStrength * resolution.x / resolution.y) * miniatureBlur;
     vec4 color;
     if (simplifiedBlur > 0.5) {
-      color = sampleScene(vUv) * 0.76;
-      color += sampleScene(vUv + vec2(offset.x, 0.0)) * 0.12;
-      color += sampleScene(vUv - vec2(offset.x, 0.0)) * 0.12;
+      color = sampleScene(vUv) * 0.5;
+      color += sampleScene(vUv + vec2(radius.x, 0.0)) * 0.25;
+      color += sampleScene(vUv - vec2(radius.x, 0.0)) * 0.25;
     } else {
-      color = sampleScene(vUv) * 0.32;
-      color += sampleScene(vUv + vec2(offset.x, 0.0)) * 0.12;
-      color += sampleScene(vUv - vec2(offset.x, 0.0)) * 0.12;
-      color += sampleScene(vUv + vec2(0.0, offset.y)) * 0.12;
-      color += sampleScene(vUv - vec2(0.0, offset.y)) * 0.12;
-      color += sampleScene(vUv + offset) * 0.10;
-      color += sampleScene(vUv - offset) * 0.10;
+      color = sampleScene(vUv) * 0.16;
+      for (int index = 0; index < 12; index++) {
+        float angle = float(index) * 2.3999632;
+        float ring = sqrt((float(index) + 0.5) / 12.0);
+        color += sampleScene(vUv + vec2(cos(angle), sin(angle)) * radius * ring) * 0.07;
+      }
     }
     float luminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
     color.rgb = mix(vec3(luminance), color.rgb, saturation);

@@ -1,5 +1,5 @@
 import type { Barista, CafeAccident, CafeMoment, Guest } from '../simulation/types';
-import type { ActivityPose, ActivitySpotKind } from '../simulation/layout';
+import type { ActivityPose, ActivitySpotKind, SeatOrientation } from '../simulation/layout';
 
 export const CHARACTER_FRAME_COUNT = 4 as const;
 
@@ -13,6 +13,8 @@ export type CharacterPose =
 export type CharacterExpression = 'neutral' | 'focused' | 'smile' | 'laugh' | 'surprised' | 'sorry';
 export type CharacterGesture = 'none' | 'wave' | 'nod' | 'laugh' | 'compare' | 'swap' | 'toast' | 'startle' | 'clean';
 export type ReactionGesture = 'wave' | 'nod' | 'laugh';
+/** Von vorn auf Bank und Lounge, im Profil am Tischende, von hinten an der Theke. */
+export type SeatView = 'front' | 'side' | 'back';
 
 export interface CharacterReactionVisual {
   readonly characterId: string | 'barista';
@@ -29,6 +31,7 @@ export interface CharacterVisualState {
   readonly offsetX: number;
   readonly offsetY: number;
   readonly seated: boolean;
+  readonly seatView?: SeatView;
   readonly activitySpotKind?: ActivitySpotKind;
   readonly momentKind?: CafeMoment['kind'];
 }
@@ -45,6 +48,13 @@ export interface GuestVisualStateInput {
   readonly activityPose?: ActivityPose;
   readonly activitySpotKind?: ActivitySpotKind;
   readonly activityFacing?: -1 | 1;
+  readonly seatOrientation?: SeatOrientation;
+}
+
+export function seatViewFor(orientation: SeatOrientation | undefined): SeatView {
+  if (orientation === 'radial') return 'back';
+  if (orientation === 'left' || orientation === 'right') return 'side';
+  return 'front';
 }
 
 export interface BaristaVisualStateInput {
@@ -164,9 +174,11 @@ export function calculateGuestVisualState(input: GuestVisualStateInput): Charact
     offsetX = facing * (frame % 2 === 0 ? 0.025 : 0);
   }
 
+  const seated = guest.state === 'activity' && input.activityPose !== 'standing';
   return {
     pose, frame, facing, expression, gesture, offsetX, offsetY,
-    seated: guest.state === 'activity' && input.activityPose !== 'standing',
+    seated,
+    seatView: seated ? seatViewFor(input.seatOrientation) : undefined,
     activitySpotKind: input.activitySpotKind,
     momentKind: participant ? moment?.kind : undefined,
   };

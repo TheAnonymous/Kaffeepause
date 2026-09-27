@@ -2,10 +2,12 @@ import { CafeAudio, REACTION_ACCENT_MAX_GAIN } from './audio';
 import { CafeCamera } from './camera';
 import { CafeSimulation, type CafeSimulationOptions } from './simulation/cafeSimulation';
 import { livingDirectionRoute } from './simulation/livingDirection';
-import type { AccidentKind, CafeMoment, CafeMomentKind, CafeStoryKind } from './simulation/types';
+import type { AccidentKind, CafeMoment, CafeMomentKind, CafeStoryKind, GuestActivity } from './simulation/types';
 import { CafeEnvironmentController, parseEnvironmentOverrides } from './environment/cafeEnvironmentController';
 import type { CafeEnvironmentSnapshot } from './environment/types';
+import type { SceneSnapshot } from './scene/types';
 import { DEFAULT_VENUE, isVenueKind, VENUES, type VenueKind } from './venue';
+import { FRIENDS, type Friend } from './friends';
 import {
   loadRendererLifecycle,
   type RendererLifecycle,
@@ -21,6 +23,16 @@ import { AtmosphereDirector } from './atmosphere/AtmosphereDirector';
 import { parseAtmosphereDevelopmentOverrides } from './atmosphere/types';
 
 const UI_IDLE_DELAY = 2_500;
+const CAPTION_SECONDS = 6.5;
+
+const FRIEND_ACTIVITY_DETAIL: Partial<Record<GuestActivity, string>> = {
+  handheld: 'spielt GameBoy',
+  reading: 'liest',
+  knitting: 'strickt',
+  sketching: 'zeichnet',
+  journaling: 'schreibt Tagebuch',
+  'board-game': 'hat ein Brettspiel dabei',
+};
 
 const ACCIDENT_MESSAGES: Readonly<Record<VenueKind, Readonly<Record<AccidentKind, string>>>> = {
   cafe: {
@@ -116,6 +128,12 @@ function momentMessage(moment: Readonly<CafeMoment>): string {
   return STORY_MESSAGES[moment.story][moment.storyStep - 1] ?? MOMENT_MESSAGES[moment.kind];
 }
 
+/** Ein Link wie …/#ramen öffnet direkt mit dem gewünschten Ort. */
+function venueFromHash(): VenueKind | undefined {
+  const value = window.location.hash.slice(1).toLowerCase();
+  return isVenueKind(value) ? value : undefined;
+}
+
 function requiredElement<T extends HTMLElement>(selector: string): T {
   const element = document.querySelector<T>(selector);
   if (!element) throw new Error(`Erwartetes Element fehlt: ${selector}`);
@@ -123,7 +141,7 @@ function requiredElement<T extends HTMLElement>(selector: string): T {
 }
 
 function simulationOptions(): CafeSimulationOptions {
-  if (!import.meta.env.DEV) return {};
+  if (!import.meta.env.DEV) return { friends: FRIENDS };
   const parameters = new URLSearchParams(window.location.search);
   const options: CafeSimulationOptions = {};
   const requested = parameters.get('accident');
@@ -191,8 +209,19 @@ function simulationOptions(): CafeSimulationOptions {
     options.stories = false;
     options.livingSequence = livingSequence.id;
   }
+  // Testszenarien brauchen die festen Stammgäste; eigene Freunde würden ihnen die Plätze nehmen.
+  const scenario = Boolean(options.accidents || options.moments || options.stories || options.livingSequence);
+  options.friends = parameters.get('friends') === 'demo' ? DEMO_FRIENDS : scenario ? [] : FRIENDS;
   return options;
 }
+
+/** Nur im Entwicklungsserver über `?friends=demo`, um Freunde auszuprobieren. */
+const DEMO_FRIENDS: readonly Friend[] = [
+  { name: 'Sam', venue: 'cafe', activity: 'knitting', hair: 'curls', hairColor: '#e2c26b', outfit: 'hoodie', outfitColor: '#d45f8a', detail: 'glasses' },
+  { name: 'Robin', venue: 'cafe', activity: 'reading', hair: 'ponytail', hairColor: '#2b1e1a', outfit: 'overalls', outfitColor: '#4c8fd1' },
+  { name: 'Kim', venue: 'ramen', activity: 'journaling', hair: 'bob', hairColor: '#8a3b2c', outfit: 'jacket', outfitColor: '#e0a33a' },
+  { name: 'Alex', venue: 'arcade', activity: 'typing', hair: 'undercut', hairColor: '#dcdcdc', outfit: 'hoodie', outfitColor: '#6ad0a0', detail: 'beard' },
+];
 
 export class KaffeepauseApp {
   private readonly canvas = requiredElement<HTMLCanvasElement>('#cafe');
@@ -208,6 +237,7 @@ export class KaffeepauseApp {
   private readonly fullscreenButton = requiredElement<HTMLButtonElement>('[data-testid="fullscreen"]');
   private readonly fullscreenLabel = requiredElement<HTMLElement>('[data-fullscreen-label]');
   private readonly status = requiredElement<HTMLElement>('#status');
+  private readonly caption = requiredElement<HTMLElement>('[data-testid="caption"]');
   private readonly motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
   private readonly simulation = new CafeSimulation(simulationOptions());
   private readonly camera = new CafeCamera();
@@ -238,7 +268,11 @@ export class KaffeepauseApp {
   private lastAnnouncedAccidentId = 0;
   private lastAnnouncedMomentId = 0;
   private lastReactionAudioToken = 0;
-  private selectedVenue: VenueKind = DEFAULT_VENUE;
+  private captionTimer?: number;
+  private lastCatPurr = 0;
+  private lastCatAnnouncement = -Infinity;
+  private readonly announcedFriends = new Set<string>();
+  private selectedVenue: VenueKind = venueFromHash() ?? DEFAULT_VENUE;
 
   private get devRenderingWindow(): typeof window & {
     renderDioramaVisualFrame?: () => void;
@@ -264,6 +298,7 @@ export class KaffeepauseApp {
     this.soundButton.addEventListener('click', this.toggleSound);
     this.fullscreenButton.addEventListener('click', this.toggleFullscreen);
     window.addEventListener('resize', this.resize);
+    window.addEventListener('hashchange', this.hashChanged);
     window.addEventListener('pointermove', this.noteActivity);
     window.addEventListener('pointerdown', this.noteActivity);
     window.addEventListener('keydown', this.keyPressed);
@@ -315,7 +350,7 @@ export class KaffeepauseApp {
     document.body.dataset.entered = 'true';
     this.setUiIdle(false);
     this.scheduleIdle();
-    this.status.textContent = VENUES[this.selectedVenue].statusMessage;
+    this.announce(VENUES[this.selectedVenue].statusMessage);
     this.canvas.dataset.renderLoop = document.hidden ? 'paused' : 'running';
     this.lastFrame = performance.now();
     this.startFrameLoop();
@@ -354,8 +389,16 @@ export class KaffeepauseApp {
     button.focus();
   };
 
+  private readonly hashChanged = (): void => {
+    const venue = venueFromHash();
+    if (venue && !this.entered && venue !== this.selectedVenue) this.selectVenue(venue);
+  };
+
   private selectVenue(venue: VenueKind): void {
     this.selectedVenue = venue;
+    if (window.location.hash || venue !== DEFAULT_VENUE) {
+      window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${venue}`);
+    }
     const definition = VENUES[venue];
     this.venueEyebrow.textContent = definition.eyebrow;
     this.venueDescription.textContent = definition.description;
@@ -564,24 +607,25 @@ export class KaffeepauseApp {
     });
     this.lifecycle.setAtmosphere(atmosphere);
     this.audio.setAtmosphereWave(atmosphere);
-    const accident = scene.accident;
-    if (accident && accident.id !== this.lastAnnouncedAccidentId) {
-      this.lastAnnouncedAccidentId = accident.id;
-      this.status.textContent = ACCIDENT_MESSAGES[scene.venue][accident.kind];
-      this.audio.playAccident(accident.kind);
-    }
-    const moment = scene.moment;
-    if (moment && moment.id !== this.lastAnnouncedMomentId) {
-      this.lastAnnouncedMomentId = moment.id;
-      this.status.textContent = momentMessage(moment);
-      this.audio.playMoment(moment.kind);
-    }
+    this.announceScene(scene);
     const metrics = this.lifecycle.renderOnce(this.elapsed, scene);
     this.canvas.dataset.audioSamples = this.audio.getSampleState();
     const reactionToken = Number(this.canvas.dataset.reactionToken ?? 0);
     if (reactionToken > this.lastReactionAudioToken) {
       this.lastReactionAudioToken = reactionToken;
       if (this.audio.playReaction()) this.canvas.dataset.reactionAudioGain = String(REACTION_ACCENT_MAX_GAIN);
+      const friend = scene.guests.find((guest) => (
+        guest.id === this.canvas.dataset.reactingCharacter && guest.regularId?.startsWith('friend:')
+      ));
+      if (friend) this.announce(`${friend.name} freut sich, dich zu sehen.`);
+    }
+    const catPurr = Number(this.canvas.dataset.catPurr ?? 0);
+    if (catPurr > this.lastCatPurr) {
+      this.lastCatPurr = catPurr;
+      if (this.elapsed - this.lastCatAnnouncement > 20) {
+        this.lastCatAnnouncement = this.elapsed;
+        this.announce('Mochi, die Café-Katze, schnurrt zufrieden.');
+      }
     }
 
     const decision = this.qualityGovernor?.observe({
@@ -649,11 +693,47 @@ export class KaffeepauseApp {
     this.startFrameLoop();
   };
 
+  private announceScene(scene: SceneSnapshot): void {
+    const accident = scene.accident;
+    if (accident && accident.id !== this.lastAnnouncedAccidentId) {
+      this.lastAnnouncedAccidentId = accident.id;
+      this.announce(ACCIDENT_MESSAGES[scene.venue][accident.kind]);
+      this.audio.playAccident(accident.kind);
+    }
+    const moment = scene.moment;
+    if (moment && moment.id !== this.lastAnnouncedMomentId) {
+      this.lastAnnouncedMomentId = moment.id;
+      this.announce(momentMessage(moment));
+      this.audio.playMoment(moment.kind);
+    }
+    for (const guest of scene.guests) {
+      if (!guest.regularId?.startsWith('friend:') || this.announcedFriends.has(guest.id)) continue;
+      this.announcedFriends.add(guest.id);
+      const detail = FRIEND_ACTIVITY_DETAIL[guest.activity];
+      this.announce(guest.state === 'entering'
+        ? `${guest.name} kommt vorbei${detail ? ` und ${detail}` : ''}.`
+        : `${guest.name} ist auch da${detail ? ` und ${detail}` : ''}.`);
+    }
+  }
+
+  /** Kündigt etwas für Screenreader an und zeigt es kurz als Untertitel. */
+  private announce(text: string): void {
+    this.status.textContent = text;
+    this.caption.textContent = text;
+    this.caption.classList.add('is-visible');
+    if (this.captionTimer !== undefined) window.clearTimeout(this.captionTimer);
+    this.captionTimer = window.setTimeout(() => {
+      this.caption.classList.remove('is-visible');
+      this.captionTimer = undefined;
+    }, CAPTION_SECONDS * 1000);
+  }
+
   private readonly destroy = (): void => {
     this.rendererGeneration += 1;
     this.stopFrameLoop();
     if (this.preparationFrame !== undefined) cancelAnimationFrame(this.preparationFrame);
     if (this.idleTimer !== undefined) window.clearTimeout(this.idleTimer);
+    if (this.captionTimer !== undefined) window.clearTimeout(this.captionTimer);
     this.environmentUnsubscribe?.();
     this.environment.stop();
     delete this.devRenderingWindow.renderDioramaVisualFrame;

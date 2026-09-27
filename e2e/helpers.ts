@@ -21,7 +21,7 @@ export async function openCafe(page: Page, path = '/', tier: QualityTier = 'fall
   const url = new URL(path, 'http://kaffeepause.test');
   url.searchParams.set('quality', tier);
   url.searchParams.set('testRender', 'diagnostic');
-  await page.goto(`${url.pathname}${url.search}`);
+  await page.goto(`${url.pathname}${url.search}${url.hash}`);
   await expect(page.locator('#cafe')).toHaveAttribute('data-renderer-state', 'ready', { timeout: 15_000 });
 }
 
@@ -67,4 +67,5 @@ export async function renderVisualFrame(page: Page): Promise<void> {
 export async function hideVisualUi(page: Page): Promise<void> {
   await page.getByTestId('welcome').evaluate((element) => { element.style.display = 'none'; });
   await page.getByTestId('controls').evaluate((element) => { (element as HTMLElement).hidden = true; });
+  await page.getByTestId('caption').evaluate((element) => { element.style.display = 'none'; });
 }

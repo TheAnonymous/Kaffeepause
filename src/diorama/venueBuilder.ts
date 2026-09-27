@@ -25,6 +25,7 @@ import {
 import {
   DIORAMA,
   DIORAMA_THEMES,
+  FLOOR_SURFACE_Y,
   type AnimatedProp,
   type DioramaPoint,
   type DioramaSet,
@@ -40,6 +41,7 @@ import { createPixelLightPoolTexture, PixelSurfaceLibrary } from './pixelSurface
 import { VENUE_VISUAL_PROFILES, type SurfaceKind, type VenueVisualProfile } from './visualProfiles';
 import { countSelectiveBloomSurfaces, registerSelectiveBloomSurface } from './selectiveBloom';
 import { batchStaticVenuePrimitives } from './venueBatching';
+import type { Season } from './season';
 
 interface BuildContext {
   readonly geometries: Set<BufferGeometry>;
@@ -426,12 +428,29 @@ function addPendant(
   return { light, pool };
 }
 
-function addTable(context: BuildContext, root: Group, x: number, z: number, width = 2.15): void {
+/**
+ * Baut einen Tisch exakt auf die Tischfläche der Simulation. So sitzen Gäste an
+ * den Tischenden statt in der Platte, und niemand läuft durch eine Tischkante.
+ */
+function tableFootprint(venue: VenueKind, colliderId: string): { x: number; z: number; width: number; depth: number } {
+  const collider = VENUE_LAYOUTS[venue].colliders.find((entry) => entry.id === colliderId);
+  if (!collider) throw new Error(`Tischfläche fehlt: ${colliderId}`);
+  const { x, z } = worldToDiorama({ x: collider.x + collider.width / 2, y: collider.y + collider.height / 2 });
+  return {
+    x,
+    z,
+    width: collider.width / 384 * DIORAMA.width,
+    depth: Math.max(0.74, collider.height / 86 * DIORAMA.depth),
+  };
+}
+
+function addTable(context: BuildContext, root: Group, venue: VenueKind, colliderId: string): void {
+  const { x, z, width, depth } = tableFootprint(venue, colliderId);
   const table = new Group();
   table.name = 'focus-occluder:table';
   root.add(table);
-  box(context, table, [width, 0.15, 0.92], [x, 0.84, z], { color: context.theme.woodLight, roughness: 0.72, surface: 'wood' });
-  box(context, table, [width - 0.12, 0.08, 0.74], [x, 0.94, z], { color: context.theme.wood, roughness: 0.65, surface: 'wood' });
+  box(context, table, [width, 0.15, depth], [x, 0.84, z], { color: context.theme.woodLight, roughness: 0.72, surface: 'wood' });
+  box(context, table, [width - 0.12, 0.08, depth - 0.18], [x, 0.94, z], { color: context.theme.wood, roughness: 0.65, surface: 'wood' });
   for (const legX of [x - width * 0.34, x + width * 0.34]) {
     box(context, table, [0.16, 0.78, 0.16], [legX, 0.4, z], { color: context.theme.wood });
   }
@@ -711,8 +730,8 @@ function buildCafe(context: BuildContext, root: Group, animated: AnimatedProp[])
     bindSeat(context, spot, bench, 'bench', { x: point.x, z: -1.78 }, { x: point.x, z: -2.02 });
   }
   markFocusOccluder(context, bench, 'chair');
-  addTable(context, root, -2.96, 0.92, 2.45);
-  addTable(context, root, 0.24, 1.67, 2.7);
+  addTable(context, root, 'cafe', 'cafe-table-a');
+  addTable(context, root, 'cafe', 'cafe-table-b');
   for (const spot of VENUE_LAYOUTS.cafe.activitySpots) {
     if (spot.pose === 'seated' && spot.kind === 'table') addChair(context, root, spot);
   }
@@ -742,16 +761,18 @@ function buildCafe(context: BuildContext, root: Group, animated: AnimatedProp[])
   markFocusOccluder(context, cakeCase, 'counter');
   addWallShelf(context, root, -6.75, 2.9, -3.02, 1.45, 3);
   addWallShelf(context, root, 4.82, 3.12, -3.02, 2.75, 2);
-  addPixelLantern(context, root, 0.24, 1.28, 1.65, context.theme.glow, 0.78);
-  addMug(context, root, -2.7, 1.14, 0.92, '#c6a77c');
-  addMug(context, root, -3.2, 1.14, 0.92, '#807862');
-  addMug(context, root, -0.35, 1.14, 1.62, '#688078');
-  addMug(context, root, 0.72, 1.14, 1.62, '#a57452');
+  const tableA = tableFootprint('cafe', 'cafe-table-a');
+  const tableB = tableFootprint('cafe', 'cafe-table-b');
+  addPixelLantern(context, root, tableB.x, 1.28, tableB.z, context.theme.glow, 0.78);
+  addMug(context, root, tableA.x + 0.26, 1.14, tableA.z, '#c6a77c');
+  addMug(context, root, tableA.x - 0.24, 1.14, tableA.z, '#807862');
+  addMug(context, root, tableB.x - 0.6, 1.14, tableB.z - 0.04, '#688078');
+  addMug(context, root, tableB.x + 0.47, 1.14, tableB.z - 0.04, '#a57452');
   addPlant(context, root, 2.1, 0.05, -2.85);
   addPlant(context, root, -6.15, 0.05, 2.7);
-  const cup = cylinder(context, root, 0.13, 0.24, [-2.95, 1.15, 0.9], '#ece0bd', 12);
+  const cup = cylinder(context, root, 0.13, 0.24, [tableA.x, 1.15, tableA.z - 0.02], '#ece0bd', 12);
   animated.push({ object: cup, phase: 0.2, speed: 1.1, amplitude: 0.025, axis: 'y' });
-  addSteamPlume(context, root, animated, -2.95, 1.36, 0.9, 0.2);
+  addSteamPlume(context, root, animated, tableA.x, 1.36, tableA.z - 0.02, 0.2);
 }
 
 function buildRamen(context: BuildContext, root: Group, animated: AnimatedProp[]): void {
@@ -772,7 +793,7 @@ function buildRamen(context: BuildContext, root: Group, animated: AnimatedProp[]
     bowl.scale.y = 0.55;
     addSteamPlume(context, root, animated, point.x, 1.62, -1.75, point.x);
   }
-  addTable(context, root, 5.25, 0.58, 1.35);
+  addTable(context, root, 'ramen', 'ramen-pair-table');
   for (const spot of VENUE_LAYOUTS.ramen.activitySpots.filter((entry) => entry.kind === 'table')) {
     if (spot.pose === 'seated') addChair(context, root, spot);
   }
@@ -881,7 +902,55 @@ function buildArcade(context: BuildContext, root: Group, animated: AnimatedProp[
   animated.push({ object: ticketLight, phase: 1, speed: 1.1, amplitude: 0.012, axis: 'y' });
 }
 
-export function buildVenue(venue: VenueKind): DioramaSet {
+function addPumpkin(context: BuildContext, root: Group, x: number, y: number, z: number, size = 1): void {
+  box(context, root, [0.44 * size, 0.3 * size, 0.38 * size], [x, y + 0.15 * size, z], { color: '#c9622a', roughness: 0.72 });
+  box(context, root, [0.3 * size, 0.34 * size, 0.42 * size], [x, y + 0.17 * size, z], { color: '#e0813a', roughness: 0.72 });
+  box(context, root, [0.07 * size, 0.1 * size, 0.07 * size], [x, y + 0.37 * size, z], { color: '#4f6b35' });
+  // Geschnitztes Gesicht, das abends leuchtet.
+  const front = z + 0.21 * size;
+  glowPanel(context, root, [0.07 * size, 0.06 * size, 0.02], [x - 0.08 * size, y + 0.21 * size, front], '#ffc45c');
+  glowPanel(context, root, [0.07 * size, 0.06 * size, 0.02], [x + 0.08 * size, y + 0.21 * size, front], '#ffc45c');
+  glowPanel(context, root, [0.2 * size, 0.04 * size, 0.02], [x, y + 0.1 * size, front], '#ffb347');
+}
+
+function addStringLights(context: BuildContext, root: Group, fromX: number, toX: number, y: number, z: number): void {
+  const colors = ['#ffd27a', '#ff6b6b', '#7ee07a', '#6fb7ff'];
+  const count = Math.max(2, Math.round((toX - fromX) / 0.34) + 1);
+  for (let index = 0; index < count; index += 1) {
+    const progress = index / (count - 1);
+    const sag = Math.sin(progress * Math.PI * Math.max(1, Math.round((toX - fromX) / 1.6))) * 0.05;
+    glowPanel(context, root, [0.07, 0.09, 0.07], [fromX + (toX - fromX) * progress, y - Math.abs(sag), z], colors[index % colors.length]!);
+  }
+}
+
+function addSeasonalDecor(context: BuildContext, root: Group, venue: VenueKind, season: Season): void {
+  if (season === 'halloween') {
+    if (venue === 'cafe') {
+      addPumpkin(context, root, 3.65, 1.36, -1.75, 0.8);
+      addPumpkin(context, root, 7.35, 1.36, -1.85, 0.95);
+      addPumpkin(context, root, -6.15, FLOOR_SURFACE_Y, -1.85, 1.05);
+      addPumpkin(context, root, -5.7, FLOOR_SURFACE_Y, -2.25, 0.75);
+    } else if (venue === 'ramen') {
+      addPumpkin(context, root, 3.7, 1.33, -1.9, 0.85);
+      addPumpkin(context, root, -6.4, FLOOR_SURFACE_Y, -1.1, 1.0);
+    } else {
+      addPumpkin(context, root, -1.35, 0.87, 1.88, 0.7);
+      addPumpkin(context, root, 1.35, 0.87, 1.88, 0.8);
+    }
+  } else if (season === 'winter-lights') {
+    if (venue === 'cafe') {
+      addStringLights(context, root, 3.4, 7.7, 1.2, -1.34);
+      addStringLights(context, root, -5.4, -0.95, 1.52, -1.92);
+    } else if (venue === 'ramen') {
+      addStringLights(context, root, -6.0, 3.9, 1.15, -1.4);
+    } else {
+      addStringLights(context, root, -1.5, 1.5, 0.92, 1.88);
+      addStringLights(context, root, -6.4, 6.4, 5.82, -3.02);
+    }
+  }
+}
+
+export function buildVenue(venue: VenueKind, season: Season = 'none'): DioramaSet {
   const root = new Group();
   root.name = `diorama:${venue}`;
   const geometries = new Set<BufferGeometry>();
@@ -906,6 +975,7 @@ export function buildVenue(venue: VenueKind): DioramaSet {
   if (venue === 'cafe') buildCafe(context, root, animatedProps);
   else if (venue === 'ramen') buildRamen(context, root, animatedProps);
   else buildArcade(context, root, animatedProps);
+  addSeasonalDecor(context, root, venue, season);
 
   const pendants = venue === 'arcade'
     ? [addPendant(context, root, -5.1, -0.5, profile.lights.practical), addPendant(context, root, 5.1, -0.5, profile.lights.practical)]

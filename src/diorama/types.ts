@@ -25,8 +25,12 @@ export const DIORAMA = {
   spriteWidth: 144,
   spriteHeight: 208,
   standingHeight: 2.14,
-  seatedHeight: 1.67,
+  // Chibi-Figuren haben kurze Beine und werden im Sitzen kaum kleiner (Kopf über Stuhl, siehe spriteFactory).
+  seatedHeight: 1.9,
 } as const;
+
+/** Oberkante des Bodens; Figuren stehen hier. */
+export const FLOOR_SURFACE_Y = 0.08;
 
 export const DIORAMA_SCALE = {
   tableHeight: 0.94,
@@ -64,7 +68,7 @@ export function validateDioramaScale(): DioramaScaleReport {
   between(tableToCharacter, 0.42, 0.52, 'table-character-ratio');
   between(counterToCharacter, 0.6, 0.74, 'counter-character-ratio');
   between(doorToCharacter, 1.7, 2.05, 'door-character-ratio');
-  between(seatedToStanding, 0.72, 0.84, 'seated-standing-ratio');
+  between(seatedToStanding, 0.86, 0.96, 'seated-standing-ratio');
   if (DIORAMA.spriteHeight < 208 || DIORAMA.spriteWidth < 128) issues.push('character-texture-resolution');
   if (DIORAMA_SCALE.chairSeatHeight >= DIORAMA_SCALE.tableHeight * 0.75) issues.push('chair-table-clearance');
   if (DIORAMA_SCALE.minimumWalkway < DIORAMA.standingHeight * 0.62) issues.push('walkway-clearance');

@@ -1,5 +1,5 @@
 import { SCENE_PROPORTIONS } from '../scene/proportions';
-import type { GuestAppearance, RegularId } from './types';
+import type { GuestAppearance, StoryRegularId } from './types';
 
 export const GUEST_APPEARANCE_PRESETS: readonly GuestAppearance[] = [
   { body: 'soft', face: 'round', hair: 'bun', outfit: 'cardigan', detail: 'freckles', maturity: 'adult', heightOffset: 0, widthOffset: 0.5, pattern: 0 },
@@ -16,7 +16,7 @@ export const GUEST_APPEARANCE_PRESETS: readonly GuestAppearance[] = [
   { body: 'slim', face: 'square', hair: 'bun', outfit: 'dress', detail: 'none', maturity: 'older', heightOffset: -0.5, widthOffset: -1, pattern: 5 },
 ];
 
-export const REGULAR_APPEARANCES: Readonly<Record<RegularId, GuestAppearance>> = {
+export const REGULAR_APPEARANCES: Readonly<Record<StoryRegularId, GuestAppearance>> = {
   mara: GUEST_APPEARANCE_PRESETS[0] as GuestAppearance,
   noor: GUEST_APPEARANCE_PRESETS[1] as GuestAppearance,
   toni: GUEST_APPEARANCE_PRESETS[2] as GuestAppearance,
