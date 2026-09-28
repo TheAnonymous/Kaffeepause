@@ -12,7 +12,6 @@ import {
   HemisphereLight,
   Mesh,
   MeshBasicMaterial,
-  MeshStandardMaterial,
   PCFSoftShadowMap,
   PerspectiveCamera,
   PlaneGeometry,
@@ -24,7 +23,6 @@ import {
   SRGBColorSpace,
   Vector3,
   WebGLRenderer,
-  Texture,
   type Object3D,
 } from 'three';
 import type { CafeCamera } from '../camera';
@@ -55,15 +53,7 @@ import {
   SpeechBubble,
   type SpeechBubblePlacement,
 } from './speechBubble';
-import {
-  BARISTA_APPEARANCE,
-  BARISTA_PALETTES,
-  SEAT_TOP_HEIGHT,
-  SPRITE_FLOOR_ROW,
-  SPRITE_ROWS_PER_UNIT,
-  SpriteTextureLibrary,
-  seatedHeadHeight,
-} from './spriteFactory';
+import { BARISTA_APPEARANCE, BARISTA_PALETTES, SEAT_TOP_HEIGHT, seatedHeadHeight } from './characters';
 import { VoxelFigure } from './voxelFigure';
 import {
   calculateBaristaVisualState,
@@ -130,11 +120,10 @@ import { AtmosphereLayer, atmosphereLightCue } from './atmosphereLayer';
 
 interface CharacterNode {
   readonly root: Group;
-  readonly plane: Mesh<PlaneGeometry, MeshStandardMaterial>;
   readonly shadow: Mesh<CircleGeometry, MeshBasicMaterial>;
   readonly speech: SpeechBubble;
-  textureName: string;
-  voxel?: VoxelFigure;
+  figure?: VoxelFigure;
+  figureKey: string;
 }
 
 function seeded(index: number, salt: number): number {
@@ -170,7 +159,6 @@ export class DioramaRenderer {
   private readonly hemisphere = new HemisphereLight('#bad7df', '#2a2028', 1.1);
   private readonly keyLight = new DirectionalLight('#fff0cc', 3.1);
   private readonly focusLight = new PointLight('#ffe0a6', 0, 5.2, 1.55);
-  private readonly spriteTextures = new SpriteTextureLibrary();
   private readonly guestNodes = new Map<string, CharacterNode>();
   private readonly baristaNode: CharacterNode;
   private readonly weatherLayers: readonly Points<BufferGeometry, PointsMaterial>[];
@@ -213,13 +201,9 @@ export class DioramaRenderer {
   private artDecoration?: VenueArtDecoration;
   private readonly atmosphereDecorHandoffs: Object3D[] = [];
   private windowArt?: Mesh<PlaneGeometry, MeshBasicMaterial>;
-  private readonly cameraDirection = new Vector3();
-  private billboardYaw = 0;
-  private voxelTime = 0;
+  private figureTime = 0;
   private readonly season: Season;
   private cat?: CafeCat;
-  /** Probe: `?figures=voxel` zeigt Figuren aus Klötzchen statt Pixel-Sprites. */
-  private readonly voxelFigures: boolean;
   private catPetted = false;
   private catPurrToken = 0;
   private artGeneration = 0;
@@ -244,7 +228,6 @@ export class DioramaRenderer {
     const forceArtFallback = import.meta.env.DEV && parameters.get('art') === 'fallback';
     this.diagnosticRendering = import.meta.env.DEV && parameters.get('testRender') === 'diagnostic';
     this.season = parseSeasonOverride(window.location.search, import.meta.env.DEV) ?? seasonForDate(new Date());
-    this.voxelFigures = import.meta.env.DEV && parameters.get('figures') === 'voxel';
     this.cinematicScale = import.meta.env.DEV
       ? Math.max(0.02, Math.min(1, Number(parameters.get('cinematicScale') ?? 1) || 1))
       : 1;
@@ -401,9 +384,6 @@ export class DioramaRenderer {
           }
         }
         this.artPack = pack;
-        this.spriteTextures.setCharacterAtlas(pack);
-        for (const node of this.guestNodes.values()) node.textureName = '';
-        this.baristaNode.textureName = '';
         this.setArtState('ready', pack.id);
       } catch {
         this.artDecoration?.dispose();
@@ -415,9 +395,6 @@ export class DioramaRenderer {
   }
 
   private releaseVenueArt(): void {
-    this.spriteTextures.setCharacterAtlas(undefined);
-    for (const node of this.guestNodes.values()) node.textureName = '';
-    this.baristaNode.textureName = '';
     this.artDecoration?.dispose();
     this.artDecoration = undefined;
     this.windowArt = undefined;
@@ -476,13 +453,10 @@ export class DioramaRenderer {
       this.scene.add(this.venueSet.root);
       this.updateCatPresence();
       this.atmosphereLayer.setVenue(venue);
-      for (const node of this.guestNodes.values()) node.textureName = '';
-      this.baristaNode.textureName = '';
       this.requestVenueArt(venue);
       this.requestAtmosphereArt(venue);
     }
     this.look = calculateDioramaLook(this.venue, this.environment);
-    this.applyCharacterRimColor();
     this.canvas.dataset.venue = venue;
   }
 
@@ -534,7 +508,7 @@ export class DioramaRenderer {
     this.updateCamera();
     this.updateVenue(time);
     this.updateDoor(snapshot.guests, snapshot.venue);
-    this.voxelTime = time;
+    this.figureTime = time;
     this.updateCharacters(snapshot, time, dialogue);
     this.updateCat(time);
     this.updateFocusEffects(snapshot);
@@ -571,7 +545,6 @@ export class DioramaRenderer {
     this.atmosphereLayer.dispose();
     this.cat?.dispose();
     this.venueSet.dispose();
-    this.spriteTextures.dispose();
     for (const node of this.guestNodes.values()) this.disposeCharacterNode(node);
     this.disposeCharacterNode(this.baristaNode);
     for (const layer of this.weatherLayers) {
@@ -623,8 +596,6 @@ export class DioramaRenderer {
     this.hemisphere.intensity += atmosphereCue.ambient;
     for (const light of this.venueSet.practicalLights) light.intensity += atmosphereCue.practical;
     for (const material of this.venueSet.exteriorMaterials) material.emissiveIntensity += atmosphereCue.exterior;
-    this.baristaNode.plane.material.emissiveIntensity = this.look.characterEmissive;
-    for (const node of this.guestNodes.values()) node.plane.material.emissiveIntensity = this.look.characterEmissive;
     this.pipeline.setLook({
       bloomStrength: this.look.bloom * this.qualityProfile.bloomStrength,
       bloomThreshold: VENUE_VISUAL_PROFILES[this.venue].bloom.threshold,
@@ -894,9 +865,6 @@ export class DioramaRenderer {
   }
 
   private updateCharacters(snapshot: SceneSnapshot, time: number, dialogue: readonly DialogueLine[]): void {
-    this.spriteTextures.beginFrame();
-    this.perspective.getWorldDirection(this.cameraDirection);
-    this.billboardYaw = Math.atan2(-this.cameraDirection.x, -this.cameraDirection.z);
     const placements = this.resolveDialoguePlacements(snapshot, dialogue);
     const lines = new Map(dialogue.map((line) => [line.speakerId, line]));
     this.visibleDialogue = dialogue.filter((line) => placements.get(line.speakerId)?.visible !== false);
@@ -906,7 +874,6 @@ export class DioramaRenderer {
       if (visibleIds.has(id)) continue;
       node.root.removeFromParent();
       this.disposeCharacterNode(node);
-      this.spriteTextures.releaseCharacter(id);
       this.guestNodes.delete(id);
     }
 
@@ -953,7 +920,6 @@ export class DioramaRenderer {
       lines.get('barista'),
       placements.get('barista'),
     );
-    this.spriteTextures.endFrame();
   }
 
   private updateGuestNode(
@@ -970,23 +936,26 @@ export class DioramaRenderer {
       : undefined;
     const point = seat ?? worldToCharacterDiorama(guest.position);
     node.root.position.set(point.x + visual.offsetX, FLOOR_SURFACE_Y + visual.offsetY, point.z);
-    if (this.voxelFigures) {
-      if (!node.voxel) {
-        node.voxel = new VoxelFigure(guest.palette, guest.appearance);
-        node.root.add(node.voxel.root);
-        node.plane.visible = false;
-      }
-      const next = guest.waypoints?.[0] ?? guest.target;
-      node.voxel.update({
-        visual,
-        seatView: visual.seatView,
-        heading: { x: (next.x - guest.position.x) / 384 * DIORAMA.width, z: (next.y - guest.position.y) / 86 * DIORAMA.depth },
-        seatHeight: SEAT_TOP_HEIGHT[visual.activitySpotKind ?? 'table'],
-        time: this.voxelTime,
+    const figureKey = `${this.venue}|${guest.accessory ?? 'none'}`;
+    if (!node.figure || node.figureKey !== figureKey) {
+      node.figure?.root.removeFromParent();
+      node.figure?.dispose();
+      node.figure = new VoxelFigure({
+        palette: guest.palette, appearance: guest.appearance, venue: this.venue, accessory: guest.accessory,
+        seed: Number.parseInt(guest.id.replace(/\D/g, ''), 10) || 0,
       });
-    } else {
-      this.applySprite(node, this.spriteTextures.forGuest(guest, this.venue, visual), visual.facing);
+      node.root.add(node.figure.root);
+      node.figureKey = figureKey;
     }
+    const next = guest.waypoints?.[0] ?? guest.target;
+    node.figure.update({
+      visual,
+      seatView: visual.seatView,
+      spotKind: visual.activitySpotKind,
+      heading: { x: (next.x - guest.position.x) / 384 * DIORAMA.width, z: (next.y - guest.position.y) / 86 * DIORAMA.depth },
+      seatHeight: SEAT_TOP_HEIGHT[visual.activitySpotKind ?? 'table'],
+      time: this.figureTime,
+    });
     node.speech.mesh.rotation.copy(this.perspective.rotation);
     const tailLeft = point.x < -6 ? true : point.x > 6 ? false : guest.facing > 0;
     node.speech.update(
@@ -1010,16 +979,15 @@ export class DioramaRenderer {
   ): void {
     const point = worldToCharacterDiorama(barista.position);
     node.root.position.set(point.x + visual.offsetX, FLOOR_SURFACE_Y + visual.offsetY, point.z);
-    if (this.voxelFigures) {
-      if (!node.voxel) {
-        node.voxel = new VoxelFigure(BARISTA_PALETTES[this.venue], BARISTA_APPEARANCE, true);
-        node.root.add(node.voxel.root);
-        node.plane.visible = false;
-      }
-      node.voxel.update({ visual, seatHeight: 0, time: this.voxelTime });
-    } else {
-      this.applySprite(node, this.spriteTextures.forBarista(barista, this.venue, visual), visual.facing);
+    const figureKey = `barista|${this.venue}`;
+    if (!node.figure || node.figureKey !== figureKey) {
+      node.figure?.root.removeFromParent();
+      node.figure?.dispose();
+      node.figure = new VoxelFigure({ palette: BARISTA_PALETTES[this.venue], appearance: BARISTA_APPEARANCE, venue: this.venue, barista: true, seed: 7 });
+      node.root.add(node.figure.root);
+      node.figureKey = figureKey;
     }
+    node.figure.update({ visual, seatHeight: 0, time: this.figureTime });
     node.speech.mesh.rotation.copy(this.perspective.rotation);
     const tailLeft = point.x < -6 ? true : point.x > 6 ? false : barista.facing > 0;
     node.speech.update(dialogue, this.venue, tailLeft, DIORAMA.standingHeight, placement);
@@ -1090,36 +1058,11 @@ export class DioramaRenderer {
     };
   }
 
-  private applySprite(node: CharacterNode, texture: Texture, facing: -1 | 1): void {
-    if (node.textureName !== texture.name) {
-      node.plane.material.map = texture;
-      node.plane.material.emissiveMap = texture;
-      node.plane.material.needsUpdate = true;
-      node.textureName = texture.name;
-    }
-    // Ein Maßstab für alle Figuren; die Schuhzeile des Sprites steht auf dem Boden.
-    const height = DIORAMA.spriteHeight / SPRITE_ROWS_PER_UNIT;
-    const width = DIORAMA.spriteWidth / SPRITE_ROWS_PER_UNIT;
-    node.plane.scale.set(width * facing, height, 1);
-    node.plane.position.y = height / 2 - (DIORAMA.spriteHeight - SPRITE_FLOOR_ROW) / SPRITE_ROWS_PER_UNIT;
-    // Senkrechte Billboards: nur zur Kamera gedreht, nicht gekippt, damit Füße am Boden bleiben.
-    node.plane.rotation.set(0, this.billboardYaw, 0);
-  }
-
   private updateFocusEffects(snapshot: SceneSnapshot): void {
     const activeIds = new Set(this.focusState.participantIds);
     if (!this.focusState.active || activeIds.size === 0) {
       this.restoreFocusEffects();
       return;
-    }
-
-    const participantLift = this.look.characterEmissive * 1.1;
-    for (const id of activeIds) {
-      if (id === 'barista') this.baristaNode.plane.material.emissiveIntensity = participantLift;
-      else {
-        const node = this.guestNodes.get(id);
-        if (node) node.plane.material.emissiveIntensity = participantLift;
-      }
     }
 
     const participantNodes = [...activeIds]
@@ -1155,7 +1098,7 @@ export class DioramaRenderer {
         id,
         position: node.root.position,
         height,
-        width: height * (DIORAMA.spriteWidth / DIORAMA.spriteHeight),
+        width: height * DIORAMA.figureFrameAspect,
       });
     }
     this.scene.updateMatrixWorld(true);
@@ -1169,8 +1112,6 @@ export class DioramaRenderer {
   private restoreFocusEffects(): void {
     restoreFocusOccluders(this.activeFocusOccluders);
     this.activeFocusOccluders = [];
-    this.baristaNode.plane.material.emissiveIntensity = this.look.characterEmissive;
-    for (const node of this.guestNodes.values()) node.plane.material.emissiveIntensity = this.look.characterEmissive;
     this.focusLight.intensity = 0;
     this.focusFrameBounds = undefined;
     this.focusFrameSafe = true;
@@ -1200,7 +1141,7 @@ export class DioramaRenderer {
     this.perspective.updateMatrixWorld(true);
     const elements: FocusFrameElement[] = [];
     const shotBeat = this.focusState.shotBeat;
-    const aspect = DIORAMA.spriteWidth / DIORAMA.spriteHeight;
+    const aspect = DIORAMA.figureFrameAspect;
     const project = (value: Vector3): { x: number; y: number } => {
       const projected = value.clone().project(this.perspective);
       return { x: (projected.x + 1) / 2, y: (1 - projected.y) / 2 };
@@ -1360,18 +1301,6 @@ export class DioramaRenderer {
   private createCharacterNode(name: string): CharacterNode {
     const root = new Group();
     root.name = `character:${name}`;
-    const geometry = new PlaneGeometry(1, 1);
-    const material = new MeshStandardMaterial({
-      color: '#ffffff', transparent: true, alphaTest: 0.04, depthWrite: true,
-      emissive: VENUE_VISUAL_PROFILES[this.venue].lights.characterRim,
-      emissiveIntensity: this.look.characterEmissive,
-      roughness: 0.82, metalness: 0, side: DoubleSide,
-    });
-    const plane = new Mesh(geometry, material);
-    plane.name = `${root.name}:sprite`;
-    // Figuren werfen ihre Silhouette als echten Schatten (alphaTest schneidet die Form aus).
-    plane.castShadow = true;
-    root.add(plane);
     const shadowGeometry = new CircleGeometry(0.62, 24);
     const shadowMaterial = new MeshBasicMaterial({ color: '#130f18', transparent: true, opacity: 0.28, depthWrite: false });
     const shadow = new Mesh(shadowGeometry, shadowMaterial);
@@ -1380,7 +1309,7 @@ export class DioramaRenderer {
     root.add(shadow);
     const speech = new SpeechBubble(name);
     root.add(speech.mesh);
-    return { root, plane, shadow, speech, textureName: '' };
+    return { root, shadow, speech, figureKey: '' };
   }
 
   private updateCatPresence(): void {
@@ -1398,7 +1327,7 @@ export class DioramaRenderer {
     if (!this.cat) return;
     const pointer = this.active ? this.pointerSample : undefined;
     const bounds = this.canvas.getBoundingClientRect();
-    const petted = this.cat.update(time, this.reducedMotion, this.billboardYaw, (point) => {
+    const petted = this.cat.update(time, this.reducedMotion, (point) => {
       if (!pointer) return false;
       const projected = point.clone().project(this.perspective);
       const x = bounds.left + (projected.x + 1) * bounds.width / 2;
@@ -1412,19 +1341,11 @@ export class DioramaRenderer {
     this.catPetted = petted;
   }
 
-  private applyCharacterRimColor(): void {
-    const color = new Color(VENUE_VISUAL_PROFILES[this.venue].lights.characterRim);
-    this.baristaNode.plane.material.emissive.copy(color);
-    for (const node of this.guestNodes.values()) node.plane.material.emissive.copy(color);
-  }
-
   private disposeCharacterNode(node: CharacterNode): void {
-    node.plane.geometry.dispose();
-    node.plane.material.dispose();
     node.shadow.geometry.dispose();
     node.shadow.material.dispose();
     node.speech.dispose();
-    node.voxel?.dispose();
+    node.figure?.dispose();
   }
 
   private createWeatherParticles(): Points<BufferGeometry, PointsMaterial> {

@@ -1,6 +1,6 @@
 # Kaffeepause
 
-Ein kleines Pixel-Art-Diorama zum Zuschauen – für mich und meine Freunde.
+Ein kleines Diorama aus Klötzchen zum Zuschauen – für mich und meine Freunde.
 
 **[Kaffeepause öffnen →](https://kaffeepause.jodie-oesterling.de/)**
 

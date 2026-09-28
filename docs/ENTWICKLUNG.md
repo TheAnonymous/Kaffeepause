@@ -12,9 +12,9 @@ Die Simulation rechnet in Szenenkoordinaten von 384 × 216. Der Renderer überse
 
 ## Figuren
 
-Figuren sind Pixel-Sprites (144 × 208) auf senkrechten Tafeln, die sich nur um die Hochachse zur Kamera drehen. Alle Figuren nutzen denselben Maßstab: Die Schuhzeile `SPRITE_FLOOR_ROW` steht genau auf der Bodenoberkante (`FLOOR_SURFACE_Y`), und eine stehende Figur ist `DIORAMA.standingHeight` hoch. Sitzende Gäste werden auf die Sitzfläche ihres Möbels gesetzt (`seatBindings`) und je nach Platz von vorn (Bank, Lounge), im Profil (Tischende) oder von hinten (Ramen-Theke) gezeichnet. Die Hüfte liegt dabei auf der Sitzhöhe aus `SEAT_TOP_HEIGHT` in `spriteFactory.ts`.
+Gäste, Bedienung und Mochi sind Klötzchen-Figuren (`voxelFigure.ts`, `cafeCat.ts`). Jedes Körperteil ist eine einzige Geometrie aus farbigen Quadern (`voxelKit.ts`), alle Figuren teilen sich ein Material; eine Figur braucht so gut ein Dutzend Draw Calls. Aussehen, Frisur, Kleidung, Brille, Bart und Zubehör kommen aus denselben Daten wie in der Simulation (`GuestAppearance`, `GuestPalette`).
 
-Gezeichnet wird auf voller Auflösung, danach bekommt jede Figur eine leichte zylindrische Schattierung (`applyVolumeShading`) und wird auf halbe Auflösung vergröbert, bevor die Kontur entsteht. Die Tafeln werfen echte Schatten; die Form schneidet der `alphaTest` aus.
+Die Figuren drehen sich wirklich im Raum: Laufende schauen in Laufrichtung, Sitzende von vorn (Bank, Lounge), zum Tisch (Tischende, Kopf leicht zur Kamera) oder zur Theke (Ramen). Arme mit Ellbogen halten die Gegenstände der Tätigkeit, dazu kommen Atmen, Blinzeln, Gesichtsausdrücke und die Gesten aus Momenten und Reaktionen. Maße und Sitzhöhen stehen in `characters.ts`; sitzende Gäste sitzen auf der Sitzfläche ihres Möbels (`seatBindings`).
 
 Die Eingangstür beschreibt `doorSpec()` in `venueBuilder.ts`: Scharnier an einer Zarge der Wandöffnung, Schwenk nach innen. `doorShouldBeOpen()` hält sie offen, solange jemand ein- oder ausgeht oder sich im Schwenkbereich bewegt. `tests/door.test.ts` prüft den ganzen Schwenk gegen Wände, Möbel, Sitzplätze und den Laufweg.
 
@@ -45,7 +45,6 @@ Nur im Entwicklungsserver (`npm run dev`); Produktionsbuilds ignorieren sie.
 | `?atmosphere=<Welle>&atmospherePhase=fade-in\|hold\|fade-out&atmosphereScale=<Faktor>` | Außenwellen reproduzierbar zeigen |
 | `?friends=demo` | vier Beispiel-Freunde vorbeikommen lassen |
 | `?season=halloween\|winter-lights\|none` | Jahreszeiten-Deko unabhängig vom Datum zeigen |
-| `?figures=voxel` | Probe: Figuren aus 3D-Klötzchen statt Pixel-Sprites |
 | `?quality=master\|balanced\|fallback` | Qualitätsstufe erzwingen |
 | `?testRender=diagnostic` | Frames nur auf Anfrage zeichnen (für Tests) |
 

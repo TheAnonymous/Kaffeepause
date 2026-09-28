@@ -22,10 +22,10 @@ export const DIORAMA = {
   height: 8.8,
   depth: 7.2,
   renderScale: 6,
-  spriteWidth: 144,
-  spriteHeight: 208,
+  /** Breite des Bildausschnitts um eine Figur (mit Armen und Gegenständen) im Verhältnis zur Höhe. */
+  figureFrameAspect: 0.69,
   standingHeight: 2.14,
-  // Chibi-Figuren haben kurze Beine und werden im Sitzen kaum kleiner (Kopf über Stuhl, siehe spriteFactory).
+  // Klötzchen-Figuren haben kurze Beine und werden im Sitzen kaum kleiner (siehe characters.ts).
   seatedHeight: 1.9,
 } as const;
 
@@ -69,7 +69,6 @@ export function validateDioramaScale(): DioramaScaleReport {
   between(counterToCharacter, 0.6, 0.74, 'counter-character-ratio');
   between(doorToCharacter, 1.7, 2.05, 'door-character-ratio');
   between(seatedToStanding, 0.86, 0.96, 'seated-standing-ratio');
-  if (DIORAMA.spriteHeight < 208 || DIORAMA.spriteWidth < 128) issues.push('character-texture-resolution');
   if (DIORAMA_SCALE.chairSeatHeight >= DIORAMA_SCALE.tableHeight * 0.75) issues.push('chair-table-clearance');
   if (DIORAMA_SCALE.minimumWalkway < DIORAMA.standingHeight * 0.62) issues.push('walkway-clearance');
   return {
@@ -174,14 +173,6 @@ export interface BatchedVenueResources {
   readonly sourceMeshCount: number;
   readonly unitGeometryCount: number;
   readonly v3GeometryBaseline: number;
-}
-
-export interface CharacterTextureCacheStats {
-  readonly textures: number;
-  readonly identities: number;
-  readonly rawPixelBytes: number;
-  readonly maximumTextures: number;
-  readonly maximumVariantsPerIdentity: number;
 }
 
 export interface SeatAlignmentReport {

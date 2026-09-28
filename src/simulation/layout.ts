@@ -116,8 +116,9 @@ const cafe: VenueLayout = {
     { id: 'cafe-table-b2', x: 231, y: 198, kind: 'table', pose: 'seated', seatOrientation: 'left', facing: -1, groupId: 'cafe-table-b', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
   ],
   staffPlaces: {
-    machine: { x: 329, y: 132 }, serving: { x: 294, y: 132 }, wiping: { x: 350, y: 132 },
-    restocking: { x: 282, y: 132 }, polishing: { x: 365, y: 132 }, grinding: { x: 338, y: 132 }, tasting: { x: 310, y: 132 },
+    // Neben der Espressomaschine (x 328–354), nicht dahinter, damit man die Bedienung sieht.
+    machine: { x: 318, y: 132 }, serving: { x: 294, y: 132 }, wiping: { x: 362, y: 132 },
+    restocking: { x: 282, y: 132 }, polishing: { x: 370, y: 132 }, grinding: { x: 306, y: 132 }, tasting: { x: 300, y: 132 },
   },
   population: { min: 4, max: 6 },
   navigation: { minX: 14, maxX: 368, minY: 130, maxY: 210, step: 10 },
