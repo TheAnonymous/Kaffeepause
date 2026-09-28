@@ -11,7 +11,7 @@ Ein kleines Diorama aus Klötzchen zum Zuschauen – für mich und meine Freunde
 Du suchst dir einen Ort aus: ein gemütliches Café, ein warmes Ramen-Restaurant oder eine ruhige Arcade-Halle. Danach läuft alles von selbst. Gäste kommen und gehen, bestellen, lesen, stricken, zeichnen, reden und spielen. Zwölf Stammgäste bringen kleine Geschichten mit, von Maras Skizzenbuch über eine vertauschte Bestellung bis zur widerspenstigen Nudel. Ab und zu passiert ein harmloses Missgeschick, und danach geht alles ruhig weiter.
 
 - Kleine Untertitel erzählen, was gerade passiert.
-- Tageszeit und Wetter verändern Licht, Fenster und Geräusche; auch spät nachts sitzen noch ein paar Nachteulen da.
+- Tageszeit und Wetter verändern Licht, den Blick aus dem Fenster und die Geräusche; auch spät nachts sitzen noch ein paar Nachteulen da.
 - Im Café wohnt Mochi, eine Katze. Sie schläft meistens auf der Fensterbank und schnurrt, wenn du sie mit der Maus streichelst.
 - Um Halloween stehen Kürbisse herum, im Dezember hängen Lichterketten.
 - Wenn du mit der Maus auf einer Figur verweilst, reagiert sie.

@@ -14,11 +14,15 @@ Die Simulation rechnet in Szenenkoordinaten von 384 × 216. Der Renderer überse
 
 Gäste, Bedienung und Mochi sind Klötzchen-Figuren (`voxelFigure.ts`, `cafeCat.ts`). Jedes Körperteil ist eine einzige Geometrie aus farbigen Quadern (`voxelKit.ts`), alle Figuren teilen sich ein Material; eine Figur braucht so gut ein Dutzend Draw Calls. Aussehen, Frisur, Kleidung, Brille, Bart und Zubehör kommen aus denselben Daten wie in der Simulation (`GuestAppearance`, `GuestPalette`).
 
-Die Figuren drehen sich wirklich im Raum: Laufende schauen in Laufrichtung, Sitzende von vorn (Bank, Lounge), zum Tisch (Tischende, Kopf leicht zur Kamera) oder zur Theke (Ramen). Arme mit Ellbogen halten die Gegenstände der Tätigkeit, dazu kommen Atmen, Blinzeln, Gesichtsausdrücke und die Gesten aus Momenten und Reaktionen. Maße und Sitzhöhen stehen in `characters.ts`; sitzende Gäste sitzen auf der Sitzfläche ihres Möbels (`seatBindings`).
+Alle Gelenke, die Körperhöhe und die Blickrichtung folgen ihrer Zielhaltung weich (`settle()` in `voxelFigure.ts`); beim Hinsetzen klingt zusätzlich der Sprung auf die Sitzmitte ab. Auf Standbildern (kein Zeitfortschritt) wird nicht geglättet. Die Figuren drehen sich wirklich im Raum: Laufende schauen in Laufrichtung, Sitzende von vorn (Bank, Lounge), zum Tisch (Tischende, Kopf leicht zur Kamera) oder zur Theke (Ramen). Arme mit Ellbogen halten die Gegenstände der Tätigkeit, dazu kommen Atmen, Blinzeln, Gesichtsausdrücke und die Gesten aus Momenten und Reaktionen. Maße und Sitzhöhen stehen in `characters.ts`; sitzende Gäste sitzen auf der Sitzfläche ihres Möbels (`seatBindings`).
 
 Die Eingangstür beschreibt `doorSpec()` in `venueBuilder.ts`: Scharnier an einer Zarge der Wandöffnung, Schwenk nach innen. `doorShouldBeOpen()` hält sie offen, solange jemand ein- oder ausgeht oder sich im Schwenkbereich bewegt. `tests/door.test.ts` prüft den ganzen Schwenk gegen Wände, Möbel, Sitzplätze und den Laufweg.
 
 Tische werden aus den Tischflächen in `src/simulation/layout.ts` gebaut. Wer einen Tisch verschiebt oder vergrößert, ändert also Simulation und Bild zugleich.
+
+## Fenster und Draußen
+
+Jeder Ort hat ein Fenster in der Rückwand (`VENUE_WINDOWS` in `venueBuilder.ts`): das große Café-Fenster, ein Fenster mit Holzgitter im Ramen-Restaurant und ein Neon-gerahmtes Fenster in der Arcade. Dahinter liegen Himmel und Häuser, die selbst leuchten und der Tageszeit folgen; sie nehmen kaum Raumlicht an, sonst würden die Lampen sie nachts durch die Wand aufhellen. Regen und Schnee fallen nur hinter dem Fenster des aktuellen Ortes. Hinter den Seitentüren von Café und Ramen-Restaurant liegt eine Häuserzeile, die man sieht, wenn die Tür offen steht.
 
 ## Licht und Farbe
 
@@ -56,4 +60,4 @@ Der Canvas veröffentlicht nur noch die `data-*`-Attribute, die Tests oder die A
 
 ## Veröffentlichen
 
-`npm run release` führt `npm run check` aus, fragt nach und lädt `dist/` per SSH auf den Server (`/srv/www/kaffeepause.jodie-oesterling.de/releases/<Zeitstempel>`). Danach zeigt `current` atomar auf das neue Release und `previous` auf das alte. `npm run release -- --rollback` tauscht zurück. Alte Releases bleiben liegen und müssen bei Bedarf von Hand gelöscht werden.
+`npm run release` führt `npm run check` aus, fragt nach und lädt `dist/` per SSH auf den Server (`/srv/www/kaffeepause.jodie-oesterling.de/releases/<Zeitstempel>`). Danach zeigt `current` atomar auf das neue Release und `previous` auf das alte. `npm run release -- --rollback` tauscht zurück. Der Server-Teil steht in `scripts/release-switch.sh`: Nach dem Umschalten bleiben nur die fünf neuesten Releases liegen; worauf `current` oder `previous` zeigt, wird nie gelöscht.

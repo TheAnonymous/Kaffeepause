@@ -746,6 +746,113 @@ function addCafeWindow(context: BuildContext, root: Group): void {
   box(context, root, [10.9, 0.22, 0.32], [-0.45, 7.2, -3.28], { color: context.theme.woodLight });
 }
 
+/** Fensteröffnung in der Rückwand (Diorama-Koordinaten). */
+export interface WindowOpening {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minY: number;
+  readonly maxY: number;
+}
+
+/** Wo man in jedem Ort nach draußen schaut; der Regen fällt nur hinter diesen Fenstern. */
+export const VENUE_WINDOWS: Readonly<Record<VenueKind, WindowOpening>> = {
+  cafe: { minX: -5.9, maxX: 5.0, minY: 1.5, maxY: 7.3 },
+  ramen: { minX: 5.6, maxX: 7.6, minY: 1.7, maxY: 4.3 },
+  arcade: { minX: -5.2, maxX: -2.2, minY: 2.2, maxY: 4.2 },
+};
+
+const BACK_WALL_Z = -3.52;
+
+/**
+ * Unbeleuchtete, fast durchsichtige Scheibe. Beleuchtet würde sie nachts von den
+ * Lampen im Raum so hell, dass sie den Blick nach draußen grau verschleiert.
+ */
+function addGlassPane(context: BuildContext, root: Group, opening: WindowOpening, z: number): void {
+  const geometry = sharedGeometry(context, 'plane:unit', () => new PlaneGeometry(1, 1));
+  const glassMaterial = new MeshBasicMaterial({
+    color: '#d6e8ee', transparent: true, opacity: 0.02, depthWrite: false, side: DoubleSide,
+  });
+  context.materials.add(glassMaterial);
+  const glass = new Mesh(geometry, glassMaterial);
+  glass.position.set((opening.minX + opening.maxX) / 2, (opening.minY + opening.maxY) / 2, z);
+  glass.scale.set(opening.maxX - opening.minX, opening.maxY - opening.minY, 1);
+  glass.userData.staticPrimitiveKind = 'plane';
+  glass.userData.staticBatchable = false;
+  root.add(glass);
+}
+
+/** Rückwand von `fromX` bis `toX` mit einer Fensteröffnung. */
+function addWallWithWindow(
+  context: BuildContext,
+  root: Group,
+  fromX: number,
+  toX: number,
+  opening: WindowOpening,
+  options: BoxOptions,
+): void {
+  const height = 8.5;
+  const piece = (minX: number, maxX: number, minY: number, maxY: number): void => {
+    if (maxX - minX <= 0.001 || maxY - minY <= 0.001) return;
+    box(context, root, [maxX - minX, maxY - minY, 0.22], [(minX + maxX) / 2, (minY + maxY) / 2, BACK_WALL_Z], options);
+  };
+  piece(fromX, opening.minX, 0, height);
+  piece(opening.maxX, toX, 0, height);
+  piece(opening.minX, opening.maxX, 0, opening.minY);
+  piece(opening.minX, opening.maxX, opening.maxY, height);
+}
+
+function addRamenWindow(context: BuildContext, root: Group): void {
+  const opening = VENUE_WINDOWS.ramen;
+  addWallWithWindow(context, root, -DIORAMA.width / 2, DIORAMA.width / 2, opening, { color: context.theme.wall, surface: 'tile' });
+  addGlassPane(context, root, opening, -3.47);
+  const width = opening.maxX - opening.minX;
+  const height = opening.maxY - opening.minY;
+  const centerX = (opening.minX + opening.maxX) / 2;
+  const centerY = (opening.minY + opening.maxY) / 2;
+  const frame = { color: context.theme.wood };
+  box(context, root, [width + 0.28, 0.14, 0.2], [centerX, opening.maxY + 0.07, -3.36], frame);
+  box(context, root, [width + 0.36, 0.16, 0.34], [centerX, opening.minY - 0.08, -3.3], { color: context.theme.woodLight });
+  for (const x of [opening.minX - 0.07, opening.maxX + 0.07]) box(context, root, [0.14, height + 0.28, 0.2], [x, centerY, -3.36], frame);
+  // Holzgitter (Kōshi): schmale senkrechte Latten vor der Scheibe.
+  for (let x = opening.minX + 0.25; x < opening.maxX - 0.1; x += 0.25) {
+    box(context, root, [0.045, height, 0.05], [x, centerY, -3.42], { color: context.theme.woodLight, castShadow: false });
+  }
+  box(context, root, [width, 0.045, 0.05], [centerX, centerY + 0.35, -3.42], { color: context.theme.woodLight, castShadow: false });
+}
+
+function addArcadeBackWall(context: BuildContext, root: Group): void {
+  const opening = VENUE_WINDOWS.arcade;
+  addWallWithWindow(context, root, -DIORAMA.width / 2, -0.8, opening, { color: context.theme.wall, surface: 'plaster' });
+  box(context, root, [7.2, 8.5, 0.22], [4.4, 4.25, BACK_WALL_Z], { color: context.theme.wall, surface: 'plaster' });
+  box(context, root, [1.6, 4.55, 0.22], [0, 6.52, BACK_WALL_Z], { color: context.theme.wallDark, surface: 'plaster' });
+  addGlassPane(context, root, opening, -3.47);
+  const width = opening.maxX - opening.minX;
+  const height = opening.maxY - opening.minY;
+  const centerX = (opening.minX + opening.maxX) / 2;
+  const centerY = (opening.minY + opening.maxY) / 2;
+  const frame = { color: context.theme.wallDark, metalness: 0.4, roughness: 0.4 };
+  for (const y of [opening.minY - 0.06, opening.maxY + 0.06]) box(context, root, [width + 0.24, 0.12, 0.18], [centerX, y, -3.36], frame);
+  for (const x of [opening.minX - 0.06, opening.maxX + 0.06]) box(context, root, [0.12, height + 0.24, 0.18], [x, centerY, -3.36], frame);
+  box(context, root, [0.08, height, 0.1], [centerX, centerY, -3.42], frame);
+  // Neonrahmen, der nachts in die Nacht hinaus leuchtet.
+  glowPanel(context, root, [width + 0.2, 0.04, 0.04], [centerX, opening.maxY + 0.14, -3.26], context.theme.glow);
+  glowPanel(context, root, [width + 0.2, 0.04, 0.04], [centerX, opening.minY - 0.14, -3.26], context.theme.accent);
+}
+
+/** Gegenüberliegende Straßenseite, die man durch eine offene Seitentür sieht. */
+function addStreetBeyondDoor(context: BuildContext, root: Group, venue: VenueKind, exteriorMaterials: MeshStandardMaterial[]): void {
+  const layout = VENUE_LAYOUTS[venue];
+  if (layout.entryFlow === 'rear') return;
+  const side = layout.entryFlow === 'left' ? -1 : 1;
+  const doorZ = worldToDiorama(layout.entrance).z;
+  box(context, root, [2.4, 0.1, 3.4], [side * 9.45, 0.02, doorZ], { color: '#2b2a30', roughness: 0.8, surface: 'floor', castShadow: false });
+  const facade = box(context, root, [0.12, 6, 3.4], [side * 10.6, 3, doorZ], { color: '#354157', castShadow: false, surface: 'plaster' });
+  exteriorMaterials.push(facade.material);
+  for (const [dz, y] of [[-0.8, 2.2], [0.7, 2.2], [-0.8, 4.1], [0.7, 4.1]] as const) {
+    glowPanel(context, root, [0.04, 0.5, 0.42], [side * 10.52, y, doorZ + dz], '#e6bd75');
+  }
+}
+
 function buildShell(context: BuildContext, root: Group, venue: VenueKind): ShellParts {
   box(context, root, [DIORAMA.width + 0.8, 0.32, DIORAMA.depth + 0.8], [0, -0.23, 0], { color: context.theme.ink, roughness: 0.88, surface: 'floor' });
   const floor = box(context, root, [DIORAMA.width, 0.16, DIORAMA.depth], [0, 0, 0], {
@@ -775,17 +882,13 @@ function buildShell(context: BuildContext, root: Group, venue: VenueKind): Shell
       });
     }
   }
-  const exteriorMaterials = addExterior(context, root);
+  const exteriorMaterials = [...addExterior(context, root)];
   addSideWall(context, root, venue, 'left');
   addSideWall(context, root, venue, 'right');
   if (venue === 'cafe') addCafeWindow(context, root);
-  else if (venue === 'arcade') {
-    box(context, root, [7.2, 8.5, 0.22], [-4.4, 4.25, -3.52], { color: context.theme.wall, surface: 'plaster' });
-    box(context, root, [7.2, 8.5, 0.22], [4.4, 4.25, -3.52], { color: context.theme.wall, surface: 'plaster' });
-    box(context, root, [1.6, 4.55, 0.22], [0, 6.52, -3.52], { color: context.theme.wallDark, surface: 'plaster' });
-  } else {
-    box(context, root, [DIORAMA.width, 8.5, 0.22], [0, 4.25, -3.52], { color: context.theme.wall, surface: venue === 'ramen' ? 'tile' : 'plaster' });
-  }
+  else if (venue === 'arcade') addArcadeBackWall(context, root);
+  else addRamenWindow(context, root);
+  addStreetBeyondDoor(context, root, venue, exteriorMaterials);
   return { doorPivot: addDoor(context, root, venue), floorMaterial: floor.material, exteriorMaterials };
 }
 

@@ -1,4 +1,4 @@
-import { Group, Mesh, MeshStandardMaterial, type BufferGeometry } from 'three';
+import { Group, Mesh, MeshStandardMaterial, type BufferGeometry, type Object3D } from 'three';
 import type { Guest, GuestAppearance, GuestPalette } from '../simulation/types';
 import type { ActivitySpotKind } from '../simulation/layout';
 import type { VenueKind } from '../venue';
@@ -176,6 +176,25 @@ interface Leg {
   readonly knee: Group;
 }
 
+/** Ein Gelenk, dessen Drehung weich der Zielhaltung folgt. */
+interface Joint {
+  readonly object: Object3D;
+  readonly axis: 'x' | 'y' | 'z';
+  /** Wie schnell das Gelenk nachzieht (1/s); höher heißt straffer. */
+  readonly rate: number;
+  value: number;
+}
+
+const LEG_RATE = 12;
+const ARM_RATE = 14;
+const HEAD_RATE = 8;
+const BODY_RATE = 9;
+const TURN_RATE = 7;
+
+function wrapAngle(angle: number): number {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
+}
+
 export class VoxelFigure {
   readonly root = new Group();
   private readonly body = new Group();
@@ -193,6 +212,11 @@ export class VoxelFigure {
   private readonly mouthZ: number;
   private readonly browY: number;
   private currentMouth?: MouthKind;
+  private readonly joints: Joint[] = [];
+  private lastTime?: number;
+  private yaw = 0;
+  private bodyY = 0;
+  private pendingProp?: { kind: PropKind; anchor: Anchor };
 
   constructor(private readonly options: VoxelFigureOptions) {
     const { appearance } = options;
@@ -263,9 +287,52 @@ export class VoxelFigure {
         object.receiveShadow = true;
       }
     });
+    const joint = (object: Object3D, axis: Joint['axis'], rate: number): void => {
+      this.joints.push({ object, axis, rate, value: 0 });
+    };
+    for (const leg of this.legs) {
+      joint(leg.hip, 'x', LEG_RATE);
+      joint(leg.hip, 'z', LEG_RATE);
+      joint(leg.knee, 'x', LEG_RATE);
+    }
+    for (const arm of [this.arms.left, this.arms.right]) {
+      joint(arm.shoulder, 'x', ARM_RATE);
+      joint(arm.shoulder, 'z', ARM_RATE);
+      joint(arm.elbow, 'x', ARM_RATE);
+    }
+    joint(this.head, 'x', HEAD_RATE);
+    joint(this.head, 'y', HEAD_RATE);
+    joint(this.torso, 'z', HEAD_RATE);
+    joint(this.body, 'z', BODY_RATE);
   }
 
   update(input: VoxelPoseInput): void {
+    // Zeitschritt seit dem letzten Bild; bei Sprüngen (Tab im Hintergrund, Standbild) wird nicht geglättet.
+    const delta = this.lastTime === undefined ? 0 : input.time - this.lastTime;
+    this.lastTime = input.time;
+    const snap = delta <= 0 || delta > 0.5;
+    this.pose(input);
+    this.settle(snap ? 0 : delta, input);
+  }
+
+  /** Zieht Gelenke, Körperhöhe und Blickrichtung weich zur eben gesetzten Zielhaltung. */
+  private settle(delta: number, input: VoxelPoseInput): void {
+    const follow = (current: number, target: number, rate: number): number => (
+      delta === 0 ? target : current + (target - current) * (1 - Math.exp(-rate * delta))
+    );
+    for (const joint of this.joints) {
+      joint.value = follow(joint.value, joint.object.rotation[joint.axis], joint.rate);
+      joint.object.rotation[joint.axis] = joint.value;
+    }
+    this.bodyY = follow(this.bodyY, this.body.position.y, BODY_RATE);
+    this.body.position.y = this.bodyY;
+    const targetYaw = this.headingFor(input);
+    this.yaw = delta === 0 ? targetYaw : this.yaw + wrapAngle(targetYaw - this.yaw) * (1 - Math.exp(-TURN_RATE * delta));
+    this.root.rotation.y = this.yaw;
+    this.showProp(this.pendingProp);
+  }
+
+  private pose(input: VoxelPoseInput): void {
     const { visual } = input;
     const t = input.time + this.phase;
     const pose = visual.pose;
@@ -303,12 +370,10 @@ export class VoxelFigure {
       this.body.rotation.z = Math.sin(t * 0.7) * 0.015;
     }
 
-    const prop = this.poseArms(input, t);
+    this.pendingProp = this.poseArms(input, t);
     this.poseHead(input, t);
     this.updateFace(input, t);
-    this.showProp(prop);
     this.body.position.y += visual.offsetY;
-    this.root.rotation.y = this.headingFor(input);
   }
 
   dispose(): void {

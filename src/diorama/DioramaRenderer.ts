@@ -91,7 +91,7 @@ import {
   type DioramaSet,
   type FocusOccluder,
 } from './types';
-import { buildVenue, doorShouldBeOpen } from './venueBuilder';
+import { buildVenue, doorShouldBeOpen, VENUE_WINDOWS } from './venueBuilder';
 import { parseSeasonOverride, seasonForDate, type Season } from './season';
 import { CafeCat } from './cafeCat';
 import {
@@ -124,6 +124,10 @@ interface CharacterNode {
   readonly speech: SpeechBubble;
   figure?: VoxelFigure;
   figureKey: string;
+  /** Rest-Versatz nach dem Hinsetzen oder Aufstehen, der weich abklingt. */
+  settleX: number;
+  settleZ: number;
+  seated?: boolean;
 }
 
 function seeded(index: number, salt: number): number {
@@ -137,12 +141,10 @@ function characterTop(spot: ActivitySpot | undefined): number {
 }
 
 const DIORAMA_VOID = new Color('#120e16');
-// Regen fällt draußen: hinter der Vorderkante der Rückwand (−3,41) und vor der
-// Stadtkulisse (−3,66), nur so breit wie das Café-Fenster. Wo die Wand geschlossen
-// ist, verdeckt sie ihn; in Ramen und Arcade sieht man ihn deshalb nicht im Raum.
+// Regen fällt draußen: hinter der Rückwand (−3,41 bis −3,63) und vor der Stadtkulisse
+// (−3,66), nur so breit wie das Fenster des Ortes. Wo die Wand geschlossen ist, verdeckt sie ihn.
+const SKY_BACKDROP_LIFT = new Color('#ffffff');
 const RAIN_Z = -3.635;
-const RAIN_MIN_X = -5.85;
-const RAIN_WIDTH = 10.8;
 
 const INITIAL_CAMERA_TRANSFORM: CameraTransform = Object.freeze({
   position: Object.freeze({ x: 0, y: 6.7, z: 15.8 }),
@@ -202,6 +204,7 @@ export class DioramaRenderer {
   private readonly atmosphereDecorHandoffs: Object3D[] = [];
   private windowArt?: Mesh<PlaneGeometry, MeshBasicMaterial>;
   private figureTime = 0;
+  private figureDelta = 0;
   private readonly season: Season;
   private cat?: CafeCat;
   private catPetted = false;
@@ -452,6 +455,7 @@ export class DioramaRenderer {
       this.venueSet = buildVenue(venue, this.season);
       this.scene.add(this.venueSet.root);
       this.updateCatPresence();
+      this.layoutWeatherForVenue();
       this.atmosphereLayer.setVenue(venue);
       this.requestVenueArt(venue);
       this.requestAtmosphereArt(venue);
@@ -508,6 +512,7 @@ export class DioramaRenderer {
     this.updateCamera();
     this.updateVenue(time);
     this.updateDoor(snapshot.guests, snapshot.venue);
+    this.figureDelta = Math.max(0, Math.min(0.5, time - this.figureTime));
     this.figureTime = time;
     this.updateCharacters(snapshot, time, dialogue);
     this.updateCat(time);
@@ -580,9 +585,22 @@ export class DioramaRenderer {
     for (const pool of this.venueSet.lightPools) pool.material.opacity = this.look.lightPoolOpacity;
     this.venueSet.floorMaterial.roughness = 0.55 - this.look.wetness * 0.2;
     this.venueSet.floorMaterial.metalness = 0.08 + this.look.wetness * 0.14;
-    for (const material of this.venueSet.exteriorMaterials) {
-      material.emissive.copy(material.color);
-      material.emissiveIntensity = 0.02 + this.look.night * 0.08;
+    for (const [index, material] of this.venueSet.exteriorMaterials.entries()) {
+      if (index === 0) {
+        // Der Himmel hinter den Fenstern folgt Tageszeit und Wetter. Er leuchtet selbst
+        // und nimmt kaum Raumlicht an, sonst hellen ihn nachts die Lampen durch die Wand auf.
+        material.emissive.copy(this.look.sky).lerp(SKY_BACKDROP_LIFT, 0.06);
+        material.color.copy(material.emissive).multiplyScalar(0.18);
+        material.emissiveIntensity = 0.12 + this.look.daylight * 0.68;
+        continue;
+      }
+      // Häuser draußen leuchten selbst: tags hell, nachts dunkle Silhouetten mit erleuchteten Fenstern.
+      const base = material.userData.exteriorBase instanceof Color
+        ? material.userData.exteriorBase as Color
+        : (material.userData.exteriorBase = material.color.clone()) as Color;
+      material.color.copy(base).multiplyScalar(0.12);
+      material.emissive.copy(base);
+      material.emissiveIntensity = 0.28 + this.look.daylight * 0.62;
     }
     if (this.windowArt) {
       // Das gemalte Stadtbild zeigt eine Abendstadt. Tagsüber tritt es zurück,
@@ -935,7 +953,16 @@ export class DioramaRenderer {
       ? this.venueSet.seatBindings.find((binding) => binding.activitySpotId === guest.activitySpotId)?.transform.seatCenter
       : undefined;
     const point = seat ?? worldToCharacterDiorama(guest.position);
-    node.root.position.set(point.x + visual.offsetX, FLOOR_SURFACE_Y + visual.offsetY, point.z);
+    // Beim Hinsetzen springt der Bezugspunkt auf die Sitzmitte; der Versatz klingt weich ab.
+    if (node.seated !== undefined && node.seated !== seated) {
+      node.settleX = node.root.position.x - point.x - visual.offsetX;
+      node.settleZ = node.root.position.z - point.z;
+    }
+    node.seated = seated;
+    const decay = Math.exp(-7 * this.figureDelta);
+    node.settleX = Math.abs(node.settleX * decay) < 0.002 ? 0 : node.settleX * decay;
+    node.settleZ = Math.abs(node.settleZ * decay) < 0.002 ? 0 : node.settleZ * decay;
+    node.root.position.set(point.x + visual.offsetX + node.settleX, FLOOR_SURFACE_Y + visual.offsetY, point.z + node.settleZ);
     const figureKey = `${this.venue}|${guest.accessory ?? 'none'}`;
     if (!node.figure || node.figureKey !== figureKey) {
       node.figure?.root.removeFromParent();
@@ -1243,7 +1270,11 @@ export class DioramaRenderer {
       const positions = layer.geometry.getAttribute('position') as BufferAttribute;
       const masterCount = weather === 'storm' ? 252 : weather === 'snow' ? 180 : 198;
       const qualityScale = this.qualityTier === 'master' ? 1 : this.qualityTier === 'balanced' ? 0.64 : 0.38;
-      const count = this.reducedMotion ? Math.min(54, Math.round(masterCount * qualityScale)) : Math.round(masterCount * qualityScale);
+      // Schmale Fenster brauchen weniger Tropfen für dieselbe Dichte.
+      const opening = VENUE_WINDOWS[this.venue];
+      const widthScale = Math.max(0.3, (opening.maxX - opening.minX) / 10.9);
+      const fullCount = Math.round(masterCount * qualityScale * widthScale);
+      const count = this.reducedMotion ? Math.min(54, fullCount) : fullCount;
       layer.geometry.setDrawRange(0, count);
       if (this.reducedMotion) continue;
       for (let index = 0; index < count; index += 1) {
@@ -1253,7 +1284,7 @@ export class DioramaRenderer {
         const speed = weather === 'snow' ? 0.3 + seeded(seedIndex, 4) * 0.18 : 1.1 + depthBand * 0.28 + seeded(seedIndex, 4) * 0.65;
         const y = ((base * 8.5 - time * speed) % 8.5 + 8.5) % 8.5 + 0.4;
         positions.setY(index, y);
-        if (weather === 'snow') positions.setX(index, RAIN_MIN_X + seeded(seedIndex, 1) * RAIN_WIDTH + Math.sin(time + seedIndex) * 0.12);
+        if (weather === 'snow') positions.setX(index, this.rainX(seedIndex) + Math.sin(time + seedIndex) * 0.12);
       }
       positions.needsUpdate = true;
     }
@@ -1309,7 +1340,7 @@ export class DioramaRenderer {
     root.add(shadow);
     const speech = new SpeechBubble(name);
     root.add(speech.mesh);
-    return { root, shadow, speech, figureKey: '' };
+    return { root, shadow, speech, figureKey: '', settleX: 0, settleZ: 0 };
   }
 
   private updateCatPresence(): void {
@@ -1348,13 +1379,29 @@ export class DioramaRenderer {
     node.figure?.dispose();
   }
 
+  private rainX(seedIndex: number): number {
+    const opening = VENUE_WINDOWS[this.venue];
+    return opening.minX + 0.05 + seeded(seedIndex, 1) * (opening.maxX - opening.minX - 0.1);
+  }
+
+  /** Verteilt die Tropfen neu auf das Fenster des aktuellen Ortes. */
+  private layoutWeatherForVenue(): void {
+    for (const layer of this.weatherLayers) {
+      const positions = layer.geometry.getAttribute('position') as BufferAttribute;
+      for (let index = 0; index < positions.count; index += 1) {
+        positions.setX(index, this.rainX(index + (index % 3) * 97));
+      }
+      positions.needsUpdate = true;
+    }
+  }
+
   private createWeatherParticles(): Points<BufferGeometry, PointsMaterial> {
     const count = 270;
     const positions = new Float32Array(count * 3);
     for (let index = 0; index < count; index += 1) {
       const depthBand = index % 3;
       const seedIndex = index + depthBand * 97;
-      positions[index * 3] = RAIN_MIN_X + seeded(seedIndex, 1) * RAIN_WIDTH;
+      positions[index * 3] = this.rainX(seedIndex);
       positions[index * 3 + 1] = 0.3 + seeded(seedIndex, 2) * 8.5;
       positions[index * 3 + 2] = RAIN_Z + depthBand * 0.006 + seeded(seedIndex, 5) * 0.004;
     }
