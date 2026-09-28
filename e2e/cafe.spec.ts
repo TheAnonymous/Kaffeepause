@@ -278,6 +278,8 @@ test('reagiert nach Mausverweildauer genau einmal mit Emote, Fokus und leisem Ak
   await expect(canvas).toHaveAttribute('data-reaction-token', token ?? '1');
 });
 
+// Klick-Tests laufen mit ruhender Kamera: Fährt sie gerade zu einem Gespräch, wandern
+// die Ziele zwischen dem Auslesen ihrer Position und dem Klick über den Bildschirm.
 async function clickTarget(page: Page, name: 'bell' | 'cat'): Promise<void> {
   const canvas = page.locator('#cafe');
   await expect.poll(async () => await canvas.getAttribute('data-click-targets')).toContain(`${name}:`);
@@ -294,6 +296,7 @@ for (const venue of [
 ] as const) {
   test(`ruft mit der Thekenklingel die Bedienung (${venue.kind})`, async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 810 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await openCafe(page, '/?time=12:30&weather=clear');
     if (venue.kind !== 'cafe') await page.getByRole('radio', { name: new RegExp(venue.label) }).click();
     await page.getByRole('button', { name: venue.entry }).click();
@@ -304,6 +307,7 @@ for (const venue of [
 
 test('lässt Mochi auf Klick herüberkommen', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 810 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await openCafe(page, '/?time=12:30&weather=clear');
   await page.getByTestId('enter').click();
   await clickTarget(page, 'cat');
@@ -312,6 +316,7 @@ test('lässt Mochi auf Klick herüberkommen', async ({ page }) => {
 
 test('lässt einen angeklickten Gast sofort winken', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 810 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await openCafe(page, '/?time=12:30&weather=clear');
   await page.getByTestId('enter').click();
   const canvas = page.locator('#cafe');
