@@ -16,6 +16,8 @@ Figuren sind Pixel-Sprites (144 × 208) auf senkrechten Tafeln, die sich nur um 
 
 Gezeichnet wird auf voller Auflösung, danach bekommt jede Figur eine leichte zylindrische Schattierung (`applyVolumeShading`) und wird auf halbe Auflösung vergröbert, bevor die Kontur entsteht. Die Tafeln werfen echte Schatten; die Form schneidet der `alphaTest` aus.
 
+Die Eingangstür beschreibt `doorSpec()` in `venueBuilder.ts`: Scharnier an einer Zarge der Wandöffnung, Schwenk nach innen. `doorShouldBeOpen()` hält sie offen, solange jemand ein- oder ausgeht oder sich im Schwenkbereich bewegt. `tests/door.test.ts` prüft den ganzen Schwenk gegen Wände, Möbel, Sitzplätze und den Laufweg.
+
 Tische werden aus den Tischflächen in `src/simulation/layout.ts` gebaut. Wer einen Tisch verschiebt oder vergrößert, ändert also Simulation und Bild zugleich.
 
 ## Licht und Farbe
@@ -43,6 +45,7 @@ Nur im Entwicklungsserver (`npm run dev`); Produktionsbuilds ignorieren sie.
 | `?atmosphere=<Welle>&atmospherePhase=fade-in\|hold\|fade-out&atmosphereScale=<Faktor>` | Außenwellen reproduzierbar zeigen |
 | `?friends=demo` | vier Beispiel-Freunde vorbeikommen lassen |
 | `?season=halloween\|winter-lights\|none` | Jahreszeiten-Deko unabhängig vom Datum zeigen |
+| `?figures=voxel` | Probe: Figuren aus 3D-Klötzchen statt Pixel-Sprites |
 | `?quality=master\|balanced\|fallback` | Qualitätsstufe erzwingen |
 | `?testRender=diagnostic` | Frames nur auf Anfrage zeichnen (für Tests) |
 

@@ -16,6 +16,7 @@ import {
   type Texture,
 } from 'three';
 import type { VenueKind } from '../venue';
+import type { Guest } from '../simulation/types';
 import {
   VENUE_LAYOUTS,
   type SeatedActivitySpot,
@@ -606,23 +607,99 @@ function addExterior(context: BuildContext, root: Group): readonly MeshStandardM
   return exteriorMaterials;
 }
 
+const SIDE_WALL_INNER_X = 8.12 - 0.125;
+const REAR_WALL_FRONT_Z = -3.52 + 0.11;
+const DOOR_HALF_OPENING = 0.82;
+const DOOR_HEIGHT = 3.75;
+
+/** Wie die Tür in ihrer Wandöffnung hängt und wie weit sie nach innen aufschwingt. */
+export interface DoorSpec {
+  readonly hinge: DioramaPoint;
+  /** Drehung (rotation.y), bei der das Türblatt geschlossen in der Öffnung liegt. */
+  readonly closedYaw: number;
+  readonly openSign: 1 | -1;
+  readonly maxOpen: number;
+  readonly length: number;
+}
+
+export function doorSpec(venue: VenueKind): DoorSpec {
+  const layout = VENUE_LAYOUTS[venue];
+  const entrance = worldToDiorama(layout.entrance);
+  const length = DOOR_HALF_OPENING * 2 - 0.06;
+  if (layout.entryFlow === 'rear') {
+    return {
+      hinge: { x: entrance.x - DOOR_HALF_OPENING + 0.03, z: REAR_WALL_FRONT_Z + 0.06 },
+      closedYaw: 0, openSign: -1, maxOpen: Math.PI / 2, length,
+    };
+  }
+  const side = layout.entryFlow === 'left' ? -1 : 1;
+  // Im Ramen-Restaurant sitzt das Scharnier vorn: hinten stünde der Stuhl am Zweiertisch im Weg.
+  const hingeAtFront = venue === 'ramen';
+  return {
+    hinge: {
+      x: side * (SIDE_WALL_INNER_X - 0.06),
+      z: entrance.z + (hingeAtFront ? DOOR_HALF_OPENING - 0.03 : -DOOR_HALF_OPENING + 0.03),
+    },
+    closedYaw: hingeAtFront ? Math.PI / 2 : -Math.PI / 2,
+    openSign: (side < 0) === !hingeAtFront ? 1 : -1,
+    maxOpen: Math.PI / 2,
+    length,
+  };
+}
+
+/** Richtung des Türblatts in der Ebene, 0 = geschlossen, 1 = ganz offen. */
+export function doorLeafDirection(spec: DoorSpec, open: number): DioramaPoint {
+  const yaw = spec.closedYaw + spec.openSign * Math.min(1, Math.max(0, open)) * spec.maxOpen;
+  return { x: Math.cos(yaw), z: -Math.sin(yaw) };
+}
+
+/** Türblattlänge plus halbe Körperbreite. */
+const DOOR_SWEEP_CLEARANCE = 1.95;
+
+/**
+ * Die Tür öffnet für ein- und ausgehende Gäste am Eingang und bleibt offen,
+ * solange sich jemand in ihrem Schwenkbereich bewegt, damit sie niemanden durchschlägt.
+ */
+export function doorShouldBeOpen(guests: readonly Guest[], venue: VenueKind): boolean {
+  const entrance = VENUE_LAYOUTS[venue].entrance;
+  const hinge = doorSpec(venue).hinge;
+  return guests.some((guest) => {
+    if ((guest.state === 'entering' || guest.state === 'exiting' || guest.state === 'walking-to-exit')
+      && Math.hypot(guest.position.x - entrance.x, guest.position.y - entrance.y) < 48) return true;
+    if (guest.state === 'activity') return false;
+    const point = worldToDiorama(guest.position);
+    return Math.hypot(point.x - hinge.x, point.z - hinge.z) < DOOR_SWEEP_CLEARANCE;
+  });
+}
+
 function addDoor(context: BuildContext, root: Group, venue: VenueKind): Group {
   const layout = VENUE_LAYOUTS[venue];
-  const mapped = worldToDiorama(layout.entrance);
+  const spec = doorSpec(venue);
   const doorPivot = new Group();
-  const closedRotation = layout.entryFlow === 'left' ? Math.PI / 2 : layout.entryFlow === 'right' ? -Math.PI / 2 : 0;
-  doorPivot.position.set(mapped.x, 0.1, mapped.z);
-  doorPivot.rotation.y = closedRotation;
-  doorPivot.userData.closedRotation = closedRotation;
+  doorPivot.position.set(spec.hinge.x, 0.1, spec.hinge.z);
+  doorPivot.rotation.y = spec.closedYaw;
+  doorPivot.userData.closedRotation = spec.closedYaw;
+  doorPivot.userData.openSign = spec.openSign;
+  doorPivot.userData.maxOpen = spec.maxOpen;
   doorPivot.userData.staticBatchBoundary = true;
   root.add(doorPivot);
-  box(context, doorPivot, [1.42, 3.75, 0.18], [0.71, 1.88, 0], { color: context.theme.wood, roughness: 0.65, surface: 'wood' });
-  box(context, doorPivot, [1.08, 2.65, 0.08], [0.71, 2.28, 0.11], { color: context.theme.wallDark, roughness: 0.3, surface: 'glass' });
-  glowPanel(context, doorPivot, [0.12, 0.12, 0.15], [1.27, 1.83, 0.18], context.theme.glow);
+  const { length } = spec;
+  box(context, doorPivot, [length, DOOR_HEIGHT, 0.1], [length / 2, DOOR_HEIGHT / 2, 0], { color: context.theme.wood, roughness: 0.65, surface: 'wood' });
+  for (const face of [-1, 1]) {
+    box(context, doorPivot, [length * 0.72, 2.4, 0.03], [length / 2, 2.28, face * 0.065], { color: context.theme.wallDark, roughness: 0.3, surface: 'glass' });
+  }
+  glowPanel(context, doorPivot, [0.1, 0.1, 0.16], [length - 0.16, 1.83, 0], context.theme.glow);
+
+  // Zarge auf der Innenseite der Wand: zwei Pfosten und ein Sturz um die Öffnung.
+  const entrance = worldToDiorama(layout.entrance);
+  const frame = { color: context.theme.woodLight };
   if (layout.entryFlow === 'rear') {
-    box(context, root, [1.72, 0.2, 0.34], [mapped.x + 0.71, 3.94, mapped.z], { color: context.theme.woodLight });
+    for (const x of [-DOOR_HALF_OPENING, DOOR_HALF_OPENING]) box(context, root, [0.12, 4.2, 0.12], [entrance.x + x, 2.18, REAR_WALL_FRONT_Z + 0.04], frame);
+    box(context, root, [DOOR_HALF_OPENING * 2 + 0.24, 0.16, 0.12], [entrance.x, 4.26, REAR_WALL_FRONT_Z + 0.04], frame);
   } else {
-    box(context, root, [0.34, 0.2, 1.72], [mapped.x, 3.94, mapped.z + (layout.entryFlow === 'left' ? 0.71 : -0.71)], { color: context.theme.woodLight });
+    const x = (layout.entryFlow === 'left' ? -1 : 1) * (SIDE_WALL_INNER_X - 0.02);
+    for (const z of [-DOOR_HALF_OPENING, DOOR_HALF_OPENING]) box(context, root, [0.12, 4.2, 0.12], [x, 2.18, entrance.z + z], frame);
+    box(context, root, [0.12, 0.16, DOOR_HALF_OPENING * 2 + 0.24], [x, 4.26, entrance.z], frame);
   }
   return doorPivot;
 }
@@ -636,7 +713,7 @@ function addSideWall(context: BuildContext, root: Group, venue: VenueKind, side:
     return;
   }
   const doorZ = worldToDiorama(layout.entrance).z;
-  const halfOpening = 0.82;
+  const halfOpening = DOOR_HALF_OPENING;
   const backLength = doorZ - halfOpening + DIORAMA.depth / 2;
   const frontLength = DIORAMA.depth / 2 - (doorZ + halfOpening);
   if (backLength > 0) box(context, root, [0.25, DIORAMA.height, backLength], [x, 4.35, -DIORAMA.depth / 2 + backLength / 2], { color: context.theme.wallDark, surface: 'plaster' });

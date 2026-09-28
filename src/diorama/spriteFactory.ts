@@ -29,12 +29,12 @@ interface SpriteDescription {
   readonly visual: CharacterVisualState;
 }
 
-const BARISTA_APPEARANCE: GuestAppearance = {
+export const BARISTA_APPEARANCE: GuestAppearance = {
   body: 'angular', face: 'oval', hair: 'crop', outfit: 'overalls', detail: 'earring',
   maturity: 'adult', heightOffset: 1, widthOffset: 0, pattern: 2,
 };
 
-const BARISTA_PALETTES: Readonly<Record<VenueKind, GuestPalette>> = {
+export const BARISTA_PALETTES: Readonly<Record<VenueKind, GuestPalette>> = {
   cafe: { skin: '#c98363', hair: '#241b24', coat: '#3e716b', accent: '#e7bd79', trousers: '#2c3440', shoes: '#1d1920' },
   ramen: { skin: '#c98363', hair: '#241b24', coat: '#a94342', accent: '#f0d09a', trousers: '#33262e', shoes: '#1d1920' },
   arcade: { skin: '#c98363', hair: '#241b24', coat: '#365a74', accent: '#56dde1', trousers: '#242d45', shoes: '#15192a' },

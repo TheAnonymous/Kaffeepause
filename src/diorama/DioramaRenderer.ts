@@ -56,11 +56,15 @@ import {
   type SpeechBubblePlacement,
 } from './speechBubble';
 import {
+  BARISTA_APPEARANCE,
+  BARISTA_PALETTES,
+  SEAT_TOP_HEIGHT,
   SPRITE_FLOOR_ROW,
   SPRITE_ROWS_PER_UNIT,
   SpriteTextureLibrary,
   seatedHeadHeight,
 } from './spriteFactory';
+import { VoxelFigure } from './voxelFigure';
 import {
   calculateBaristaVisualState,
   calculateGuestVisualState,
@@ -97,7 +101,7 @@ import {
   type DioramaSet,
   type FocusOccluder,
 } from './types';
-import { buildVenue } from './venueBuilder';
+import { buildVenue, doorShouldBeOpen } from './venueBuilder';
 import { parseSeasonOverride, seasonForDate, type Season } from './season';
 import { CafeCat } from './cafeCat';
 import {
@@ -130,6 +134,7 @@ interface CharacterNode {
   readonly shadow: Mesh<CircleGeometry, MeshBasicMaterial>;
   readonly speech: SpeechBubble;
   textureName: string;
+  voxel?: VoxelFigure;
 }
 
 function seeded(index: number, salt: number): number {
@@ -143,6 +148,12 @@ function characterTop(spot: ActivitySpot | undefined): number {
 }
 
 const DIORAMA_VOID = new Color('#120e16');
+// Regen fällt draußen: hinter der Vorderkante der Rückwand (−3,41) und vor der
+// Stadtkulisse (−3,66), nur so breit wie das Café-Fenster. Wo die Wand geschlossen
+// ist, verdeckt sie ihn; in Ramen und Arcade sieht man ihn deshalb nicht im Raum.
+const RAIN_Z = -3.635;
+const RAIN_MIN_X = -5.85;
+const RAIN_WIDTH = 10.8;
 
 const INITIAL_CAMERA_TRANSFORM: CameraTransform = Object.freeze({
   position: Object.freeze({ x: 0, y: 6.7, z: 15.8 }),
@@ -204,8 +215,11 @@ export class DioramaRenderer {
   private windowArt?: Mesh<PlaneGeometry, MeshBasicMaterial>;
   private readonly cameraDirection = new Vector3();
   private billboardYaw = 0;
+  private voxelTime = 0;
   private readonly season: Season;
   private cat?: CafeCat;
+  /** Probe: `?figures=voxel` zeigt Figuren aus Klötzchen statt Pixel-Sprites. */
+  private readonly voxelFigures: boolean;
   private catPetted = false;
   private catPurrToken = 0;
   private artGeneration = 0;
@@ -230,6 +244,7 @@ export class DioramaRenderer {
     const forceArtFallback = import.meta.env.DEV && parameters.get('art') === 'fallback';
     this.diagnosticRendering = import.meta.env.DEV && parameters.get('testRender') === 'diagnostic';
     this.season = parseSeasonOverride(window.location.search, import.meta.env.DEV) ?? seasonForDate(new Date());
+    this.voxelFigures = import.meta.env.DEV && parameters.get('figures') === 'voxel';
     this.cinematicScale = import.meta.env.DEV
       ? Math.max(0.02, Math.min(1, Number(parameters.get('cinematicScale') ?? 1) || 1))
       : 1;
@@ -519,6 +534,7 @@ export class DioramaRenderer {
     this.updateCamera();
     this.updateVenue(time);
     this.updateDoor(snapshot.guests, snapshot.venue);
+    this.voxelTime = time;
     this.updateCharacters(snapshot, time, dialogue);
     this.updateCat(time);
     this.updateFocusEffects(snapshot);
@@ -867,16 +883,14 @@ export class DioramaRenderer {
   }
 
   private updateDoor(guests: readonly Guest[], venue: VenueKind): void {
-    const entrance = VENUE_LAYOUTS[venue].entrance;
-    const active = guests.some((guest) => (
-      (guest.state === 'entering' || guest.state === 'exiting' || guest.state === 'walking-to-exit')
-      && Math.hypot(guest.position.x - entrance.x, guest.position.y - entrance.y) < 48
-    ));
+    const active = doorShouldBeOpen(guests, venue);
     const target = active ? 1 : 0;
     this.doorOpen += (target - this.doorOpen) * (this.reducedMotion ? 1 : 0.09);
-    const closedRotation = Number(this.venueSet.doorPivot.userData.closedRotation ?? 0);
-    const direction = venue === 'ramen' ? -1 : 1;
-    this.venueSet.doorPivot.rotation.y = closedRotation + this.doorOpen * 1.18 * direction;
+    const pivot = this.venueSet.doorPivot;
+    const closedRotation = Number(pivot.userData.closedRotation ?? 0);
+    const openSign = Number(pivot.userData.openSign ?? 1);
+    const maxOpen = Number(pivot.userData.maxOpen ?? Math.PI / 2);
+    pivot.rotation.y = closedRotation + openSign * this.doorOpen * maxOpen;
   }
 
   private updateCharacters(snapshot: SceneSnapshot, time: number, dialogue: readonly DialogueLine[]): void {
@@ -956,7 +970,23 @@ export class DioramaRenderer {
       : undefined;
     const point = seat ?? worldToCharacterDiorama(guest.position);
     node.root.position.set(point.x + visual.offsetX, FLOOR_SURFACE_Y + visual.offsetY, point.z);
-    this.applySprite(node, this.spriteTextures.forGuest(guest, this.venue, visual), visual.facing);
+    if (this.voxelFigures) {
+      if (!node.voxel) {
+        node.voxel = new VoxelFigure(guest.palette, guest.appearance);
+        node.root.add(node.voxel.root);
+        node.plane.visible = false;
+      }
+      const next = guest.waypoints?.[0] ?? guest.target;
+      node.voxel.update({
+        visual,
+        seatView: visual.seatView,
+        heading: { x: (next.x - guest.position.x) / 384 * DIORAMA.width, z: (next.y - guest.position.y) / 86 * DIORAMA.depth },
+        seatHeight: SEAT_TOP_HEIGHT[visual.activitySpotKind ?? 'table'],
+        time: this.voxelTime,
+      });
+    } else {
+      this.applySprite(node, this.spriteTextures.forGuest(guest, this.venue, visual), visual.facing);
+    }
     node.speech.mesh.rotation.copy(this.perspective.rotation);
     const tailLeft = point.x < -6 ? true : point.x > 6 ? false : guest.facing > 0;
     node.speech.update(
@@ -980,7 +1010,16 @@ export class DioramaRenderer {
   ): void {
     const point = worldToCharacterDiorama(barista.position);
     node.root.position.set(point.x + visual.offsetX, FLOOR_SURFACE_Y + visual.offsetY, point.z);
-    this.applySprite(node, this.spriteTextures.forBarista(barista, this.venue, visual), visual.facing);
+    if (this.voxelFigures) {
+      if (!node.voxel) {
+        node.voxel = new VoxelFigure(BARISTA_PALETTES[this.venue], BARISTA_APPEARANCE, true);
+        node.root.add(node.voxel.root);
+        node.plane.visible = false;
+      }
+      node.voxel.update({ visual, seatHeight: 0, time: this.voxelTime });
+    } else {
+      this.applySprite(node, this.spriteTextures.forBarista(barista, this.venue, visual), visual.facing);
+    }
     node.speech.mesh.rotation.copy(this.perspective.rotation);
     const tailLeft = point.x < -6 ? true : point.x > 6 ? false : barista.facing > 0;
     node.speech.update(dialogue, this.venue, tailLeft, DIORAMA.standingHeight, placement);
@@ -1273,7 +1312,7 @@ export class DioramaRenderer {
         const speed = weather === 'snow' ? 0.3 + seeded(seedIndex, 4) * 0.18 : 1.1 + depthBand * 0.28 + seeded(seedIndex, 4) * 0.65;
         const y = ((base * 8.5 - time * speed) % 8.5 + 8.5) % 8.5 + 0.4;
         positions.setY(index, y);
-        if (weather === 'snow') positions.setX(index, -7.7 + seeded(seedIndex, 1) * 15.4 + Math.sin(time + seedIndex) * 0.12);
+        if (weather === 'snow') positions.setX(index, RAIN_MIN_X + seeded(seedIndex, 1) * RAIN_WIDTH + Math.sin(time + seedIndex) * 0.12);
       }
       positions.needsUpdate = true;
     }
@@ -1385,6 +1424,7 @@ export class DioramaRenderer {
     node.shadow.geometry.dispose();
     node.shadow.material.dispose();
     node.speech.dispose();
+    node.voxel?.dispose();
   }
 
   private createWeatherParticles(): Points<BufferGeometry, PointsMaterial> {
@@ -1393,9 +1433,9 @@ export class DioramaRenderer {
     for (let index = 0; index < count; index += 1) {
       const depthBand = index % 3;
       const seedIndex = index + depthBand * 97;
-      positions[index * 3] = -7.7 + seeded(seedIndex, 1) * 15.4;
+      positions[index * 3] = RAIN_MIN_X + seeded(seedIndex, 1) * RAIN_WIDTH;
       positions[index * 3 + 1] = 0.3 + seeded(seedIndex, 2) * 8.5;
-      positions[index * 3 + 2] = -3.43 + depthBand * 0.07 + seeded(seedIndex, 5) * 0.025;
+      positions[index * 3 + 2] = RAIN_Z + depthBand * 0.006 + seeded(seedIndex, 5) * 0.004;
     }
     const geometry = new BufferGeometry();
     const attribute = new BufferAttribute(positions, 3);
