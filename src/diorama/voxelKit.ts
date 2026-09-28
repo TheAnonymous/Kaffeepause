@@ -1,10 +1,33 @@
-import { BufferAttribute, BufferGeometry, Color, Euler, Matrix4, Quaternion, Vector3 } from 'three';
+import {
+  Bone,
+  BufferAttribute,
+  BufferGeometry,
+  Color,
+  Euler,
+  Matrix3,
+  Matrix4,
+  Quaternion,
+  Skeleton,
+  SkinnedMesh,
+  Vector3,
+  type Material,
+  type Object3D,
+} from 'three';
 
-// Baukasten für Klötzchen-Modelle: viele farbige Quader werden zu einer einzigen
-// Geometrie mit Vertexfarben zusammengefasst. Eine Figur braucht so nur wenige Draw Calls.
+// Baukasten für Klötzchen-Modelle: farbige Quader werden zu einer Geometrie mit
+// Vertexfarben zusammengefasst. Mit `VoxelRig` wird daraus ein Skelett-Modell, bei
+// dem Knochen die Gelenke bewegen; eine ganze Figur ist dann ein einziger Zeichenaufruf.
 
 export type Size = readonly [number, number, number];
 export type Position = readonly [number, number, number];
+type Rotation = Readonly<{ x?: number; y?: number; z?: number }>;
+
+interface BoxSpec {
+  readonly size: Size;
+  readonly center: Position;
+  readonly color: string;
+  readonly rotation?: Rotation;
+}
 
 const FACES: readonly { normal: Position; corners: readonly Position[]; tint: number }[] = [
   { normal: [1, 0, 0], corners: [[1, -1, 1], [1, -1, -1], [1, 1, -1], [1, 1, 1]], tint: 0.94 },
@@ -31,47 +54,116 @@ export function mix(left: string, right: string, amount: number): string {
 }
 
 export class BoxBatch {
-  private readonly positions: number[] = [];
-  private readonly normals: number[] = [];
-  private readonly colors: number[] = [];
-  private readonly indices: number[] = [];
-  private readonly color = new Color();
-  private readonly matrix = new Matrix4();
-  private readonly rotation = new Matrix4();
-  private readonly vector = new Vector3();
-  private readonly normal = new Vector3();
+  readonly boxes: BoxSpec[] = [];
 
   /** Fügt einen Quader hinzu; `rotation` dreht ihn um seine eigene Mitte. */
-  add(size: Size, center: Position, hex: string, rotation?: Readonly<{ x?: number; y?: number; z?: number }>): this {
-    this.color.set(hex);
-    const quaternion = new Quaternion().setFromEuler(new Euler(rotation?.x ?? 0, rotation?.y ?? 0, rotation?.z ?? 0));
-    this.rotation.makeRotationFromQuaternion(quaternion);
-    this.matrix.compose(new Vector3(...center), quaternion, new Vector3(size[0] / 2, size[1] / 2, size[2] / 2));
-    for (const face of FACES) {
-      const base = this.positions.length / 3;
-      this.normal.set(...face.normal).applyMatrix4(this.rotation).normalize();
-      for (const corner of face.corners) {
-        this.vector.set(...corner).applyMatrix4(this.matrix);
-        this.positions.push(this.vector.x, this.vector.y, this.vector.z);
-        this.normals.push(this.normal.x, this.normal.y, this.normal.z);
-        this.colors.push(this.color.r * face.tint, this.color.g * face.tint, this.color.b * face.tint);
-      }
-      this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
-    }
+  add(size: Size, center: Position, color: string, rotation?: Rotation): this {
+    this.boxes.push({ size, center, color, rotation });
     return this;
   }
 
   get empty(): boolean {
-    return this.positions.length === 0;
+    return this.boxes.length === 0;
   }
 
   build(): BufferGeometry {
-    const geometry = new BufferGeometry();
-    geometry.setAttribute('position', new BufferAttribute(new Float32Array(this.positions), 3));
-    geometry.setAttribute('normal', new BufferAttribute(new Float32Array(this.normals), 3));
-    geometry.setAttribute('color', new BufferAttribute(new Float32Array(this.colors), 3));
-    geometry.setIndex(this.indices);
-    geometry.computeBoundingSphere();
-    return geometry;
+    return buildGeometry([{ batch: this, matrix: new Matrix4(), bone: -1 }]);
+  }
+}
+
+interface PlacedBatch {
+  readonly batch: BoxBatch;
+  /** Lage der Quader im Modell (für Skelett-Modelle: Ruhelage des Knochens). */
+  readonly matrix: Matrix4;
+  /** Knochen, der die Quader bewegt; −1 für starre Modelle. */
+  readonly bone: number;
+}
+
+function buildGeometry(parts: readonly PlacedBatch[]): BufferGeometry {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const colors: number[] = [];
+  const skinIndices: number[] = [];
+  const indices: number[] = [];
+  const skinned = parts.some((part) => part.bone >= 0);
+  const color = new Color();
+  const local = new Matrix4();
+  const world = new Matrix4();
+  const normalMatrix = new Matrix3();
+  const vector = new Vector3();
+  const normal = new Vector3();
+  const quaternion = new Quaternion();
+  const euler = new Euler();
+  const scale = new Vector3();
+  const center = new Vector3();
+  for (const part of parts) {
+    for (const box of part.batch.boxes) {
+      color.set(box.color);
+      quaternion.setFromEuler(euler.set(box.rotation?.x ?? 0, box.rotation?.y ?? 0, box.rotation?.z ?? 0));
+      local.compose(center.set(...box.center), quaternion, scale.set(box.size[0] / 2, box.size[1] / 2, box.size[2] / 2));
+      world.multiplyMatrices(part.matrix, local);
+      normalMatrix.getNormalMatrix(world);
+      for (const face of FACES) {
+        const base = positions.length / 3;
+        normal.set(...face.normal).applyMatrix3(normalMatrix).normalize();
+        for (const corner of face.corners) {
+          vector.set(...corner).applyMatrix4(world);
+          positions.push(vector.x, vector.y, vector.z);
+          normals.push(normal.x, normal.y, normal.z);
+          colors.push(color.r * face.tint, color.g * face.tint, color.b * face.tint);
+          if (skinned) skinIndices.push(Math.max(0, part.bone), 0, 0, 0);
+        }
+        indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      }
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3));
+  geometry.setAttribute('normal', new BufferAttribute(new Float32Array(normals), 3));
+  geometry.setAttribute('color', new BufferAttribute(new Float32Array(colors), 3));
+  if (skinned) {
+    const weights = new Float32Array(skinIndices.length);
+    for (let index = 0; index < weights.length; index += 4) weights[index] = 1;
+    geometry.setAttribute('skinIndex', new BufferAttribute(new Uint16Array(skinIndices), 4));
+    geometry.setAttribute('skinWeight', new BufferAttribute(weights, 4));
+  }
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+/**
+ * Sammelt Quader pro Knochen und baut daraus ein einziges Skelett-Modell.
+ * Die Knochen bilden die Gelenkhierarchie; Quader werden in Knochen-Koordinaten angegeben.
+ */
+export class VoxelRig {
+  private readonly parts: { readonly bone: Bone; readonly batch: BoxBatch }[] = [];
+
+  attach(bone: Bone, batch: BoxBatch): void {
+    this.parts.push({ bone, batch });
+  }
+
+  /** Baut das Modell in der aktuellen Haltung als Ruhelage und hängt es an `root`. */
+  build(root: Object3D, material: Material): SkinnedMesh {
+    root.updateMatrixWorld(true);
+    const bones: Bone[] = [];
+    root.traverse((object) => { if (object instanceof Bone) bones.push(object); });
+    const indexOf = new Map(bones.map((bone, index) => [bone, index]));
+    const rootInverse = root.matrixWorld.clone().invert();
+    const geometry = buildGeometry(this.parts.map((part) => ({
+      batch: part.batch,
+      matrix: rootInverse.clone().multiply(part.bone.matrixWorld),
+      bone: indexOf.get(part.bone) ?? 0,
+    })));
+    const mesh = new SkinnedMesh(geometry, material);
+    mesh.name = `${root.name}:mesh`;
+    // Gliedmaßen verlassen die Ruhelage; das Modell ist klein, Culling spart hier nichts.
+    mesh.frustumCulled = false;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    root.add(mesh);
+    mesh.updateMatrixWorld(true);
+    mesh.bind(new Skeleton(bones));
+    return mesh;
   }
 }

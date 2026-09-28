@@ -130,4 +130,14 @@ describe('CafeSimulation', () => {
     simulation.setEnvironment(environment(4, 'rain'));
     expect(simulation.guests.some((guest) => guest.accessory === 'umbrella')).toBe(true);
   });
+
+  it('schickt die Bedienung beim Klingeln zur Ausgabe', () => {
+    const simulation = new CafeSimulation({ seed: 3, initialGuests: 2, accidents: false, moments: false, stories: false });
+    simulation.start();
+    simulation.callBarista();
+    expect(simulation.barista.task).toBe('serving');
+    for (let step = 0; step < 40; step += 1) simulation.update(0.1);
+    expect(simulation.barista.task).toBe('serving');
+    expect(Math.abs(simulation.barista.position.x - 294)).toBeLessThan(1);
+  });
 });

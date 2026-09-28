@@ -59,4 +59,14 @@ describe('Mausnähe-Reaktionen', () => {
     expect(controller.update(10.5, { x: 100, y: 100 }, first, 'cafe').started).toBeUndefined();
     expect(REACTION_CHARACTER_COOLDOWN_SECONDS).toBe(12);
   });
+
+  it('lässt eine angeklickte Figur sofort winken, aber nicht im Dauerfeuer', () => {
+    const controller = new PointerReactionController();
+    const target = { id: 'guest-1', x: 100, y: 100 };
+    const reaction = controller.trigger(5, target, 'cafe', 90);
+    expect(reaction).toMatchObject({ characterId: 'guest-1', gesture: 'wave', facing: -1 });
+    expect(controller.trigger(5.5, target, 'cafe', 90)).toBeUndefined();
+    expect(controller.update(5.6, undefined, [target], 'cafe').active?.characterId).toBe('guest-1');
+    expect(controller.trigger(9, target, 'cafe', 120)).toMatchObject({ facing: 1 });
+  });
 });

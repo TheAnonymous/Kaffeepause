@@ -1,44 +1,62 @@
-import { Group, Mesh, MeshStandardMaterial, type BufferGeometry, type Object3D } from 'three';
+import { Bone, Color, Group, MeshStandardMaterial, type Object3D, type SkinnedMesh } from 'three';
 import type { Guest, GuestAppearance, GuestPalette } from '../simulation/types';
 import type { ActivitySpotKind } from '../simulation/layout';
 import type { VenueKind } from '../venue';
 import type { CharacterExpression, CharacterVisualState, SeatView } from './characterVisualState';
 import { FIGURE, HIP_HEIGHT } from './characters';
-import { BoxBatch, mix, shade, type Position, type Size } from './voxelKit';
+import { BoxBatch, mix, shade, VoxelRig, type Position, type Size } from './voxelKit';
 
 // Klötzchen-Figuren im Stil der Möbel: echte Tiefe, echtes Hinsetzen und Umdrehen,
 // Gesichter mit Ausdruck, Hände mit Gegenständen und kleine Bewegungen.
 
-const MATERIAL = new MeshStandardMaterial({ vertexColors: true, roughness: 0.84, metalness: 0 });
+interface RimUniforms {
+  readonly rimColor: { value: Color };
+  readonly rimStrength: { value: number };
+}
+
+/**
+ * Material mit Lichtrand: Flächen, die von der Kamera weg zeigen, leuchten leicht.
+ * So heben sich Figuren nachts ab, und Beteiligte einer Geschichte schimmern.
+ */
+function figureMaterial(): { material: MeshStandardMaterial; rim: RimUniforms } {
+  const material = new MeshStandardMaterial({ vertexColors: true, roughness: 0.84, metalness: 0 });
+  const rim: RimUniforms = { rimColor: { value: new Color('#ffd894') }, rimStrength: { value: 0 } };
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, rim);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 rimColor;\nuniform float rimStrength;')
+      .replace('#include <emissivemap_fragment>', [
+        '#include <emissivemap_fragment>',
+        'float rimFactor = 1.0 - saturate( dot( normal, normalize( vViewPosition ) ) );',
+        'totalEmissiveRadiance += rimColor * rimStrength * pow( rimFactor, 2.0 );',
+      ].join('\n'));
+  };
+  material.customProgramCacheKey = () => 'voxel-figure-rim';
+  return { material, rim };
+}
 
 type MouthKind = 'neutral' | 'smile' | 'laugh' | 'surprised' | 'sorry' | 'focused' | 'talk';
 type PropKind = 'book' | 'notebook' | 'sketchbook' | 'knitting' | 'handheld' | 'laptop' | 'board' | 'cup'
   | 'phone' | 'tray' | 'cloth' | 'box' | 'chopsticks' | 'umbrella';
-type Anchor = 'front' | 'table' | 'lap' | 'counter' | 'up' | 'right-hand' | 'left-hand';
+type Anchor = 'front' | 'table' | 'lap' | 'counter' | 'up' | 'serve' | 'right-hand' | 'left-hand';
 
 const MOUTH_KINDS: readonly MouthKind[] = ['neutral', 'smile', 'laugh', 'surprised', 'sorry', 'focused', 'talk'];
 const MOUTH_DARK = '#5e2935';
 
-let sharedEyes: BufferGeometry | undefined;
-const sharedMouths = new Map<MouthKind, BufferGeometry>();
-const sharedProps = new Map<PropKind, BufferGeometry>();
+const PROP_KINDS: readonly PropKind[] = ['book', 'notebook', 'sketchbook', 'knitting', 'handheld', 'laptop', 'board', 'cup',
+  'phone', 'tray', 'cloth', 'box', 'chopsticks', 'umbrella'];
 
-function eyesGeometry(): BufferGeometry {
-  sharedEyes ??= (() => {
-    const batch = new BoxBatch();
-    for (const side of [-1, 1]) {
-      batch.add([0.11, 0.12, 0.02], [side * 0.13, 0, 0], '#f5efe4');
-      batch.add([0.065, 0.085, 0.02], [side * 0.12, -0.008, 0.007], '#2a2230');
-      batch.add([0.026, 0.026, 0.02], [side * 0.12 + 0.016, 0.018, 0.013], '#ffffff');
-    }
-    return batch.build();
-  })();
-  return sharedEyes;
+function eyesBatch(): BoxBatch {
+  const batch = new BoxBatch();
+  for (const side of [-1, 1]) {
+    batch.add([0.11, 0.12, 0.02], [side * 0.13, 0, 0], '#f5efe4');
+    batch.add([0.065, 0.085, 0.02], [side * 0.12, -0.008, 0.007], '#2a2230');
+    batch.add([0.026, 0.026, 0.02], [side * 0.12 + 0.016, 0.018, 0.013], '#ffffff');
+  }
+  return batch;
 }
 
-function mouthGeometry(kind: MouthKind): BufferGeometry {
-  let geometry = sharedMouths.get(kind);
-  if (geometry) return geometry;
+function mouthBatch(kind: MouthKind): BoxBatch {
   const batch = new BoxBatch();
   if (kind === 'neutral') batch.add([0.12, 0.026, 0.02], [0, 0, 0], MOUTH_DARK);
   else if (kind === 'focused') batch.add([0.07, 0.024, 0.02], [0, 0, 0], MOUTH_DARK);
@@ -57,14 +75,10 @@ function mouthGeometry(kind: MouthKind): BufferGeometry {
     batch.add([0.1, 0.016, 0.022], [0, 0.018, 0.001], '#f4efe6');
     batch.add([0.08, 0.026, 0.022], [0, -0.034, 0.001], '#d8606a');
   }
-  geometry = batch.build();
-  sharedMouths.set(kind, geometry);
-  return geometry;
+  return batch;
 }
 
-function propGeometry(kind: PropKind): BufferGeometry {
-  let geometry = sharedProps.get(kind);
-  if (geometry) return geometry;
+function propBatch(kind: PropKind): BoxBatch {
   const batch = new BoxBatch();
   switch (kind) {
     case 'book':
@@ -139,9 +153,7 @@ function propGeometry(kind: PropKind): BufferGeometry {
     default:
       break;
   }
-  geometry = batch.build();
-  sharedProps.set(kind, geometry);
-  return geometry;
+  return batch;
 }
 
 export interface VoxelFigureOptions {
@@ -165,15 +177,15 @@ export interface VoxelPoseInput {
 }
 
 interface Arm {
-  readonly shoulder: Group;
-  readonly elbow: Group;
-  readonly hand: Group;
+  readonly shoulder: Bone;
+  readonly elbow: Bone;
+  readonly hand: Bone;
   readonly side: 1 | -1;
 }
 
 interface Leg {
-  readonly hip: Group;
-  readonly knee: Group;
+  readonly hip: Bone;
+  readonly knee: Bone;
 }
 
 /** Ein Gelenk, dessen Drehung weich der Zielhaltung folgt. */
@@ -197,17 +209,20 @@ function wrapAngle(angle: number): number {
 
 export class VoxelFigure {
   readonly root = new Group();
-  private readonly body = new Group();
-  private readonly torso = new Group();
-  private readonly head = new Group();
-  private readonly eyes: Mesh;
-  private readonly brows: Mesh;
-  private readonly mouths = new Map<MouthKind, Mesh>();
+  private readonly body = new Bone();
+  private readonly torso = new Bone();
+  private readonly head = new Bone();
+  private readonly eyes = new Bone();
+  private readonly brows = new Bone();
+  private readonly mouths = new Map<MouthKind, Bone>();
   private readonly arms: { readonly left: Arm; readonly right: Arm };
   private readonly legs: readonly Leg[];
   private readonly anchors: Record<Exclude<Anchor, 'right-hand' | 'left-hand'>, Group>;
-  private readonly propMeshes = new Map<PropKind, Mesh>();
-  private readonly geometries: BufferGeometry[] = [];
+  private readonly props = new Map<PropKind, Bone>();
+  private readonly rig = new VoxelRig();
+  private readonly mesh: SkinnedMesh;
+  private readonly material: MeshStandardMaterial;
+  private readonly rim: RimUniforms;
   private readonly phase: number;
   private readonly mouthZ: number;
   private readonly browY: number;
@@ -233,7 +248,7 @@ export class VoxelFigure {
 
     this.torso.position.y = HIP_HEIGHT;
     this.body.add(this.torso);
-    this.mesh(this.torso, this.torsoBatch(width, depth, torsoHeight));
+    this.rig.attach(this.torso, this.torsoBatch(width, depth, torsoHeight));
 
     const shoulderY = torsoHeight - 0.05;
     this.arms = {
@@ -248,23 +263,24 @@ export class VoxelFigure {
     // Erst zur Seite drehen, dann nicken: sonst kippt der Kopf beim Runterschauen schräg.
     this.head.rotation.order = 'YXZ';
     this.torso.add(this.head);
-    this.mesh(this.head, this.headBatch(headWidth, headHeight, headDepth));
+    this.rig.attach(this.head, this.headBatch(headWidth, headHeight, headDepth));
     const front = headDepth / 2;
-    this.eyes = new Mesh(eyesGeometry(), MATERIAL);
     this.eyes.position.set(0, headHeight * 0.47, front + 0.006);
     this.head.add(this.eyes);
+    this.rig.attach(this.eyes, eyesBatch());
     const browBatch = new BoxBatch();
     const browColor = shade(this.hairColor(), -0.25);
     for (const side of [-1, 1]) browBatch.add([0.12, 0.03, 0.02], [side * 0.13, 0, 0], browColor);
-    this.brows = this.mesh(this.head, browBatch);
     this.browY = headHeight * 0.63;
     this.brows.position.set(0, this.browY, front + 0.008);
+    this.head.add(this.brows);
+    this.rig.attach(this.brows, browBatch);
     this.mouthZ = front + (appearance.detail === 'beard' ? 0.05 : 0.01);
     for (const kind of MOUTH_KINDS) {
-      const mouth = new Mesh(mouthGeometry(kind), MATERIAL);
+      const mouth = new Bone();
       mouth.position.set(0, headHeight * 0.22, this.mouthZ);
-      mouth.visible = false;
       this.head.add(mouth);
+      this.rig.attach(mouth, mouthBatch(kind));
       this.mouths.set(kind, mouth);
     }
 
@@ -280,13 +296,20 @@ export class VoxelFigure {
       lap: anchor([0, 0.1, depth / 2 + 0.26]),
       counter: anchor([0, 0.6, depth / 2 + 0.3]),
       up: anchor([0, torsoHeight + 0.35, depth / 2 + 0.22]),
+      // Über die Theke gereicht: höher als die Thekenkante, damit man das Tablett sieht.
+      serve: anchor([0, torsoHeight + 0.16, depth / 2 + 0.36]),
     };
-    this.root.traverse((object) => {
-      if (object instanceof Mesh) {
-        object.castShadow = true;
-        object.receiveShadow = true;
-      }
-    });
+    // Gegenstände liegen in der Ruhelage am Ursprung und werden später an Hand oder Tisch gehängt.
+    for (const kind of PROP_KINDS) {
+      const prop = new Bone();
+      this.body.add(prop);
+      this.rig.attach(prop, propBatch(kind));
+      this.props.set(kind, prop);
+    }
+    ({ material: this.material, rim: this.rim } = figureMaterial());
+    this.mesh = this.rig.build(this.root, this.material);
+    for (const mouth of this.mouths.values()) mouth.scale.setScalar(0);
+    for (const prop of this.props.values()) prop.scale.setScalar(0);
     const joint = (object: Object3D, axis: Joint['axis'], rate: number): void => {
       this.joints.push({ object, axis, rate, value: 0 });
     };
@@ -376,9 +399,15 @@ export class VoxelFigure {
     this.body.position.y += visual.offsetY;
   }
 
+  /** Lichtrand der Figur; 0 schaltet ihn aus. */
+  setGlow(color: Color, strength: number): void {
+    this.rim.rimColor.value.copy(color);
+    this.rim.rimStrength.value = strength;
+  }
+
   dispose(): void {
-    for (const geometry of this.geometries) geometry.dispose();
-    this.geometries.length = 0;
+    this.mesh.geometry.dispose();
+    this.material.dispose();
   }
 
   private headingFor(input: VoxelPoseInput): number {
@@ -488,9 +517,9 @@ export class VoxelFigure {
         reachTable(right);
         break;
       case 'serving':
-        holdFront(left);
-        holdFront(right);
-        prop = { kind: 'tray', anchor: 'front' };
+        set(left, -1.95, -0.1, -0.2);
+        set(right, -1.95, -0.1, -0.2);
+        prop = { kind: 'tray', anchor: 'serve' };
         break;
       case 'wiping':
         relaxed(left);
@@ -582,8 +611,8 @@ export class VoxelFigure {
       mouth = Math.floor(t * 5) % 2 === 0 ? 'talk' : 'smile';
     }
     if (mouth !== this.currentMouth) {
-      if (this.currentMouth) this.mouths.get(this.currentMouth)!.visible = false;
-      this.mouths.get(mouth)!.visible = true;
+      if (this.currentMouth) this.mouths.get(this.currentMouth)!.scale.setScalar(0);
+      this.mouths.get(mouth)!.scale.setScalar(1);
       this.currentMouth = mouth;
     }
     const blink = (t % 4.3) < 0.13;
@@ -593,19 +622,15 @@ export class VoxelFigure {
   }
 
   private showProp(prop: { kind: PropKind; anchor: Anchor } | undefined): void {
-    for (const mesh of this.propMeshes.values()) mesh.visible = false;
+    for (const bone of this.props.values()) bone.scale.setScalar(0);
     if (!prop) return;
-    let mesh = this.propMeshes.get(prop.kind);
-    if (!mesh) {
-      mesh = new Mesh(propGeometry(prop.kind), MATERIAL);
-      mesh.castShadow = true;
-      this.propMeshes.set(prop.kind, mesh);
-    }
+    const mesh = this.props.get(prop.kind)!;
     const parent = prop.anchor === 'right-hand' ? this.arms.right.hand
       : prop.anchor === 'left-hand' ? this.arms.left.hand
         : this.anchors[prop.anchor];
     if (mesh.parent !== parent) parent.add(mesh);
-    mesh.visible = true;
+    mesh.scale.setScalar(1);
+    mesh.position.set(0, 0, 0);
     mesh.rotation.set(0, 0, 0);
     if (prop.anchor === 'right-hand' || prop.anchor === 'left-hand') {
       // Gegenstände in der Hand bleiben aufrecht, egal wie der Arm gebeugt ist.
@@ -621,24 +646,16 @@ export class VoxelFigure {
     return this.options.appearance.maturity === 'older' ? mix(this.options.palette.hair, '#cfcac2', 0.45) : this.options.palette.hair;
   }
 
-  private mesh(parent: Group, batch: BoxBatch): Mesh {
-    const geometry = batch.build();
-    this.geometries.push(geometry);
-    const mesh = new Mesh(geometry, MATERIAL);
-    parent.add(mesh);
-    return mesh;
-  }
-
   private buildLeg(x: number): Leg {
     const { palette } = this.options;
-    const hip = new Group();
+    const hip = new Bone();
     hip.position.set(x, HIP_HEIGHT, 0);
     this.body.add(hip);
-    this.mesh(hip, new BoxBatch().add([0.21, FIGURE.thigh, 0.22], [0, -FIGURE.thigh / 2, 0], palette.trousers));
-    const knee = new Group();
+    this.rig.attach(hip, new BoxBatch().add([0.21, FIGURE.thigh, 0.22], [0, -FIGURE.thigh / 2, 0], palette.trousers));
+    const knee = new Bone();
     knee.position.y = -FIGURE.thigh;
     hip.add(knee);
-    this.mesh(knee, new BoxBatch()
+    this.rig.attach(knee, new BoxBatch()
       .add([0.19, FIGURE.shin, 0.2], [0, -FIGURE.shin / 2, 0], shade(palette.trousers, -0.1))
       .add([0.22, FIGURE.shoe - 0.02, 0.3], [0, -FIGURE.shin - FIGURE.shoe / 2 + 0.01, 0.04], palette.shoes)
       .add([0.23, 0.025, 0.31], [0, -FIGURE.shin - FIGURE.shoe + 0.0125, 0.04], shade(palette.shoes, -0.3)));
@@ -647,21 +664,21 @@ export class VoxelFigure {
 
   private buildArm(side: 1 | -1, torsoWidth: number, shoulderY: number): Arm {
     const { palette } = this.options;
-    const sleeve = this.options.appearance.outfit === 'overalls' ? palette.coat : palette.coat;
-    const shoulder = new Group();
+    const sleeve = palette.coat;
+    const shoulder = new Bone();
     shoulder.position.set(side * (torsoWidth / 2 + 0.075), shoulderY, 0);
     this.torso.add(shoulder);
-    this.mesh(shoulder, new BoxBatch()
+    this.rig.attach(shoulder, new BoxBatch()
       .add([0.16, 0.12, 0.17], [0, -0.03, 0], sleeve)
       .add([0.14, 0.26, 0.15], [0, -0.17, 0], shade(sleeve, -0.05)));
-    const elbow = new Group();
+    const elbow = new Bone();
     elbow.position.y = -0.3;
     shoulder.add(elbow);
-    this.mesh(elbow, new BoxBatch()
+    this.rig.attach(elbow, new BoxBatch()
       .add([0.13, 0.2, 0.14], [0, -0.1, 0], shade(sleeve, -0.1))
       .add([0.14, 0.04, 0.15], [0, -0.2, 0], shade(sleeve, -0.25))
       .add([0.13, 0.12, 0.13], [0, -0.28, 0], palette.skin));
-    const hand = new Group();
+    const hand = new Bone();
     hand.position.set(0, -0.3, 0.02);
     elbow.add(hand);
     return { shoulder, elbow, hand, side };

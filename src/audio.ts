@@ -107,6 +107,8 @@ export class CafeAudio {
   playAccident(kind: AccidentKind): void { this.engine?.playAccident(kind); }
   playMoment(kind: CafeMomentKind): void { this.engine?.playMoment(kind); }
   playReaction(): boolean { return this.engine?.playReaction() ?? false; }
+  playBell(): void { this.engine?.playBell(); }
+  playPurr(): void { this.engine?.playPurr(); }
   getState(): AudioState { return this.unavailable ? 'unavailable' : this.engine?.getState() ?? 'idle'; }
   getSampleState(): VenueSampleState { return this.engine?.getSampleState() ?? 'idle'; }
   async destroy(): Promise<void> {

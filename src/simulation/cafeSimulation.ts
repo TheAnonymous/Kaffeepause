@@ -558,6 +558,15 @@ export class CafeSimulation {
     for (const guest of this.guests) this.applyAccessory(guest);
   }
 
+  /** Thekenklingel: Die Bedienung geht zur Ausgabe und reicht ein Tablett mit Getränk. */
+  callBarista(): void {
+    const barista = this.barista;
+    barista.task = 'serving';
+    barista.taskTime = 0;
+    barista.taskDuration = 7;
+    barista.target = copyPoint(this.layout.staffPlaces.serving);
+  }
+
   spawnGuest(): Guest | undefined {
     if (this.guests.length >= this.maxGuests) return undefined;
     const queuePlace = this.findAvailable(this.layout.queuePlaces);

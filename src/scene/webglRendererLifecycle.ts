@@ -1,6 +1,6 @@
 import { CafeRenderer } from '../renderer';
 import { SceneRuntime } from './sceneRuntime';
-import type { RendererFrameMetrics, RendererLifecycle, RendererLifecycleOptions } from './rendererLifecycle';
+import type { ClickResult, RendererFrameMetrics, RendererLifecycle, RendererLifecycleOptions } from './rendererLifecycle';
 import type { RenderQualityTier } from './renderQuality';
 import type { CafeEnvironmentSnapshot } from '../environment/types';
 import type { VenueKind } from '../venue';
@@ -65,6 +65,14 @@ class WebglRendererLifecycle implements RendererLifecycle {
 
   clearPointerSample(): void {
     this.renderer.clearPointerSample();
+  }
+
+  handleClick(clientX: number, clientY: number): ClickResult | undefined {
+    return this.renderer.handleClick(clientX, clientY);
+  }
+
+  interactiveAt(clientX: number, clientY: number): boolean {
+    return this.renderer.interactiveAt(clientX, clientY);
   }
 
   dispose(): void {

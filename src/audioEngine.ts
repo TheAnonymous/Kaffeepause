@@ -275,6 +275,24 @@ export class CafeAudioEngine {
     this.playEffectTone(from, to, start, 0.12, 0.018 * cue.gain, this.venue === 'arcade' ? 'square' : 'triangle', undefined, cue.pan);
   }
 
+  /** Helles Klingeln der Thekenglocke. */
+  playBell(): void {
+    const context = this.context;
+    if (!context || !this.master || this.muted || this.state !== 'playing') return;
+    const start = context.currentTime + 0.015;
+    this.playEffectTone(2_093, 2_080, start, 0.9, 0.03, 'sine');
+    this.playEffectTone(4_186, 4_150, start, 0.5, 0.008, 'sine');
+    this.playEffectTone(2_637, 2_620, start + 0.004, 0.7, 0.012, 'triangle');
+  }
+
+  /** Leises Schnurren der Café-Katze. */
+  playPurr(): void {
+    const context = this.context;
+    if (!context || !this.master || this.muted || this.state !== 'playing') return;
+    const start = context.currentTime + 0.02;
+    for (let index = 0; index < 4; index += 1) this.playEffectNoise(start + index * 0.36, 0.3, 110, 1.2, 0.02);
+  }
+
   playReaction(): boolean {
     const context = this.context;
     if (!context || !this.master || this.muted || this.state !== 'playing') return false;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseSeasonOverride, seasonForDate } from '../src/diorama/season';
-import { catStateAt } from '../src/diorama/cafeCat';
+import { CafeCat, CAT_VISIT_SECONDS, catStateAt, catVisitState } from '../src/diorama/cafeCat';
 
 describe('Jahreszeiten-Deko', () => {
   it.each([
@@ -35,5 +35,28 @@ describe('Café-Katze', () => {
     expect(catStateAt(90).pose).toMatch(/^walk/);
     expect(catStateAt(130).facing).toBe(-1);
     expect(catStateAt(149).position).toEqual(catStateAt(0).position);
+  });
+
+  it('hüpft beim Besuch von der Bank auf den Boden und schaut zur Kamera', () => {
+    const onBench = catStateAt(10);
+    const sitting = catVisitState(onBench, 3);
+    expect(sitting.pose).toBe('sit');
+    expect(sitting.position.y).toBeLessThan(0.2);
+    expect(sitting.towardViewer).toBe(true);
+    expect(catVisitState(onBench, CAT_VISIT_SECONDS - 0.001).position.y).toBeGreaterThan(0.5);
+  });
+
+  it('macht nach dem Besuch genau dort weiter, wo sie war', () => {
+    const cat = new CafeCat();
+    const never = (): boolean => false;
+    cat.update(20, false, never);
+    const before = cat.root.position.clone();
+    expect(cat.summon(20, false)).toBe(true);
+    expect(cat.summon(21, false)).toBe(false);
+    cat.update(23, false, never);
+    expect(cat.root.position.y).toBeLessThan(0.2);
+    cat.update(20 + CAT_VISIT_SECONDS + 0.01, false, never);
+    expect(cat.root.position.distanceTo(before)).toBeLessThan(0.01);
+    cat.dispose();
   });
 });

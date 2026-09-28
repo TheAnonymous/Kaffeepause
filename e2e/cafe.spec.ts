@@ -1,5 +1,13 @@
 import { expect, test, type Page } from '@playwright/test';
-import { collectConsoleErrors, openCafe } from './helpers';
+import {
+  chooseVenue,
+  collectConsoleErrors,
+  installFramePause,
+  openCafe,
+  renderVisualFrame,
+  stepSimulation,
+  type Venue,
+} from './helpers';
 
 async function moveToReactionTarget(page: Page, preferredId?: string): Promise<{ id: string; x: number; y: number }> {
   const canvas = page.locator('#cafe');
@@ -44,6 +52,25 @@ test('lädt das Diorama ohne Fehler und füllt das Fenster', async ({ page }) =>
   await expectNoPageScroll(page, 1440, 810);
   expect(errors).toEqual([]);
 });
+
+// Zeichenaufrufe pro Bild sind der größte Kostenfaktor auf Handys. Ein Klötzchen-Gast
+// ist ein Skelett-Modell (Bild + Schatten = 2 Aufrufe); die Grenze fängt Rückfälle ab.
+for (const venue of ['cafe', 'ramen', 'arcade'] as Venue[]) {
+  test(`bleibt bei voller Belegung unter 240 Zeichenaufrufen (${venue})`, async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width: 1440, height: 810 });
+    await installFramePause(page);
+    await openCafe(page, '/?time=12:30&weather=rain', 'master');
+    await chooseVenue(page, venue);
+    await page.evaluate(() => (window as typeof window & { setDioramaPaused?: (paused: boolean) => void }).setDioramaPaused?.(true));
+    await page.getByTestId('enter').click();
+    await stepSimulation(page, 600);
+    await renderVisualFrame(page);
+    const canvas = page.locator('#cafe');
+    expect(Number(await canvas.getAttribute('data-guest-count'))).toBeGreaterThanOrEqual(4);
+    expect(Number(await canvas.getAttribute('data-draw-calls'))).toBeLessThan(240);
+  });
+}
 
 test('stellt Ortsgrafik nach einem WebGL-Kontextverlust wieder her', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 810 });
@@ -249,6 +276,51 @@ test('reagiert nach Mausverweildauer genau einmal mit Emote, Fokus und leisem Ak
   }
   await page.waitForTimeout(900);
   await expect(canvas).toHaveAttribute('data-reaction-token', token ?? '1');
+});
+
+async function clickTarget(page: Page, name: 'bell' | 'cat'): Promise<void> {
+  const canvas = page.locator('#cafe');
+  await expect.poll(async () => await canvas.getAttribute('data-click-targets')).toContain(`${name}:`);
+  const raw = await canvas.getAttribute('data-click-targets') ?? '';
+  const match = raw.match(new RegExp(`${name}:(-?\\d+),(-?\\d+)`));
+  if (!match) throw new Error(`${name} nicht gefunden: ${raw}`);
+  await page.mouse.click(Number(match[1]), Number(match[2]));
+}
+
+for (const venue of [
+  { kind: 'cafe', label: 'Café', entry: 'Café betreten', message: /Kaffee kommt sofort/ },
+  { kind: 'ramen', label: 'Ramen', entry: 'Ramen-Restaurant betreten', message: /Tee kommt sofort/ },
+  { kind: 'arcade', label: 'Arcade', entry: 'Arcade-Halle betreten', message: /Limo kommt sofort/ },
+] as const) {
+  test(`ruft mit der Thekenklingel die Bedienung (${venue.kind})`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 810 });
+    await openCafe(page, '/?time=12:30&weather=clear');
+    if (venue.kind !== 'cafe') await page.getByRole('radio', { name: new RegExp(venue.label) }).click();
+    await page.getByRole('button', { name: venue.entry }).click();
+    await clickTarget(page, 'bell');
+    await expect(page.getByTestId('caption')).toHaveText(venue.message);
+  });
+}
+
+test('lässt Mochi auf Klick herüberkommen', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await openCafe(page, '/?time=12:30&weather=clear');
+  await page.getByTestId('enter').click();
+  await clickTarget(page, 'cat');
+  await expect(page.getByTestId('caption')).toHaveText(/Mochi kommt zu dir/);
+});
+
+test('lässt einen angeklickten Gast sofort winken', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await openCafe(page, '/?time=12:30&weather=clear');
+  await page.getByTestId('enter').click();
+  const canvas = page.locator('#cafe');
+  await expect.poll(async () => await canvas.getAttribute('data-reaction-targets')).toMatch(/guest-\d+:\d+,\d+/);
+  const raw = await canvas.getAttribute('data-reaction-targets') ?? '';
+  const match = raw.match(/(guest-\d+):(\d+),(\d+)/);
+  if (!match) throw new Error(raw);
+  await page.mouse.click(Number(match[2]), Number(match[3]));
+  await expect(canvas).toHaveAttribute('data-reacting-character', /guest-\d+/, { timeout: 3_000 });
 });
 
 test('ignoriert Touch- und Stiftbewegungen für Figurenreaktionen', async ({ page }) => {

@@ -1130,6 +1130,30 @@ function addSeasonalDecor(context: BuildContext, root: Group, venue: VenueKind, 
   }
 }
 
+/** Wo die Thekenklingel steht (Oberkante der Theke). */
+export const COUNTER_BELLS: Readonly<Record<VenueKind, Readonly<{ x: number; y: number; z: number }>>> = {
+  cafe: { x: 4.55, y: 1.36, z: -1.6 },
+  ramen: { x: 3.1, y: 1.33, z: -1.62 },
+  arcade: { x: 4.15, y: 1.26, z: -2.62 },
+};
+
+function addCounterBell(context: BuildContext, root: Group, venue: VenueKind): { bell: Group; dome: Group } {
+  const spot = COUNTER_BELLS[venue];
+  const bell = new Group();
+  bell.name = 'counter-bell';
+  bell.position.set(spot.x, spot.y, spot.z);
+  root.add(bell);
+  box(context, bell, [0.26, 0.035, 0.26], [0, 0.0175, 0], { color: '#3a2f2a', roughness: 0.6 });
+  const dome = new Group();
+  dome.name = 'counter-bell:dome';
+  bell.add(dome);
+  const brass = { color: '#d9b25a', metalness: 0.7, roughness: 0.3, surface: 'metal' as const };
+  box(context, dome, [0.2, 0.08, 0.2], [0, 0.075, 0], brass);
+  box(context, dome, [0.13, 0.05, 0.13], [0, 0.14, 0], brass);
+  box(context, dome, [0.04, 0.045, 0.04], [0, 0.185, 0], { color: '#8a6a3a', metalness: 0.5, roughness: 0.4, surface: 'metal' });
+  return { bell, dome };
+}
+
 export function buildVenue(venue: VenueKind, season: Season = 'none'): DioramaSet {
   const root = new Group();
   root.name = `diorama:${venue}`;
@@ -1156,6 +1180,7 @@ export function buildVenue(venue: VenueKind, season: Season = 'none'): DioramaSe
   else if (venue === 'ramen') buildRamen(context, root, animatedProps);
   else buildArcade(context, root, animatedProps);
   addSeasonalDecor(context, root, venue, season);
+  const counterBell = addCounterBell(context, root, venue);
 
   const pendants = venue === 'arcade'
     ? [addPendant(context, root, -5.1, -0.5, profile.lights.practical), addPendant(context, root, 5.1, -0.5, profile.lights.practical)]
@@ -1170,6 +1195,7 @@ export function buildVenue(venue: VenueKind, season: Season = 'none'): DioramaSe
   for (const kind of availableSurfaceKinds) surfaces.get(kind);
   const excluded = new Set<Object3D>([
     shell.doorPivot,
+    counterBell.bell,
     ...animatedProps.map((entry) => entry.object),
   ]);
   const batchedResources = batchStaticVenuePrimitives(root, excluded, geometryCache.size, venue);
@@ -1181,6 +1207,8 @@ export function buildVenue(venue: VenueKind, season: Season = 'none'): DioramaSe
   return {
     root,
     doorPivot: shell.doorPivot,
+    bell: counterBell.bell,
+    bellDome: counterBell.dome,
     practicalLights: pendants.map((pendant) => pendant.light),
     floorMaterial: shell.floorMaterial,
     exteriorMaterials: shell.exteriorMaterials,

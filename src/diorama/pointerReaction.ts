@@ -47,6 +47,9 @@ function gestureFor(id: string, serial: number): ReactionGesture {
   return (['wave', 'nod', 'laugh'] as const)[Math.abs(hash) % 3] ?? 'wave';
 }
 
+/** Nach einem Klick darf dieselbe Figur erst nach kurzer Pause wieder reagieren. */
+export const CLICK_REACTION_COOLDOWN_SECONDS = 1.5;
+
 export class PointerReactionController {
   private hoveredId?: string | 'barista';
   private dwellStartedAt = 0;
@@ -55,6 +58,27 @@ export class PointerReactionController {
   private current?: ActivePointerReaction;
   private serial = 0;
   private lastPointer?: PointerSample;
+
+  /** Ein Klick lässt die Figur sofort zurückwinken, ohne Verweildauer. */
+  trigger(now: number, target: ReactionTarget, venue: VenueKind, pointerX: number): ActivePointerReaction | undefined {
+    if (this.current && now < this.current.endsAt && this.current.characterId === target.id) return undefined;
+    const lastCharacterReaction = this.characterCooldowns.get(target.id) ?? Number.NEGATIVE_INFINITY;
+    if (now - lastCharacterReaction < CLICK_REACTION_COOLDOWN_SECONDS) return undefined;
+    this.serial += 1;
+    const reaction: ActivePointerReaction = {
+      serial: this.serial,
+      characterId: target.id,
+      gesture: 'wave',
+      emotes: emoteForReaction(venue, 'wave'),
+      startedAt: now,
+      endsAt: now + REACTION_DURATION_SECONDS,
+      facing: pointerX < target.x ? -1 : 1,
+    };
+    this.current = reaction;
+    this.lastGlobalReactionAt = now;
+    this.characterCooldowns.set(target.id, now);
+    return reaction;
+  }
 
   clearPointer(): void {
     this.hoveredId = undefined;

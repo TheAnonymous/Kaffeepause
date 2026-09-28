@@ -12,13 +12,17 @@ Die Simulation rechnet in Szenenkoordinaten von 384 × 216. Der Renderer überse
 
 ## Figuren
 
-Gäste, Bedienung und Mochi sind Klötzchen-Figuren (`voxelFigure.ts`, `cafeCat.ts`). Jedes Körperteil ist eine einzige Geometrie aus farbigen Quadern (`voxelKit.ts`), alle Figuren teilen sich ein Material; eine Figur braucht so gut ein Dutzend Draw Calls. Aussehen, Frisur, Kleidung, Brille, Bart und Zubehör kommen aus denselben Daten wie in der Simulation (`GuestAppearance`, `GuestPalette`).
+Gäste, Bedienung und Mochi sind Klötzchen-Figuren (`voxelFigure.ts`, `cafeCat.ts`). Jede Figur ist ein einziges Skelett-Modell (`VoxelRig` in `voxelKit.ts`): Die Quader sind farbige Kästen, die Gelenke sind Knochen. Mundformen, Gegenstände und Mochis Herz werden über die Skalierung ihres Knochens ein- und ausgeblendet. So braucht eine Figur zwei Zeichenaufrufe (Bild und Schatten); `e2e/cafe.spec.ts` prüft, dass ein voll besetzter Ort unter 240 Aufrufen pro Bild bleibt. Ein Lichtrand im Material (`figureMaterial()`) hebt Figuren nachts ab und lässt die Beteiligten einer Geschichte schimmern. Aussehen, Frisur, Kleidung, Brille, Bart und Zubehör kommen aus denselben Daten wie in der Simulation (`GuestAppearance`, `GuestPalette`).
 
 Alle Gelenke, die Körperhöhe und die Blickrichtung folgen ihrer Zielhaltung weich (`settle()` in `voxelFigure.ts`); beim Hinsetzen klingt zusätzlich der Sprung auf die Sitzmitte ab. Auf Standbildern (kein Zeitfortschritt) wird nicht geglättet. Die Figuren drehen sich wirklich im Raum: Laufende schauen in Laufrichtung, Sitzende von vorn (Bank, Lounge), zum Tisch (Tischende, Kopf leicht zur Kamera) oder zur Theke (Ramen). Arme mit Ellbogen halten die Gegenstände der Tätigkeit, dazu kommen Atmen, Blinzeln, Gesichtsausdrücke und die Gesten aus Momenten und Reaktionen. Maße und Sitzhöhen stehen in `characters.ts`; sitzende Gäste sitzen auf der Sitzfläche ihres Möbels (`seatBindings`).
 
 Die Eingangstür beschreibt `doorSpec()` in `venueBuilder.ts`: Scharnier an einer Zarge der Wandöffnung, Schwenk nach innen. `doorShouldBeOpen()` hält sie offen, solange jemand ein- oder ausgeht oder sich im Schwenkbereich bewegt. `tests/door.test.ts` prüft den ganzen Schwenk gegen Wände, Möbel, Sitzplätze und den Laufweg.
 
 Tische werden aus den Tischflächen in `src/simulation/layout.ts` gebaut. Wer einen Tisch verschiebt oder vergrößert, ändert also Simulation und Bild zugleich.
+
+## Anklicken
+
+Ein Klick ins Diorama geht an `handleClick()` im Renderer: Gäste und Bedienung winken sofort zurück, Mochi kommt vor die Fensterbank und schnurrt (`CafeCat.summon()`), die Klingel auf der Theke (`COUNTER_BELLS`) ruft die Bedienung zur Ausgabe (`CafeSimulation.callBarista()`). Kleine Ziele wie Mochi und die Klingel haben Vorrang vor Figuren in der Nähe. Im Testmodus stehen ihre Bildschirmpositionen in `data-click-targets`, Zeichenaufrufe und Dreiecke in `data-draw-calls` und `data-triangles`.
 
 ## Fenster und Draußen
 

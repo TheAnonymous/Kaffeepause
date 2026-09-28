@@ -14,7 +14,8 @@ Du suchst dir einen Ort aus: ein gemütliches Café, ein warmes Ramen-Restaurant
 - Tageszeit und Wetter verändern Licht, den Blick aus dem Fenster und die Geräusche; auch spät nachts sitzen noch ein paar Nachteulen da.
 - Im Café wohnt Mochi, eine Katze. Sie schläft meistens auf der Fensterbank und schnurrt, wenn du sie mit der Maus streichelst.
 - Um Halloween stehen Kürbisse herum, im Dezember hängen Lichterketten.
-- Wenn du mit der Maus auf einer Figur verweilst, reagiert sie.
+- Wenn du mit der Maus auf einer Figur verweilst, reagiert sie. Ein Klick auf einen Gast, und er winkt dir zu.
+- Klick auf Mochi, und sie kommt zu dir. Die Klingel auf der Theke ruft die Bedienung, die dir etwas zu trinken reicht.
 - Lo-fi-Musik und Raumklang lassen sich ausschalten; es gibt einen Vollbildmodus.
 - Auf dem Handy fährt die Kamera langsam durch den Raum. Bei reduzierter Bewegung bleibt sie still.
 

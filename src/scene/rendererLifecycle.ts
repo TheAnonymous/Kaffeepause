@@ -9,6 +9,12 @@ import type { AtmosphereSnapshot } from '../atmosphere/types';
 
 export type RendererState = 'loading' | 'ready' | 'failed';
 
+/** Was ein Klick ins Diorama getroffen hat. */
+export interface ClickResult {
+  readonly kind: 'guest' | 'barista' | 'cat' | 'bell';
+  readonly id?: string;
+}
+
 export interface RendererFrameMetrics {
   readonly cpuMs: number;
   readonly gpuMs?: number;
@@ -34,6 +40,10 @@ export interface RendererLifecycle {
   setQualityTier(tier: RenderQualityTier): void;
   setPointerSample(sample: PointerSample): void;
   clearPointerSample(): void;
+  /** Führt einen Klick aus (winken, Mochi rufen, klingeln) und sagt, was getroffen wurde. */
+  handleClick(clientX: number, clientY: number): ClickResult | undefined;
+  /** Ob an dieser Stelle etwas Anklickbares ist (für den Mauszeiger). */
+  interactiveAt(clientX: number, clientY: number): boolean;
   dispose(): void;
 }
 

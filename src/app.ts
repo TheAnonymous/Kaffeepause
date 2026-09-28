@@ -25,6 +25,12 @@ import { parseAtmosphereDevelopmentOverrides } from './atmosphere/types';
 const UI_IDLE_DELAY = 2_500;
 const CAPTION_SECONDS = 6.5;
 
+const BELL_MESSAGES: Readonly<Record<VenueKind, string>> = {
+  cafe: 'Klingeling! Dein Kaffee kommt sofort.',
+  ramen: 'Klingeling! Dein Tee kommt sofort.',
+  arcade: 'Klingeling! Deine Limo kommt sofort.',
+};
+
 const FRIEND_ACTIVITY_DETAIL: Partial<Record<GuestActivity, string>> = {
   handheld: 'spielt GameBoy',
   reading: 'liest',
@@ -310,6 +316,7 @@ export class KaffeepauseApp {
     this.motionQuery.addEventListener('change', this.updateMotionPreference);
     window.addEventListener('pagehide', this.destroy, { once: true });
     this.canvas.addEventListener('pointermove', this.pointerMoved);
+    this.canvas.addEventListener('click', this.canvasClicked);
     this.canvas.addEventListener('pointerleave', this.pointerLeft);
     document.body.dataset.uiIdle = 'false';
     if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('testRender') === 'diagnostic') {
@@ -550,6 +557,23 @@ export class KaffeepauseApp {
   private readonly pointerMoved = (event: PointerEvent): void => {
     if (!this.entered || event.pointerType !== 'mouse') return;
     this.lifecycle?.setPointerSample({ x: event.clientX, y: event.clientY });
+    this.canvas.style.cursor = this.lifecycle?.interactiveAt(event.clientX, event.clientY) ? 'pointer' : '';
+  };
+
+  /** Klick oder Tippen: Gäste winken, Mochi kommt vorbei, die Klingel ruft die Bedienung. */
+  private readonly canvasClicked = (event: MouseEvent): void => {
+    if (!this.entered || !this.lifecycle) return;
+    const hit = this.lifecycle.handleClick(event.clientX, event.clientY);
+    if (!hit) return;
+    if (hit.kind === 'bell') {
+      this.audio.playBell();
+      this.simulation.callBarista();
+      this.announce(BELL_MESSAGES[this.selectedVenue]);
+    } else if (hit.kind === 'cat') {
+      this.audio.playPurr();
+      this.lastCatAnnouncement = this.elapsed;
+      this.announce('Mochi kommt zu dir und schnurrt.');
+    }
   };
 
   private readonly pointerLeft = (): void => {
@@ -740,6 +764,7 @@ export class KaffeepauseApp {
     delete this.devRenderingWindow.stepDioramaDiagnosticFrame;
     delete this.devRenderingWindow.setDioramaDiagnosticVenue;
     this.canvas.removeEventListener('pointermove', this.pointerMoved);
+    this.canvas.removeEventListener('click', this.canvasClicked);
     this.canvas.removeEventListener('pointerleave', this.pointerLeft);
     this.lifecycle?.dispose();
     void this.audio.destroy();

@@ -185,6 +185,9 @@ export interface SeatAlignmentReport {
 }
 
 export interface DioramaSet {
+  /** Klingel auf der Theke; der Knauf bewegt sich beim Klingeln. */
+  readonly bell: Object3D;
+  readonly bellDome: Object3D;
   readonly root: Group;
   readonly doorPivot: Group;
   readonly practicalLights: readonly PointLight[];

@@ -44,7 +44,7 @@ import {
   type RenderQualityProfile,
   type RenderQualityTier,
 } from '../scene/renderQuality';
-import type { RendererFrameMetrics } from '../scene/rendererLifecycle';
+import type { ClickResult, RendererFrameMetrics } from '../scene/rendererLifecycle';
 import { calculateDioramaLook, type DioramaLook } from './look';
 import { calculateDialogue, type DialogueLine } from './dialogue';
 import {
@@ -141,6 +141,9 @@ function characterTop(spot: ActivitySpot | undefined): number {
 }
 
 const DIORAMA_VOID = new Color('#120e16');
+/** Trefferradius für kleine Ziele wie Mochi und die Klingel (CSS-Pixel). */
+const CLICK_RADIUS_SMALL = 48;
+const BELL_CLICK_OFFSET = new Vector3(0, 0.1, 0);
 // Regen fällt draußen: hinter der Rückwand (−3,41 bis −3,63) und vor der Stadtkulisse
 // (−3,66), nur so breit wie das Fenster des Ortes. Wo die Wand geschlossen ist, verdeckt sie ihn.
 const SKY_BACKDROP_LIFT = new Color('#ffffff');
@@ -205,6 +208,8 @@ export class DioramaRenderer {
   private windowArt?: Mesh<PlaneGeometry, MeshBasicMaterial>;
   private figureTime = 0;
   private figureDelta = 0;
+  private readonly rimColor = new Color();
+  private bellRungAt = Number.NEGATIVE_INFINITY;
   private readonly season: Season;
   private cat?: CafeCat;
   private catPetted = false;
@@ -256,6 +261,7 @@ export class DioramaRenderer {
       powerPreference: 'high-performance',
     });
     this.webgl.setPixelRatio(1);
+    if (this.diagnosticRendering) this.webgl.info.autoReset = false;
     this.webgl.outputColorSpace = SRGBColorSpace;
     this.webgl.toneMapping = ACESFilmicToneMapping;
     this.webgl.shadowMap.enabled = true;
@@ -331,6 +337,55 @@ export class DioramaRenderer {
   clearPointerSample(): void {
     this.pointerSample = undefined;
     this.pointerReactions.clearPointer();
+  }
+
+  /** Nächstes anklickbares Ding an einer Bildschirmstelle: Mochi, Klingel oder eine Figur. */
+  private pickAt(clientX: number, clientY: number): (ClickResult & { readonly target?: ReactionTarget }) | undefined {
+    if (!this.active) return undefined;
+    const bounds = this.canvas.getBoundingClientRect();
+    const screen = (point: Vector3): { x: number; y: number } => {
+      const projected = point.clone().project(this.perspective);
+      return { x: bounds.left + (projected.x + 1) * bounds.width / 2, y: bounds.top + (1 - projected.y) * bounds.height / 2 };
+    };
+    const candidates: { result: ClickResult & { target?: ReactionTarget }; distance: number }[] = [];
+    if (this.cat) {
+      const point = screen(this.cat.focusPoint);
+      candidates.push({ result: { kind: 'cat' }, distance: Math.hypot(clientX - point.x, clientY - point.y) - CLICK_RADIUS_SMALL });
+    }
+    const bell = screen(this.venueSet.bell.getWorldPosition(new Vector3()).add(BELL_CLICK_OFFSET));
+    candidates.push({ result: { kind: 'bell' }, distance: Math.hypot(clientX - bell.x, clientY - bell.y) - CLICK_RADIUS_SMALL });
+    for (const target of this.reactionTargets) {
+      candidates.push({
+        result: { kind: target.id === 'barista' ? 'barista' : 'guest', id: target.id, target },
+        distance: Math.hypot(clientX - target.x, clientY - target.y) - REACTION_ACTIVATION_RADIUS,
+      });
+    }
+    // Kleine Ziele (Mochi, Klingel) gewinnen, wenn man sie direkt trifft; Figuren haben einen größeren Radius.
+    const small = (result: ClickResult): boolean => result.kind === 'cat' || result.kind === 'bell';
+    const best = candidates
+      .filter((entry) => entry.distance <= 0)
+      .sort((left, right) => Number(small(right.result)) - Number(small(left.result)) || left.distance - right.distance)[0];
+    return best?.result;
+  }
+
+  interactiveAt(clientX: number, clientY: number): boolean {
+    return this.pickAt(clientX, clientY) !== undefined;
+  }
+
+  handleClick(clientX: number, clientY: number): ClickResult | undefined {
+    const hit = this.pickAt(clientX, clientY);
+    if (!hit) return undefined;
+    if (hit.kind === 'cat') {
+      if (!this.cat?.summon(this.figureTime, this.reducedMotion)) return undefined;
+    } else if (hit.kind === 'bell') {
+      this.bellRungAt = this.figureTime;
+    } else if (hit.target) {
+      const reaction = this.pointerReactions.trigger(this.figureTime, hit.target, this.venue, clientX);
+      if (!reaction) return undefined;
+      this.activeReaction = reaction;
+      this.canvas.dataset.reactionToken = String(reaction.serial);
+    }
+    return { kind: hit.kind, ...(hit.id ? { id: hit.id } : {}) };
   }
 
   private readonly contextLost = (event: Event): void => {
@@ -516,16 +571,24 @@ export class DioramaRenderer {
     this.figureTime = time;
     this.updateCharacters(snapshot, time, dialogue);
     this.updateCat(time);
+    this.updateBell(time);
     this.updateFocusEffects(snapshot);
+    this.updateFigureGlow(time);
     this.updateFocusFrame(snapshot);
     this.updateWeather(time);
     this.atmosphereLayer.update(this.atmosphere, this.qualityTier, time);
     for (const object of this.atmosphereDecorHandoffs) object.visible = this.atmosphere.intensity <= 0.004;
     this.updateEvent(snapshot, time);
     if (drawVisualFrame) {
+      if (this.diagnosticRendering) this.webgl.info.reset();
       this.gpuTimer.begin();
       this.pipeline.render(this.scene, this.perspective);
       this.gpuTimer.end();
+      if (this.diagnosticRendering) {
+        // Nur im Testmodus: Zeichenaufrufe über alle Durchgänge eines Bildes (Schatten, Bloom, Bild).
+        this.canvas.dataset.drawCalls = String(this.webgl.info.render.calls);
+        this.canvas.dataset.triangles = String(this.webgl.info.render.triangles);
+      }
       gpuMs ??= this.gpuTimer.poll();
       this.visualRenderCount += 1;
       this.canvas.dataset.visualRenderCount = String(this.visualRenderCount);
@@ -1341,6 +1404,41 @@ export class DioramaRenderer {
     const speech = new SpeechBubble(name);
     root.add(speech.mesh);
     return { root, shadow, speech, figureKey: '', settleX: 0, settleZ: 0 };
+  }
+
+  /**
+   * Leichter Lichtrand für alle Figuren (nachts stärker), damit sie sich vom Raum abheben.
+   * Wer gerade im Kamerafokus einer Geschichte oder eines Moments steht, schimmert deutlicher.
+   */
+  private updateFigureGlow(time: number): void {
+    this.rimColor.set(VENUE_VISUAL_PROFILES[this.venue].lights.characterRim);
+    const base = this.look.characterEmissive * 1.4;
+    const focus = this.focusState.active ? Math.min(1, this.focusState.amount) : 0;
+    const pulse = this.reducedMotion ? 1 : 0.85 + Math.sin(time * 2.4) * 0.15;
+    const participants = new Set(this.focusState.participantIds);
+    const glow = (id: string, node: CharacterNode): void => {
+      const lift = participants.has(id) ? focus * 0.55 * pulse : 0;
+      node.figure?.setGlow(this.rimColor, base + lift);
+    };
+    for (const [id, node] of this.guestNodes) glow(id, node);
+    glow('barista', this.baristaNode);
+  }
+
+  /** Der Klingelknauf wippt nach einem Klick kurz nach. */
+  private updateBell(time: number): void {
+    const since = time - this.bellRungAt;
+    const dome = this.venueSet.bellDome;
+    dome.position.y = since >= 0 && since < 0.6 && !this.reducedMotion ? -Math.abs(Math.sin(since * 26)) * 0.025 * (1 - since / 0.6) : 0;
+    if (this.diagnosticRendering) {
+      const bounds = this.canvas.getBoundingClientRect();
+      const screen = (point: Vector3): string => {
+        const projected = point.project(this.perspective);
+        return `${Math.round(bounds.left + (projected.x + 1) * bounds.width / 2)},${Math.round(bounds.top + (1 - projected.y) * bounds.height / 2)}`;
+      };
+      const targets = [`bell:${screen(this.venueSet.bell.getWorldPosition(new Vector3()).add(BELL_CLICK_OFFSET))}`];
+      if (this.cat) targets.push(`cat:${screen(this.cat.focusPoint.clone())}`);
+      this.canvas.dataset.clickTargets = targets.join('|');
+    }
   }
 
   private updateCatPresence(): void {
