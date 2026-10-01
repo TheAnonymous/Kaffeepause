@@ -1612,11 +1612,17 @@ export class CafeSimulation {
   }
 
   private planRoute(start: Point, target: Point): Point[] {
-    const occupied = this.guests
+    const standing = this.guests
       .filter((guest) => !this.guestIsMoving(guest)
         && !this.isOutside(guest.position)
         && distance(guest.position, start) > 0.2)
       .map((guest) => guest.position);
+    // Auch leere Stühle und Hocker sind im Weg; nur das Ziel selbst darf man betreten.
+    // Bank und Sofa zählen nicht: Ihr Platz steht vor dem Möbel, das als Hindernis schon eingetragen ist.
+    const seats = this.layout.activitySpots
+      .filter((spot) => (spot.kind === 'table' || spot.kind === 'counter-stool')
+        && distance(spot, target) > 0.2 && distance(spot, start) > 0.2);
+    const occupied = [...standing, ...seats];
     const planInsideVenue = (from: Point, to: Point): Point[] => {
       const occupiedAware = planVenueRoute(this.layout, from, to, occupied);
       // An empty route can mean either "direct" or "no occupied-aware path".

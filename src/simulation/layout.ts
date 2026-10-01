@@ -6,6 +6,20 @@ export const WORLD_WIDTH = 384;
 export const WORLD_HEIGHT = 216;
 export const GUEST_RADIUS = 5;
 
+/**
+ * Ein Pixel des Grundrisses ist in der Tiefe doppelt so lang wie in der Breite (16/384 gegen 7,2/86 Einheiten,
+ * siehe `worldToDiorama`). Wer Abstände zwischen Figuren misst, muss das beachten.
+ */
+const UNITS_PER_PIXEL = { x: 16 / 384, y: 7.2 / 86 } as const;
+
+/** Mindestabstand zu einer Figur oder einem Sitzplatz, an dem man vorbeigeht, in Diorama-Einheiten (Körper plus Armschwung). */
+export const PASSING_CLEARANCE = 0.62;
+
+/** Abstand zweier Punkte des Grundrisses in Diorama-Einheiten. */
+export function worldDistance(a: Point, b: Point): number {
+  return Math.hypot((a.x - b.x) * UNITS_PER_PIXEL.x, (a.y - b.y) * UNITS_PER_PIXEL.y);
+}
+
 export interface Place extends Point {
   readonly id: string;
 }
@@ -84,7 +98,8 @@ const cafe: VenueLayout = {
   entrance: { x: 20, y: 184 },
   outside: { x: -16, y: 184 },
   colliders: [
-    { id: 'cafe-window-bench', x: 60, y: 145, width: 110, height: 8 },
+    // Reicht bis zur Vorderkante der Polster, damit Vorbeigehende nicht an der Bank kleben.
+    { id: 'cafe-window-bench', x: 60, y: 145, width: 110, height: 10 },
     { id: 'cafe-table-a', x: 102, y: 172, width: 38, height: 10 },
     // Auf Höhe der beiden Kopfplätze (y 198), damit die Gäste an den Tischenden sitzen.
     { id: 'cafe-table-b', x: 176, y: 192, width: 44, height: 11 },
@@ -130,16 +145,17 @@ const ramen: VenueLayout = {
   entrance: { x: 368, y: 190 },
   outside: { x: 400, y: 190 },
   colliders: [
-    { id: 'ramen-open-counter', x: 45, y: 145, width: 245, height: 12 },
+    { id: 'ramen-open-counter', x: 45, y: 145, width: 248, height: 12 },
     { id: 'ramen-pair-table', x: 304, y: 174, width: 28, height: 12 },
     { id: 'ramen-ceramic-shelf', x: 16, y: 132, width: 22, height: 40 },
   ],
   queuePlaces: [
     // Hinter dem Zweiertisch an der Rückwand, damit Wartende nicht über den Sitzenden stehen.
-    { id: 'ramen-queue-0', x: 300, y: 152 },
-    { id: 'ramen-queue-1', x: 321, y: 150 },
-    { id: 'ramen-queue-2', x: 342, y: 150 },
-    { id: 'ramen-queue-3', x: 363, y: 152 },
+    // Mit Abstand zum Thekenende (x 292), damit der Bestellende nicht in der Theke steht.
+    { id: 'ramen-queue-0', x: 307, y: 152 },
+    { id: 'ramen-queue-1', x: 328, y: 150 },
+    { id: 'ramen-queue-2', x: 349, y: 150 },
+    { id: 'ramen-queue-3', x: 370, y: 152 },
   ],
   waitPlaces: [
     { id: 'ramen-wait-0', x: 280, y: 190 },
@@ -296,7 +312,7 @@ export function planVenueRoute(
   avoidPoints: readonly Readonly<Point>[] = [],
 ): Point[] {
   const avoidsOccupiedPoint = (point: Point): boolean => avoidPoints.every((occupied) => (
-    Math.hypot(point.x - occupied.x, point.y - occupied.y) >= GUEST_RADIUS * 2.05
+    worldDistance(point, occupied) >= PASSING_CLEARANCE
   ));
   const segmentAvoidsOccupiedPoints = (from: Point, to: Point): boolean => {
     const steps = Math.max(1, Math.ceil(Math.hypot(from.x - to.x, from.y - to.y) / 2));

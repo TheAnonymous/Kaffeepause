@@ -239,8 +239,11 @@ export function calculateBaristaVisualState(input: BaristaVisualStateInput): Cha
     ({ expression, gesture } = momentGesture(moment));
   }
 
+  // Wer zu einem anderen Platz hinter der Theke geht, geht auch; mit dem Tablett bleibt die Pose zum Servieren.
+  const walking = barista.task !== 'serving'
+    && Math.hypot(barista.target.x - barista.position.x, barista.target.y - barista.position.y) > 0.2;
   return {
-    pose: barista.task,
+    pose: walking ? 'walking' : barista.task,
     frame,
     facing,
     expression,

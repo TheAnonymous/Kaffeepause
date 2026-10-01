@@ -71,7 +71,7 @@ describe('Klötzchen-Figuren bewegen sich weich', () => {
     const walking = visual({ pose: 'walking' });
     for (let step = 0; step <= 20; step += 1) subject.update({ visual: walking, heading: { x: 0, z: -1 }, seatHeight: 0, time: step * 0.05 });
     expect(Math.abs(Math.abs(subject.root.rotation.y) - Math.PI)).toBeLessThan(0.05);
-    for (let step = 21; step <= 60; step += 1) subject.update({ visual: walking, heading: { x: 0, z: -1 }, approachYaw: 0, seatHeight: 0, time: step * 0.05 });
+    for (let step = 21; step <= 60; step += 1) subject.update({ visual: walking, heading: { x: 0, z: -1 }, yawOverride: 0, seatHeight: 0, time: step * 0.05 });
     expect(Math.abs(subject.root.rotation.y)).toBeLessThan(0.05);
   });
 });

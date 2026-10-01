@@ -368,6 +368,21 @@ test('deaktiviert Fokusfahrten bei reduzierter Bewegung', async ({ page }) => {
   await expect(canvas).toHaveAttribute('data-camera-focus', 'none');
 });
 
+test('wechselt über den Knopf zum nächsten Ort und zeigt dort wieder die Ortswahl', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await openCafe(page, '/#cafe');
+  await page.getByTestId('enter').click();
+  const swap = page.getByTestId('venue-switch');
+  await expect(swap).toBeVisible();
+  await expect(swap).toHaveAccessibleName('Anderen Ort wählen');
+  await swap.click();
+  await page.waitForURL(/#ramen$/);
+  await expect(page.locator('#cafe')).toHaveAttribute('data-renderer-state', 'ready', { timeout: 15_000 });
+  await expect(page.getByTestId('welcome')).not.toHaveClass(/is-hidden/);
+  await expect(page.getByRole('radio', { name: /Ramen/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('button', { name: 'Ramen-Restaurant betreten' })).toBeEnabled();
+});
+
 test('blendet die Controls nach dem Eintritt bei Ruhe aus und bei Bewegung wieder ein', async ({ page }) => {
   test.setTimeout(30_000);
   await page.setViewportSize({ width: 1440, height: 810 });

@@ -172,8 +172,11 @@ export interface VoxelPoseInput {
   readonly spotKind?: ActivitySpotKind;
   /** Bewegungsrichtung in der Ebene (Diorama-x/z), wenn die Figur läuft. */
   readonly heading?: { readonly x: number; readonly z: number };
-  /** Kurz vor dem Sitzplatz: Drehung, in die sich der Gast schon im Stehen bringt, damit er sich nicht erst auf dem Stuhl dreht. */
-  readonly approachYaw?: number;
+  /**
+   * Drehung, die Vorrang vor der Laufrichtung hat: kurz vor dem Sitzplatz (der Gast dreht sich schon im Stehen)
+   * und kurz nach dem Aufstehen (er bleibt zum Stuhl gedreht), damit er sich nie in der Lehne dreht.
+   */
+  readonly yawOverride?: number;
   readonly seatHeight: number;
   readonly time: number;
 }
@@ -420,7 +423,7 @@ export class VoxelFigure {
       if (input.seatView === 'side') return (visual.seatFacing ?? visual.facing) * Math.PI / 2;
       return 0;
     }
-    if (input.approachYaw !== undefined) return input.approachYaw;
+    if (input.yawOverride !== undefined) return input.yawOverride;
     if (visual.pose === 'walking' && input.heading && Math.hypot(input.heading.x, input.heading.z) > 0.01) {
       return Math.atan2(input.heading.x, input.heading.z);
     }

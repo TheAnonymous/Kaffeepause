@@ -59,6 +59,7 @@ import {
   calculateBaristaVisualState,
   approachYawFor,
   calculateGuestVisualState,
+  seatYawFor,
   type CharacterVisualState,
 } from './characterVisualState';
 import {
@@ -77,6 +78,7 @@ import {
   type CameraFocusState,
   type FocusFrameElement,
 } from './cameraFocus';
+import { advanceMotion, followPoint, newMotionState, type MotionState } from './figureMotion';
 import { keepBubblesOnScreen, resolveBubblePlacements, type BubbleBounds } from './bubbleLayout';
 import {
   fadeFocusOccluder,
@@ -125,10 +127,7 @@ interface CharacterNode {
   readonly speech: SpeechBubble;
   figure?: VoxelFigure;
   figureKey: string;
-  /** Rest-Versatz nach dem Hinsetzen oder Aufstehen, der weich abklingt. */
-  settleX: number;
-  settleZ: number;
-  seated?: boolean;
+  readonly motion: MotionState;
 }
 
 function seeded(index: number, salt: number): number {
@@ -1018,16 +1017,14 @@ export class DioramaRenderer {
       ? this.venueSet.seatBindings.find((binding) => binding.activitySpotId === guest.activitySpotId)?.transform.seatCenter
       : undefined;
     const point = seat ?? worldToCharacterDiorama(guest.position);
-    // Beim Hinsetzen springt der Bezugspunkt auf die Sitzmitte; der Versatz klingt weich ab.
-    if (node.seated !== undefined && node.seated !== seated) {
-      node.settleX = node.root.position.x - point.x - visual.offsetX;
-      node.settleZ = node.root.position.z - point.z;
-    }
-    node.seated = seated;
-    const decay = Math.exp(-7 * this.figureDelta);
-    node.settleX = Math.abs(node.settleX * decay) < 0.002 ? 0 : node.settleX * decay;
-    node.settleZ = Math.abs(node.settleZ * decay) < 0.002 ? 0 : node.settleZ * decay;
-    node.root.position.set(point.x + visual.offsetX + node.settleX, FLOOR_SURFACE_Y + visual.offsetY, point.z + node.settleZ);
+    const { holdYaw } = advanceMotion(node.motion, {
+      seated,
+      point,
+      offsetX: visual.offsetX,
+      seat: seat && activitySpot?.pose === 'seated' ? { x: seat.x, z: seat.z, yaw: seatYawFor(activitySpot.seatOrientation) } : undefined,
+      deltaSeconds: this.figureDelta,
+    });
+    node.root.position.set(node.motion.x, FLOOR_SURFACE_Y + visual.offsetY, node.motion.z);
     const figureKey = `${this.venue}|${guest.accessory ?? 'none'}`;
     if (!node.figure || node.figureKey !== figureKey) {
       node.figure?.root.removeFromParent();
@@ -1045,7 +1042,7 @@ export class DioramaRenderer {
       seatView: visual.seatView,
       spotKind: visual.activitySpotKind,
       heading: { x: (next.x - guest.position.x) / 384 * DIORAMA.width, z: (next.y - guest.position.y) / 86 * DIORAMA.depth },
-      approachYaw: approachYawFor(guest, activitySpot),
+      yawOverride: approachYawFor(guest, activitySpot) ?? holdYaw,
       seatHeight: SEAT_TOP_HEIGHT[visual.activitySpotKind ?? 'table'],
       time: this.figureTime,
     });
@@ -1071,7 +1068,10 @@ export class DioramaRenderer {
     placement?: Readonly<SpeechBubblePlacement>,
   ): void {
     const point = worldToCharacterDiorama(barista.position);
-    node.root.position.set(point.x + visual.offsetX, FLOOR_SURFACE_Y + visual.offsetY, point.z);
+    // Setzt die Simulation die Bedienung sofort um (Szenen an der Theke), läuft sie in der Darstellung hinüber.
+    const follow = followPoint(node.motion, { x: point.x + visual.offsetX, z: point.z }, this.figureDelta);
+    const catchingUp = follow.lag > 0.02;
+    node.root.position.set(node.motion.x, FLOOR_SURFACE_Y + visual.offsetY, node.motion.z);
     const figureKey = `barista|${this.venue}`;
     if (!node.figure || node.figureKey !== figureKey) {
       node.figure?.root.removeFromParent();
@@ -1080,7 +1080,13 @@ export class DioramaRenderer {
       node.root.add(node.figure.root);
       node.figureKey = figureKey;
     }
-    node.figure.update({ visual, seatHeight: 0, time: this.figureTime });
+    const walkingTo = catchingUp ? follow.heading : { x: (barista.target.x - barista.position.x) / 384 * DIORAMA.width, z: 0 };
+    node.figure.update({
+      visual: catchingUp && visual.pose !== 'walking' ? { ...visual, pose: 'walking' } : visual,
+      heading: walkingTo,
+      seatHeight: 0,
+      time: this.figureTime,
+    });
     node.speech.mesh.rotation.copy(this.perspective.rotation);
     const tailLeft = point.x < -6 ? true : point.x > 6 ? false : barista.facing > 0;
     node.speech.update(dialogue, this.venue, tailLeft, DIORAMA.standingHeight, placement);
@@ -1406,7 +1412,7 @@ export class DioramaRenderer {
     root.add(shadow);
     const speech = new SpeechBubble(name);
     root.add(speech.mesh);
-    return { root, shadow, speech, figureKey: '', settleX: 0, settleZ: 0 };
+    return { root, shadow, speech, figureKey: '', motion: newMotionState() };
   }
 
   /**

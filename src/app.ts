@@ -6,7 +6,7 @@ import type { AccidentKind, CafeMoment, CafeMomentKind, CafeStoryKind, GuestActi
 import { CafeEnvironmentController, parseEnvironmentOverrides } from './environment/cafeEnvironmentController';
 import type { CafeEnvironmentSnapshot } from './environment/types';
 import type { SceneSnapshot } from './scene/types';
-import { DEFAULT_VENUE, isVenueKind, venueEyebrow, venueStatus, VENUES, type VenueKind } from './venue';
+import { DEFAULT_VENUE, isVenueKind, venueEyebrow, venueStatus, VENUE_KINDS, VENUES, type VenueKind } from './venue';
 import { FRIENDS, type Friend } from './friends';
 import {
   loadRendererLifecycle,
@@ -265,6 +265,7 @@ export class KaffeepauseApp {
   private readonly venueDescription = requiredElement<HTMLElement>('[data-venue-description]');
   private readonly controls = requiredElement<HTMLElement>('[data-testid="controls"]');
   private readonly soundButton = requiredElement<HTMLButtonElement>('[data-testid="sound"]');
+  private readonly venueSwitchButton = requiredElement<HTMLButtonElement>('[data-testid="venue-switch"]');
   private readonly fullscreenButton = requiredElement<HTMLButtonElement>('[data-testid="fullscreen"]');
   private readonly fullscreenLabel = requiredElement<HTMLElement>('[data-fullscreen-label]');
   private readonly status = requiredElement<HTMLElement>('#status');
@@ -328,6 +329,7 @@ export class KaffeepauseApp {
       button.addEventListener('keydown', this.venueKeyPressed);
     }
     this.soundButton.addEventListener('click', this.toggleSound);
+    this.venueSwitchButton.addEventListener('click', this.switchVenue);
     this.fullscreenButton.addEventListener('click', this.toggleFullscreen);
     window.addEventListener('resize', this.resize);
     window.addEventListener('hashchange', this.hashChanged);
@@ -373,6 +375,16 @@ export class KaffeepauseApp {
     this.updateFullscreenState();
     this.scheduleRendererPreparation();
   }
+
+  /**
+   * Die Simulation läuft für genau einen Ort. Für einen anderen lädt die Seite neu und zeigt die Ortswahl,
+   * mit dem nächsten Ort schon ausgewählt; ein Klick auf „betreten“ genügt dann (Ton braucht eine Berührung).
+   */
+  private readonly switchVenue = (): void => {
+    const next = VENUE_KINDS[(VENUE_KINDS.indexOf(this.selectedVenue) + 1) % VENUE_KINDS.length] ?? DEFAULT_VENUE;
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${next}`);
+    window.location.reload();
+  };
 
   private readonly enterCafe = (): void => {
     if (this.entered || !this.lifecycle || this.rendererState !== 'ready') return;
