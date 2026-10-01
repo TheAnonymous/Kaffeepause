@@ -100,12 +100,12 @@ const cafe: VenueLayout = {
   ],
   waitPlaces: [
     { id: 'cafe-wait-0', x: 266, y: 196 },
-    { id: 'cafe-wait-1', x: 240, y: 202 },
+    { id: 'cafe-wait-1', x: 252, y: 208 },
   ],
   passingPlaces: [
     { id: 'cafe-pass-window', x: 58, y: 194 },
     { id: 'cafe-pass-middle', x: 185, y: 160 },
-    { id: 'cafe-pass-counter', x: 228, y: 202 },
+    { id: 'cafe-pass-counter', x: 214, y: 208 },
   ],
   activitySpots: [
     { id: 'cafe-window-a', x: 86, y: 160, kind: 'bench', pose: 'seated', seatOrientation: 'front', facing: 1, groupId: 'cafe-window', tags: ['window'], activities: QUIET_ACTIVITIES },
@@ -193,7 +193,7 @@ const arcade: VenueLayout = {
     { id: 'arcade-wait-1', x: 270, y: 176 },
   ],
   passingPlaces: [
-    { id: 'arcade-pass-rear', x: 192, y: 164 },
+    { id: 'arcade-pass-rear', x: 180, y: 158 },
     { id: 'arcade-pass-left', x: 116, y: 186 },
     { id: 'arcade-pass-right', x: 268, y: 186 },
   ],

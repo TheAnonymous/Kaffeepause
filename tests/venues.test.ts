@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_VENUE, isVenueKind, VENUE_KINDS, VENUES } from '../src/venue';
+import { DEFAULT_VENUE, isVenueKind, venueEyebrow, venueStatus, VENUE_KINDS, VENUES } from '../src/venue';
+import { worldToDiorama } from '../src/diorama/types';
 import { VENUE_LAYOUTS } from '../src/simulation/layout';
 import { CafeSimulation } from '../src/simulation/cafeSimulation';
 
@@ -37,5 +38,47 @@ describe('Ortswahl', () => {
     simulation.start();
     simulation.setVenue('arcade');
     expect(simulation.getSceneSnapshot().venue).toBe('ramen');
+  });
+});
+
+describe('Abstände im Raum', () => {
+  const apart = (a: { x: number; y: number }, b: { x: number; y: number }): number => {
+    const left = worldToDiorama(a);
+    const right = worldToDiorama(b);
+    return Math.hypot(left.x - right.x, left.z - right.z);
+  };
+
+  it.each(VENUE_KINDS)('%s: Warte- und Durchgangspunkte stehen nicht auf besetzten Plätzen', (venue) => {
+    const layout = VENUE_LAYOUTS[venue];
+    const standing = [...layout.queuePlaces, ...layout.waitPlaces, ...layout.passingPlaces];
+    for (const place of standing) {
+      for (const seat of layout.activitySpots) {
+        expect(apart(place, seat), `${place.id} ↔ ${seat.id}`).toBeGreaterThanOrEqual(0.9);
+      }
+    }
+  });
+
+  it.each(VENUE_KINDS)('%s: Wartende in der Schlange stehen nicht ineinander', (venue) => {
+    const layout = VENUE_LAYOUTS[venue];
+    for (const [index, place] of layout.queuePlaces.entries()) {
+      for (const other of layout.queuePlaces.slice(index + 1)) {
+        expect(apart(place, other), `${place.id} ↔ ${other.id}`).toBeGreaterThanOrEqual(0.85);
+      }
+    }
+  });
+});
+
+describe('Texte zum Ort und Wetter', () => {
+  it('beschreibt im Café, was draußen wirklich zu sehen ist', () => {
+    expect(venueEyebrow('cafe', 'rain', 'midday')).toBe('Ein kleiner Regentag');
+    expect(venueEyebrow('cafe', 'clear', 'midday')).toBe('Sonne auf den Tassen');
+    expect(venueEyebrow('cafe', 'clear', 'night')).toBe('Eine stille Nacht');
+    expect(venueStatus('cafe', 'clear')).not.toMatch(/Regen/);
+    expect(venueStatus('cafe', 'rain')).toMatch(/Regen/);
+  });
+
+  it('lässt Ramen und Arcade bei ihrem festen Text', () => {
+    expect(venueEyebrow('ramen', 'clear', 'midday')).toBe(VENUES.ramen.eyebrow);
+    expect(venueStatus('arcade', 'snow')).toBe(VENUES.arcade.statusMessage);
   });
 });

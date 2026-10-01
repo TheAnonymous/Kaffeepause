@@ -15,8 +15,9 @@ Du suchst dir einen Ort aus: ein gemütliches Café, ein warmes Ramen-Restaurant
 - Im Café wohnt Mochi, eine Katze. Sie schläft meistens auf der Fensterbank und schnurrt, wenn du sie mit der Maus streichelst.
 - Um Halloween stehen Kürbisse herum, im Dezember hängen Lichterketten.
 - Wenn du mit der Maus auf einer Figur verweilst, reagiert sie. Ein Klick auf einen Gast, und er winkt dir zu.
-- Klick auf Mochi, und sie kommt zu dir. Die Klingel auf der Theke ruft die Bedienung, die dir etwas zu trinken reicht.
+- Klick auf Mochi, und sie kommt zu dir. Die Klingel auf der Theke ruft die Bedienung, die dir etwas zu trinken reicht. Wer lange zuschaut, ohne etwas anzuklicken, bekommt einmal einen kleinen Tipp dazu.
 - Lo-fi-Musik und Raumklang lassen sich ausschalten; es gibt einen Vollbildmodus.
+- Der Link zeigt in Chats eine Vorschau, und auf dem Handy lässt sich die Seite zum Startbildschirm hinzufügen.
 - Auf dem Handy fährt die Kamera langsam durch den Raum. Bei reduzierter Bewegung bleibt sie still.
 
 Mit einem Direktlink landet man gleich am richtigen Ort: [#cafe](https://kaffeepause.jodie-oesterling.de/#cafe), [#ramen](https://kaffeepause.jodie-oesterling.de/#ramen) oder [#arcade](https://kaffeepause.jodie-oesterling.de/#arcade).

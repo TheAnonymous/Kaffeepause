@@ -12,7 +12,7 @@ import {
   HemisphereLight,
   Mesh,
   MeshBasicMaterial,
-  PCFSoftShadowMap,
+  PCFShadowMap,
   PerspectiveCamera,
   PlaneGeometry,
   PointLight,
@@ -265,7 +265,7 @@ export class DioramaRenderer {
     this.webgl.outputColorSpace = SRGBColorSpace;
     this.webgl.toneMapping = ACESFilmicToneMapping;
     this.webgl.shadowMap.enabled = true;
-    this.webgl.shadowMap.type = PCFSoftShadowMap;
+    this.webgl.shadowMap.type = PCFShadowMap;
     this.webgl.shadowMap.autoUpdate = false;
     this.webgl.setClearColor('#181520');
 

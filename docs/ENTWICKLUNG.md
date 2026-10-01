@@ -58,7 +58,15 @@ Nur im Entwicklungsserver (`npm run dev`); Produktionsbuilds ignorieren sie.
 
 Unabhängig davon wählt `#cafe`, `#ramen` oder `#arcade` in der Adresse den Ort vor; das gilt auch im fertigen Build.
 
-Mit `testRender=diagnostic` stehen im Fenster `stepDioramaDiagnosticFrame(sekunden)` und `renderDioramaVisualFrame()` bereit; die Browser-Tests in `e2e/helpers.ts` nutzen sie, um Szenen reproduzierbar vorzuspulen.
+Mit `testRender=diagnostic` stehen im Fenster `stepDioramaDiagnosticFrame(sekunden)` und `renderDioramaVisualFrame()` bereit; die Browser-Tests in `e2e/helpers.ts` nutzen sie, um Szenen reproduzierbar vorzuspulen. In diesem Modus erscheint auch der Mitmach-Tipp nicht.
+
+Der Tipp („Probier mal: Mochi, die Klingel und die Gäste reagieren auf dich.“) kommt einmalig nach 40 Sekunden, wenn bis dahin nichts angeklickt wurde. Ob er schon gezeigt wurde, merkt sich der Browser unter `kaffeepause-tipp-gesehen` im `localStorage`; zum Wiedersehen den Eintrag löschen.
+
+Für Chat-Vorschau und Startbildschirm liegen `vorschau.jpg` (1200×630, aus `look/cafe-tag.png`), `icon-*.png` (aus `favicon.svg`) und `manifest.webmanifest` in `public/`. Die Vorschau lässt sich nach größeren Änderungen am Café neu schneiden:
+
+```sh
+magick look/cafe-tag.png -gravity center -crop 1440x756+0+0 +repage -resize 1200x630 -quality 90 public/vorschau.jpg
+```
 
 Der Canvas veröffentlicht nur noch die `data-*`-Attribute, die Tests oder die App selbst lesen, etwa `data-renderer-state`, `data-art-assets`, `data-venue`, `data-guest-count`, `data-moment`, `data-story`, `data-accident` und `data-camera-focus-source`.
 

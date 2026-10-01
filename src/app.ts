@@ -6,7 +6,7 @@ import type { AccidentKind, CafeMoment, CafeMomentKind, CafeStoryKind, GuestActi
 import { CafeEnvironmentController, parseEnvironmentOverrides } from './environment/cafeEnvironmentController';
 import type { CafeEnvironmentSnapshot } from './environment/types';
 import type { SceneSnapshot } from './scene/types';
-import { DEFAULT_VENUE, isVenueKind, VENUES, type VenueKind } from './venue';
+import { DEFAULT_VENUE, isVenueKind, venueEyebrow, venueStatus, VENUES, type VenueKind } from './venue';
 import { FRIENDS, type Friend } from './friends';
 import {
   loadRendererLifecycle,
@@ -24,6 +24,31 @@ import { parseAtmosphereDevelopmentOverrides } from './atmosphere/types';
 
 const UI_IDLE_DELAY = 2_500;
 const CAPTION_SECONDS = 6.5;
+/** So lange schaut jemand zu, bevor ein Tipp verrät, dass man mitmachen kann. */
+const HINT_DELAY = 40_000;
+const HINT_STORAGE_KEY = 'kaffeepause-tipp-gesehen';
+
+const HINT_MESSAGES: Readonly<Record<VenueKind, string>> = {
+  cafe: 'Probier mal: Mochi, die Klingel und die Gäste reagieren auf dich.',
+  ramen: 'Probier mal: Die Klingel und die Gäste reagieren auf dich.',
+  arcade: 'Probier mal: Die Klingel und die Gäste reagieren auf dich.',
+};
+
+function hintAlreadySeen(): boolean {
+  try {
+    return window.localStorage.getItem(HINT_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function rememberHint(): void {
+  try {
+    window.localStorage.setItem(HINT_STORAGE_KEY, '1');
+  } catch {
+    // Ohne Speicher erscheint der Tipp bei jedem Besuch; das ist verschmerzbar.
+  }
+}
 
 const BELL_MESSAGES: Readonly<Record<VenueKind, string>> = {
   cafe: 'Klingeling! Dein Kaffee kommt sofort.',
@@ -275,6 +300,7 @@ export class KaffeepauseApp {
   private lastAnnouncedMomentId = 0;
   private lastReactionAudioToken = 0;
   private captionTimer?: number;
+  private hintTimer?: number;
   private lastCatPurr = 0;
   private lastCatAnnouncement = -Infinity;
   private readonly announcedFriends = new Set<string>();
@@ -357,7 +383,8 @@ export class KaffeepauseApp {
     document.body.dataset.entered = 'true';
     this.setUiIdle(false);
     this.scheduleIdle();
-    this.announce(VENUES[this.selectedVenue].statusMessage);
+    this.announce(venueStatus(this.selectedVenue, this.environment.getSnapshot().weather.kind));
+    this.scheduleHint();
     this.canvas.dataset.renderLoop = document.hidden ? 'paused' : 'running';
     this.lastFrame = performance.now();
     this.startFrameLoop();
@@ -407,7 +434,7 @@ export class KaffeepauseApp {
       window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${venue}`);
     }
     const definition = VENUES[venue];
-    this.venueEyebrow.textContent = definition.eyebrow;
+    this.refreshEyebrow();
     this.venueDescription.textContent = definition.description;
     this.enterButton.textContent = definition.enterLabel;
     this.canvas.setAttribute('aria-label', definition.canvasLabel);
@@ -422,6 +449,11 @@ export class KaffeepauseApp {
       button.tabIndex = selected ? 0 : -1;
     }
     this.renderStaticFrame();
+  }
+
+  private refreshEyebrow(): void {
+    const snapshot = this.environment.getSnapshot();
+    this.venueEyebrow.textContent = venueEyebrow(this.selectedVenue, snapshot.weather.kind, snapshot.dayPhase);
   }
 
   private scheduleRendererPreparation(): void {
@@ -565,6 +597,7 @@ export class KaffeepauseApp {
     if (!this.entered || !this.lifecycle) return;
     const hit = this.lifecycle.handleClick(event.clientX, event.clientY);
     if (!hit) return;
+    this.cancelHint();
     if (hit.kind === 'bell') {
       this.audio.playBell();
       this.simulation.callBarista();
@@ -741,6 +774,28 @@ export class KaffeepauseApp {
   }
 
   /** Kündigt etwas für Screenreader an und zeigt es kurz als Untertitel. */
+  /** Wer von allein nichts anklickt, bekommt einmal einen Hinweis. */
+  private scheduleHint(delay = HINT_DELAY): void {
+    const testing = import.meta.env.DEV && new URLSearchParams(window.location.search).has('testRender');
+    if (testing || hintAlreadySeen()) return;
+    this.hintTimer = window.setTimeout(() => {
+      this.hintTimer = undefined;
+      // Läuft gerade eine Geschichte, kommt der Tipp danach.
+      if (this.caption.classList.contains('is-visible')) {
+        this.scheduleHint(8_000);
+        return;
+      }
+      this.announce(HINT_MESSAGES[this.selectedVenue]);
+      rememberHint();
+    }, delay);
+  }
+
+  private cancelHint(): void {
+    if (this.hintTimer !== undefined) window.clearTimeout(this.hintTimer);
+    this.hintTimer = undefined;
+    rememberHint();
+  }
+
   private announce(text: string): void {
     this.status.textContent = text;
     this.caption.textContent = text;
@@ -758,6 +813,7 @@ export class KaffeepauseApp {
     if (this.preparationFrame !== undefined) cancelAnimationFrame(this.preparationFrame);
     if (this.idleTimer !== undefined) window.clearTimeout(this.idleTimer);
     if (this.captionTimer !== undefined) window.clearTimeout(this.captionTimer);
+    if (this.hintTimer !== undefined) window.clearTimeout(this.hintTimer);
     this.environmentUnsubscribe?.();
     this.environment.stop();
     delete this.devRenderingWindow.renderDioramaVisualFrame;
@@ -774,6 +830,7 @@ export class KaffeepauseApp {
     this.simulation.setEnvironment(snapshot);
     this.lifecycle?.setEnvironment(snapshot);
     this.audio.setAtmosphere(snapshot, this.simulation.guests.length);
+    if (!this.entered) this.refreshEyebrow();
     const datasets = [document.body.dataset, this.canvas.dataset];
     for (const dataset of datasets) {
       dataset.dayPhase = snapshot.dayPhase;
