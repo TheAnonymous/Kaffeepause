@@ -99,7 +99,7 @@ const cafe: VenueLayout = {
     { id: 'cafe-queue-3', x: 202, y: 160 },
   ],
   waitPlaces: [
-    { id: 'cafe-wait-0', x: 266, y: 196 },
+    { id: 'cafe-wait-0', x: 294, y: 196 },
     { id: 'cafe-wait-1', x: 252, y: 208 },
   ],
   passingPlaces: [

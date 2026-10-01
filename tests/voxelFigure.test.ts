@@ -57,4 +57,21 @@ describe('Klötzchen-Figuren bewegen sich weich', () => {
     subject.update({ visual: seated, seatHeight: seat, time: 0 });
     expect(bodyY(subject)).toBeCloseTo(seat - HIP_HEIGHT, 5);
   });
+  it('wendet einen seitlich sitzenden Gast nie in die Stuhllehne', () => {
+    const subject = figure();
+    const seat = SEAT_TOP_HEIGHT.table;
+    // Eine Reaktion schaut nach links, der Stuhl am rechten Tischende blickt aber nach rechts.
+    const turned = visual({ pose: 'reading', seated: true, seatView: 'side', seatFacing: 1, facing: -1, activitySpotKind: 'table' });
+    for (let step = 0; step <= 40; step += 1) subject.update({ visual: turned, seatView: 'side', seatHeight: seat, time: step * 0.05 });
+    expect(subject.root.rotation.y).toBeCloseTo(Math.PI / 2, 2);
+  });
+  it('dreht sich kurz vor dem Sitzplatz schon zum Stuhl, statt sich erst auf ihm umzudrehen', () => {
+    const subject = figure();
+    // Der Gast läuft zur Bank am Fenster (weg von der Kamera), setzt sich aber mit Blick zur Kamera.
+    const walking = visual({ pose: 'walking' });
+    for (let step = 0; step <= 20; step += 1) subject.update({ visual: walking, heading: { x: 0, z: -1 }, seatHeight: 0, time: step * 0.05 });
+    expect(Math.abs(Math.abs(subject.root.rotation.y) - Math.PI)).toBeLessThan(0.05);
+    for (let step = 21; step <= 60; step += 1) subject.update({ visual: walking, heading: { x: 0, z: -1 }, approachYaw: 0, seatHeight: 0, time: step * 0.05 });
+    expect(Math.abs(subject.root.rotation.y)).toBeLessThan(0.05);
+  });
 });

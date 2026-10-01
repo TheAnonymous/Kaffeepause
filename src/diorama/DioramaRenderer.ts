@@ -57,6 +57,7 @@ import { BARISTA_APPEARANCE, BARISTA_PALETTES, SEAT_TOP_HEIGHT, seatedHeadHeight
 import { VoxelFigure } from './voxelFigure';
 import {
   calculateBaristaVisualState,
+  approachYawFor,
   calculateGuestVisualState,
   type CharacterVisualState,
 } from './characterVisualState';
@@ -983,7 +984,7 @@ export class DioramaRenderer {
         activityFacing: activitySpot?.facing,
         seatOrientation: activitySpot?.pose === 'seated' ? activitySpot.seatOrientation : undefined,
       });
-      this.updateGuestNode(node, guest, visual, lines.get(guest.id), placements.get(guest.id));
+      this.updateGuestNode(node, guest, visual, lines.get(guest.id), placements.get(guest.id), activitySpot);
     }
     const baristaVisual = calculateBaristaVisualState({
       barista: snapshot.barista,
@@ -1009,6 +1010,7 @@ export class DioramaRenderer {
     visual: CharacterVisualState,
     dialogue?: DialogueLine,
     placement?: Readonly<SpeechBubblePlacement>,
+    activitySpot?: ActivitySpot,
   ): void {
     const seated = visual.seated;
     // Sitzende Gäste sitzen genau auf der Sitzfläche ihres Möbels.
@@ -1043,6 +1045,7 @@ export class DioramaRenderer {
       seatView: visual.seatView,
       spotKind: visual.activitySpotKind,
       heading: { x: (next.x - guest.position.x) / 384 * DIORAMA.width, z: (next.y - guest.position.y) / 86 * DIORAMA.depth },
+      approachYaw: approachYawFor(guest, activitySpot),
       seatHeight: SEAT_TOP_HEIGHT[visual.activitySpotKind ?? 'table'],
       time: this.figureTime,
     });

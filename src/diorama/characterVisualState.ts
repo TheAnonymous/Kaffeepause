@@ -1,5 +1,6 @@
 import type { Barista, CafeAccident, CafeMoment, Guest } from '../simulation/types';
-import type { ActivityPose, ActivitySpotKind, SeatOrientation } from '../simulation/layout';
+import type { ActivityPose, ActivitySpot, ActivitySpotKind, SeatOrientation } from '../simulation/layout';
+import { DIORAMA } from './types';
 
 export const CHARACTER_FRAME_COUNT = 4 as const;
 
@@ -32,6 +33,8 @@ export interface CharacterVisualState {
   readonly offsetY: number;
   readonly seated: boolean;
   readonly seatView?: SeatView;
+  /** Richtung, in die ein seitlich sitzender Gast durch seinen Stuhl blickt; unabhängig von `facing`. */
+  readonly seatFacing?: -1 | 1;
   readonly activitySpotKind?: ActivitySpotKind;
   readonly momentKind?: CafeMoment['kind'];
 }
@@ -55,6 +58,35 @@ export function seatViewFor(orientation: SeatOrientation | undefined): SeatView 
   if (orientation === 'radial') return 'back';
   if (orientation === 'left' || orientation === 'right') return 'side';
   return 'front';
+}
+
+/** Am Tischende sitzt man zum Tisch hin: rechts der Stuhl blickt nach rechts, links nach links. */
+export function seatFacingFor(orientation: SeatOrientation | undefined): -1 | 1 | undefined {
+  if (orientation === 'left') return -1;
+  if (orientation === 'right') return 1;
+  return undefined;
+}
+
+/** Drehung um die Hochachse, mit der eine Figur auf einem Sitzplatz sitzt (0 = zur Kamera). */
+export function seatYawFor(orientation: SeatOrientation | undefined): number {
+  const view = seatViewFor(orientation);
+  if (view === 'back') return Math.PI;
+  if (view === 'side') return (seatFacingFor(orientation) ?? 1) * Math.PI / 2;
+  return 0;
+}
+
+/** Ab dieser Reststrecke dreht sich ein Gast zum Sitzplatz, damit er sich nicht erst auf dem Stuhl umdreht. */
+export const SIT_APPROACH_DISTANCE = 0.9;
+
+export function approachYawFor(guest: Guest, spot: ActivitySpot | undefined): number | undefined {
+  if ((guest.state !== 'walking-to-seat' && guest.state !== 'walking-back-to-activity') || spot?.pose !== 'seated') return undefined;
+  let remaining = 0;
+  let previous = guest.position;
+  for (const point of [...(guest.waypoints ?? []), guest.target]) {
+    remaining += Math.hypot((point.x - previous.x) / 384 * DIORAMA.width, (point.y - previous.y) / 86 * DIORAMA.depth);
+    previous = point;
+  }
+  return remaining < SIT_APPROACH_DISTANCE ? seatYawFor(spot.seatOrientation) : undefined;
 }
 
 export interface BaristaVisualStateInput {
@@ -179,6 +211,7 @@ export function calculateGuestVisualState(input: GuestVisualStateInput): Charact
     pose, frame, facing, expression, gesture, offsetX, offsetY,
     seated,
     seatView: seated ? seatViewFor(input.seatOrientation) : undefined,
+    seatFacing: seated ? seatFacingFor(input.seatOrientation) : undefined,
     activitySpotKind: input.activitySpotKind,
     momentKind: participant ? moment?.kind : undefined,
   };

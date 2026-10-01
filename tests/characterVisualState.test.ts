@@ -62,4 +62,22 @@ describe('zentraler Figurenstatus', () => {
     expect(seated).toMatchObject({ seated: true, facing: -1, activitySpotKind: 'counter-stool' });
     expect(standing).toMatchObject({ seated: false, facing: 1, activitySpotKind: 'arcade-cabinet' });
   });
+  it('behält die Blickrichtung des Stuhls, wenn eine Reaktion oder Geschichte den Gast zur anderen Seite wendet', () => {
+    const base = {
+      guest: guest({ facing: 1 }), time: 1, frameRate: 6,
+      activityPose: 'seated', activitySpotKind: 'table', activityFacing: 1, seatOrientation: 'right',
+    } as const;
+    const winking = calculateGuestVisualState({ ...base, reaction: { characterId: 'guest-1', gesture: 'wave', facing: -1 } });
+    expect(winking.facing).toBe(-1);
+    expect(winking.seatFacing).toBe(1);
+    const talking = calculateGuestVisualState({
+      ...base,
+      moment: { id: 1, kind: 'shared-cake', startedAt: 0, participantIds: ['guest-1', 'guest-2'], elapsed: 1, duration: 10 },
+      participantCenterX: 10,
+    });
+    expect(talking.facing).toBe(-1);
+    expect(talking.seatFacing).toBe(1);
+    expect(calculateGuestVisualState({ ...base, seatOrientation: 'left' }).seatFacing).toBe(-1);
+    expect(calculateGuestVisualState({ ...base, seatOrientation: 'front' }).seatFacing).toBeUndefined();
+  });
 });

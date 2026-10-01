@@ -58,6 +58,19 @@ describe('Abstände im Raum', () => {
     }
   });
 
+  it('Café: Wartende stehen nicht genau vor der Bestellschlange und verdecken sie', () => {
+    const layout = VENUE_LAYOUTS.cafe;
+    for (const waiting of layout.waitPlaces) {
+      for (const queued of layout.queuePlaces) {
+        const front = worldToDiorama(waiting);
+        const back = worldToDiorama(queued);
+        // Wer weiter vorn und nur knapp daneben steht, verdeckt von der Kamera aus den Hintermann.
+        if (front.z - back.z <= 0 || front.z - back.z >= 2.4) continue;
+        expect(Math.abs(front.x - back.x), `${waiting.id} ↔ ${queued.id}`).toBeGreaterThanOrEqual(0.5);
+      }
+    }
+  });
+
   it.each(VENUE_KINDS)('%s: Wartende in der Schlange stehen nicht ineinander', (venue) => {
     const layout = VENUE_LAYOUTS[venue];
     for (const [index, place] of layout.queuePlaces.entries()) {

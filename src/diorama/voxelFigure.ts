@@ -172,6 +172,8 @@ export interface VoxelPoseInput {
   readonly spotKind?: ActivitySpotKind;
   /** Bewegungsrichtung in der Ebene (Diorama-x/z), wenn die Figur läuft. */
   readonly heading?: { readonly x: number; readonly z: number };
+  /** Kurz vor dem Sitzplatz: Drehung, in die sich der Gast schon im Stehen bringt, damit er sich nicht erst auf dem Stuhl dreht. */
+  readonly approachYaw?: number;
   readonly seatHeight: number;
   readonly time: number;
 }
@@ -414,9 +416,11 @@ export class VoxelFigure {
     const { visual } = input;
     if (visual.seated) {
       if (input.seatView === 'back') return Math.PI;
-      if (input.seatView === 'side') return visual.facing * Math.PI / 2;
+      // Der Körper folgt dem Stuhl, nie der Blickrichtung einer Reaktion: sonst dreht er sich in die Lehne.
+      if (input.seatView === 'side') return (visual.seatFacing ?? visual.facing) * Math.PI / 2;
       return 0;
     }
+    if (input.approachYaw !== undefined) return input.approachYaw;
     if (visual.pose === 'walking' && input.heading && Math.hypot(input.heading.x, input.heading.z) > 0.01) {
       return Math.atan2(input.heading.x, input.heading.z);
     }
@@ -593,7 +597,7 @@ export class VoxelFigure {
     if (visual.pose === 'talking') this.head.rotation.y = Math.sin(t * 0.9) * 0.15;
     // Im Profil sitzende Gäste drehen den Kopf etwas zur Kamera.
     if (visual.seated && input.seatView === 'side') {
-      this.head.rotation.y = -visual.facing * (looksDown ? 0.45 : 0.6);
+      this.head.rotation.y = -(visual.seatFacing ?? visual.facing) * (looksDown ? 0.45 : 0.6);
       if (looksDown) this.head.rotation.x = 0.14;
     }
     if (visual.gesture === 'nod') this.head.rotation.x = 0.05 + Math.sin(t * 9) * 0.2;
