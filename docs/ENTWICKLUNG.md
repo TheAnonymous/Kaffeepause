@@ -62,7 +62,14 @@ Mit `testRender=diagnostic` stehen im Fenster `stepDioramaDiagnosticFrame(sekund
 
 Der Tipp („Probier mal: Mochi, die Klingel und die Gäste reagieren auf dich.“) kommt einmalig nach 40 Sekunden, wenn bis dahin nichts angeklickt wurde. Ob er schon gezeigt wurde, merkt sich der Browser unter `kaffeepause-tipp-gesehen` im `localStorage`; zum Wiedersehen den Eintrag löschen.
 
-Für Chat-Vorschau und Startbildschirm liegen `vorschau.jpg` (1200×630, aus `look/cafe-tag.png`), `icon-*.png` (aus `favicon.svg`) und `manifest.webmanifest` in `public/`. Die Vorschau lässt sich nach größeren Änderungen am Café neu schneiden:
+Für Chat-Vorschau und Startbildschirm liegen `vorschau.jpg` (1200×630, aus `look/cafe-tag.png`), `icon-*.png` (aus `favicon.svg`) und `manifest.webmanifest` in `public/`. Das Symbol, eine Tasse aus Klötzchen, zeichnet `scripts/make-icon.py` als `favicon.svg`; die PNGs entstehen daraus:
+
+```sh
+python3 scripts/make-icon.py
+for s in 180 192 512; do magick -background '#241923' -density 1200 public/favicon.svg -resize ${s}x${s} -alpha remove -alpha off -depth 8 public/icon-$s.png; done
+```
+
+Die Vorschau lässt sich nach größeren Änderungen am Café neu schneiden:
 
 ```sh
 magick look/cafe-tag.png -gravity center -crop 1440x756+0+0 +repage -resize 1200x630 -quality 90 public/vorschau.jpg
