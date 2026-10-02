@@ -49,13 +49,46 @@ describe('Klötzchen-Figuren bewegen sich weich', () => {
     expect(bodyY(subject)).toBeCloseTo(target, 2);
   });
 
-  it('zeigt auf Standbildern sofort die richtige Haltung', () => {
+  it('springt nach einer Pause (Tab im Hintergrund) sofort in die richtige Haltung', () => {
     const subject = figure();
     const seat = SEAT_TOP_HEIGHT.bench;
     const seated = visual({ pose: 'reading', seated: true, seatView: 'front', activitySpotKind: 'bench' });
-    subject.update({ visual: visual({ pose: 'waiting' }), seatHeight: seat, time: 0 });
     subject.update({ visual: seated, seatHeight: seat, time: 0 });
     expect(bodyY(subject)).toBeCloseTo(seat - HIP_HEIGHT, 5);
+    subject.update({ visual: visual({ pose: 'waiting' }), seatHeight: seat, time: 0.05 });
+    subject.update({ visual: seated, seatHeight: seat, time: 3 });
+    expect(bodyY(subject)).toBeCloseTo(seat - HIP_HEIGHT, 5);
+  });
+
+  it('zeigt denselben Augenblick beim zweiten Zeichnen genauso, statt ans Ziel zu springen', () => {
+    const subject = figure();
+    const seat = SEAT_TOP_HEIGHT.table;
+    const seated = visual({ pose: 'reading', seated: true, seatView: 'side', seatFacing: 1, activitySpotKind: 'table' });
+    subject.update({ visual: visual({ pose: 'waiting' }), seatHeight: seat, time: 0 });
+    subject.update({ visual: seated, seatView: 'side', seatHeight: seat, time: 0.1 });
+    const midway = bodyY(subject);
+    const yaw = subject.root.rotation.y;
+    subject.update({ visual: seated, seatView: 'side', seatHeight: seat, time: 0.1 });
+    expect(bodyY(subject)).toBeCloseTo(midway, 6);
+    expect(subject.root.rotation.y).toBeCloseTo(yaw, 6);
+    expect(Math.abs(midway - (seat - HIP_HEIGHT))).toBeGreaterThan(0.05);
+  });
+
+  it('setzt sich über gut eine halbe Sekunde, beugt dabei die Knie und neigt sich nach vorn', () => {
+    const subject = figure();
+    const seat = SEAT_TOP_HEIGHT.table;
+    const seated = visual({ pose: 'reading', seated: true, seatView: 'side', seatFacing: 1, activitySpotKind: 'table' });
+    subject.update({ visual: visual({ pose: 'waiting' }), seatHeight: seat, time: 0 });
+    const heights: number[] = [];
+    for (let step = 1; step <= 20; step += 1) {
+      subject.update({ visual: seated, seatView: 'side', seatHeight: seat, time: step / 30 });
+      heights.push(bodyY(subject));
+    }
+    // Der Körper sinkt stetig, nicht auf einmal.
+    for (let index = 1; index < heights.length; index += 1) expect(heights[index]!).toBeLessThanOrEqual(heights[index - 1]! + 1e-6);
+    expect(Math.abs(heights[2]! - (seat - HIP_HEIGHT))).toBeGreaterThan(Math.abs(seat - HIP_HEIGHT) * 0.5);
+    for (let step = 21; step <= 60; step += 1) subject.update({ visual: seated, seatView: 'side', seatHeight: seat, time: step / 30 });
+    expect(bodyY(subject)).toBeCloseTo(seat - HIP_HEIGHT, 2);
   });
   it('wendet einen seitlich sitzenden Gast nie in die Stuhllehne', () => {
     const subject = figure();

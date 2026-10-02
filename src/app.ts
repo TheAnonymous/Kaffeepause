@@ -311,6 +311,7 @@ export class KaffeepauseApp {
     renderDioramaVisualFrame?: () => void;
     stepDioramaDiagnosticFrame?: (deltaSeconds?: number) => void;
     setDioramaDiagnosticVenue?: (venue: VenueKind) => void;
+    readDioramaGuests?: () => readonly { id: string; state: string; x: number; y: number; targetX: number; targetY: number }[];
   } {
     return window;
   }
@@ -371,6 +372,10 @@ export class KaffeepauseApp {
       this.devRenderingWindow.setDioramaDiagnosticVenue = (venue) => {
         if (isVenueKind(venue)) this.selectVenue(venue);
       };
+      // Für Browser-Tests, die einen bestimmten Moment abpassen wollen (etwa das Hinsetzen eines Gastes).
+      this.devRenderingWindow.readDioramaGuests = () => this.simulation.guests.map((guest) => ({
+        id: guest.id, state: guest.state, x: guest.position.x, y: guest.position.y, targetX: guest.target.x, targetY: guest.target.y,
+      }));
     }
     this.updateFullscreenState();
     this.scheduleRendererPreparation();
@@ -831,6 +836,7 @@ export class KaffeepauseApp {
     delete this.devRenderingWindow.renderDioramaVisualFrame;
     delete this.devRenderingWindow.stepDioramaDiagnosticFrame;
     delete this.devRenderingWindow.setDioramaDiagnosticVenue;
+    delete this.devRenderingWindow.readDioramaGuests;
     this.canvas.removeEventListener('pointermove', this.pointerMoved);
     this.canvas.removeEventListener('click', this.canvasClicked);
     this.canvas.removeEventListener('pointerleave', this.pointerLeft);

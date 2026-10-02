@@ -3,8 +3,8 @@
  * Darstellung und Prüfungen nutzen dieselbe Logik, damit Tests wirklich sehen, was man sieht.
  */
 
-/** Wie schnell der Versatz beim Hinsetzen oder Aufstehen ausklingt (pro Sekunde). */
-const SETTLE_RATE = 7;
+/** Wie schnell der Versatz beim Hinsetzen oder Aufstehen ausklingt (pro Sekunde); passend zum Absetzen der Figur. */
+const SETTLE_RATE = 4.5;
 
 /** So weit entfernt vom Sitz bleibt ein Aufgestandener noch zum Sitz gedreht, damit er sich nicht in der Lehne dreht. */
 export const LEAVE_HOLD_DISTANCE = 0.55;

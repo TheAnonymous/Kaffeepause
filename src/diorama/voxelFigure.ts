@@ -207,6 +207,13 @@ const ARM_RATE = 14;
 const HEAD_RATE = 8;
 const BODY_RATE = 9;
 const TURN_RATE = 7;
+const SIT_DOWN_SECONDS = 0.6;
+const STAND_UP_SECONDS = 0.45;
+
+function smoothstep(value: number): number {
+  const t = Math.max(0, Math.min(1, value));
+  return t * t * (3 - 2 * t);
+}
 
 function wrapAngle(angle: number): number {
   return Math.atan2(Math.sin(angle), Math.cos(angle));
@@ -236,6 +243,9 @@ export class VoxelFigure {
   private lastTime?: number;
   private yaw = 0;
   private bodyY = 0;
+  /** 0 = steht, 1 = sitzt; dazwischen setzt sich die Figur gerade oder steht auf. */
+  private sitAmount = 0;
+  private sitHeight = 0;
   private pendingProp?: { kind: PropKind; anchor: Anchor };
 
   constructor(private readonly options: VoxelFigureOptions) {
@@ -335,12 +345,34 @@ export class VoxelFigure {
   }
 
   update(input: VoxelPoseInput): void {
-    // Zeitschritt seit dem letzten Bild; bei Sprüngen (Tab im Hintergrund, Standbild) wird nicht geglättet.
-    const delta = this.lastTime === undefined ? 0 : input.time - this.lastTime;
+    // Zeitschritt seit dem letzten Bild; beim ersten Bild und bei Sprüngen (Tab im Hintergrund) wird nicht geglättet.
+    const first = this.lastTime === undefined;
+    const delta = first ? 0 : input.time - this.lastTime!;
     this.lastTime = input.time;
+    if (!first && delta === 0) {
+      // Derselbe Augenblick wird noch einmal gezeichnet: Die Figur bleibt, wie sie ist, statt ans Ziel zu springen.
+      this.pose(input);
+      this.holdSmoothedPose();
+      return;
+    }
     const snap = delta <= 0 || delta > 0.5;
+    // Hinsetzen und Aufstehen dauern einen Moment; die Sitzhöhe merkt sich die Figur fürs Aufstehen.
+    const sitting = input.visual.seated ? 1 : 0;
+    if (input.visual.seated) this.sitHeight = input.seatHeight;
+    if (snap) this.sitAmount = sitting;
+    else {
+      const step = delta / (sitting ? SIT_DOWN_SECONDS : STAND_UP_SECONDS);
+      this.sitAmount += Math.max(-step, Math.min(step, sitting - this.sitAmount));
+    }
     this.pose(input);
     this.settle(snap ? 0 : delta, input);
+  }
+
+  private holdSmoothedPose(): void {
+    for (const joint of this.joints) joint.object.rotation[joint.axis] = joint.value;
+    this.body.position.y = this.bodyY;
+    this.root.rotation.y = this.yaw;
+    this.showProp(this.pendingProp);
   }
 
   /** Zieht Gelenke, Körperhöhe und Blickrichtung weich zur eben gesetzten Zielhaltung. */
@@ -364,7 +396,6 @@ export class VoxelFigure {
     const { visual } = input;
     const t = input.time + this.phase;
     const pose = visual.pose;
-    const seated = visual.seated;
     const walking = pose === 'walking';
 
     this.body.position.set(0, 0, 0);
@@ -373,30 +404,35 @@ export class VoxelFigure {
     this.torso.scale.set(1, 1 + Math.sin(t * 2.1) * 0.012, 1);
     this.head.rotation.set(0, 0, 0);
 
-    // Beine: sitzend waagerecht, laufend im Schritt, stehend ruhig.
+    // Beine: laufend im Schritt, stehend ruhig, sitzend waagerecht. Beim Hinsetzen beugen sich erst die Knie,
+    // dann die Hüfte, der Körper sinkt auf die Sitzfläche und der Oberkörper neigt sich kurz nach vorn.
     const [left, right] = this.legs;
-    if (seated) {
-      this.body.position.y = input.seatHeight - HIP_HEIGHT;
-      for (const [index, leg] of this.legs.entries()) {
-        leg.hip.rotation.set(-Math.PI / 2, 0, (index === 0 ? -1 : 1) * 0.05);
-        leg.knee.rotation.set(Math.PI / 2, 0, 0);
-      }
-    } else if (walking) {
+    const legTargets = this.legs.map(() => ({ hip: 0, knee: 0 }));
+    let standingY = 0;
+    if (walking) {
       const step = Math.sin(t * 8);
       if (left && right) {
-        left.hip.rotation.set(step * 0.5, 0, 0);
-        right.hip.rotation.set(-step * 0.5, 0, 0);
-        left.knee.rotation.set(Math.max(0, -step) * 0.7, 0, 0);
-        right.knee.rotation.set(Math.max(0, step) * 0.7, 0, 0);
+        legTargets[0] = { hip: step * 0.5, knee: Math.max(0, -step) * 0.7 };
+        legTargets[1] = { hip: -step * 0.5, knee: Math.max(0, step) * 0.7 };
       }
-      this.body.position.y = Math.abs(Math.cos(t * 8)) * 0.03;
-    } else {
-      for (const leg of this.legs) {
-        leg.hip.rotation.set(0, 0, 0);
-        leg.knee.rotation.set(0, 0, 0);
-      }
+      standingY = Math.abs(Math.cos(t * 8)) * 0.03;
+    } else if (this.sitAmount === 0) {
       this.body.rotation.z = Math.sin(t * 0.7) * 0.015;
     }
+    const sit = this.sitAmount;
+    const knees = smoothstep(Math.min(1, sit / 0.7));
+    const hips = smoothstep(Math.max(0, (sit - 0.15) / 0.85));
+    for (const [index, leg] of this.legs.entries()) {
+      const standing = legTargets[index] ?? { hip: 0, knee: 0 };
+      leg.hip.rotation.set(
+        standing.hip + (-Math.PI / 2 - standing.hip) * hips,
+        0,
+        (index === 0 ? -1 : 1) * 0.05 * hips,
+      );
+      leg.knee.rotation.set(standing.knee + (Math.PI / 2 - standing.knee) * knees, 0, 0);
+    }
+    this.body.position.y = standingY + (this.sitHeight - HIP_HEIGHT - standingY) * smoothstep(sit);
+    this.torso.rotation.x = Math.sin(sit * Math.PI) * 0.28;
 
     this.pendingProp = this.poseArms(input, t);
     this.poseHead(input, t);
