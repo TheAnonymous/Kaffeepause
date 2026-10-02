@@ -177,6 +177,8 @@ export interface VoxelPoseInput {
    * und kurz nach dem Aufstehen (er bleibt zum Stuhl gedreht), damit er sich nie in der Lehne dreht.
    */
   readonly yawOverride?: number;
+  /** Ob die Figur gerade geht (sie bewegt sich); ohne Angabe gilt die Pose „walking“ als Gehen. */
+  readonly stepping?: boolean;
   readonly seatHeight: number;
   readonly time: number;
 }
@@ -396,7 +398,7 @@ export class VoxelFigure {
     const { visual } = input;
     const t = input.time + this.phase;
     const pose = visual.pose;
-    const walking = pose === 'walking';
+    const walking = input.stepping ?? pose === 'walking';
 
     this.body.position.set(0, 0, 0);
     this.body.rotation.set(0, 0, 0);
@@ -460,7 +462,7 @@ export class VoxelFigure {
       return 0;
     }
     if (input.yawOverride !== undefined) return input.yawOverride;
-    if (visual.pose === 'walking' && input.heading && Math.hypot(input.heading.x, input.heading.z) > 0.01) {
+    if ((input.stepping ?? visual.pose === 'walking') && input.heading && Math.hypot(input.heading.x, input.heading.z) > 0.01) {
       return Math.atan2(input.heading.x, input.heading.z);
     }
     if (input.spotKind === 'arcade-cabinet') return visual.facing * Math.PI / 2;

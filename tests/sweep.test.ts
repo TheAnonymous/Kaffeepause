@@ -30,19 +30,30 @@ interface Metrics {
   leavingFrames: number;
   /** Längste Zeit, die ein Gast am Stück wartet oder unterwegs ist, in Sekunden. */
   longestWait: number;
+  /** Bilder, in denen sich ein Gast bewegt, und davon die, in denen er dabei nicht geht, sondern gleitet. */
+  movingFrames: number;
+  glidingFrames: number;
 }
 
 function measure(venue: VenueKind): Metrics {
   const { furniture, seatCenters } = venueFurniture(venue);
   const metrics: Metrics = {
     walkerFrames: 0, inFurnitureFrames: 0, nearSeatedFrames: 0, overlapFrames: 0,
-    baristaMaxStep: 0, baristaCatchUpFrames: 0, seatYawWorst: 0, leaveYawWorst: 0, seatedFrames: 0, leavingFrames: 0, longestWait: 0,
+    baristaMaxStep: 0, baristaCatchUpFrames: 0, seatYawWorst: 0, leaveYawWorst: 0, seatedFrames: 0, leavingFrames: 0, longestWait: 0, movingFrames: 0, glidingFrames: 0,
   };
   const seatedSince = new Map<string, number>();
   const waitingSince = new Map<string, { state: string; time: number }>();
+  const lastSeen = new Map<string, SweepFigure>();
   let baristaBefore: SweepFigure | undefined;
   runSweep({ venue, seed: 5, seconds: 900, durationScale: 0.08, reactionChance: 0.05 }, ({ time, figures }) => {
     for (const figure of figures) {
+      const before = lastSeen.get(figure.id);
+      lastSeen.set(figure.id, figure);
+      if (!figure.barista && before && !before.seated && !figure.seated && !figure.settling
+        && Math.hypot(figure.x - figure.offsetX - (before.x - before.offsetX), figure.z - before.z) > 0.01) {
+        metrics.movingFrames += 1;
+        if (!figure.stepping) metrics.glidingFrames += 1;
+      }
       if (figure.barista) {
         if (baristaBefore) metrics.baristaMaxStep = Math.max(metrics.baristaMaxStep, Math.hypot(figure.x - baristaBefore.x, figure.z - baristaBefore.z));
         if (figure.state === 'walking') metrics.baristaCatchUpFrames += 1;
@@ -126,6 +137,11 @@ describe.each(VENUES)('Langer Durchlauf: %s', (venue) => {
   it('dreht Aufgestandene nicht in der Lehne um', () => {
     expect(metrics.leavingFrames).toBeGreaterThan(0);
     expect(metrics.leaveYawWorst).toBeLessThan(0.35);
+  });
+
+  it('lässt Gäste gehen, wenn sie sich bewegen, statt durch den Raum zu gleiten', () => {
+    expect(metrics.movingFrames).toBeGreaterThan(10_000);
+    expect(metrics.glidingFrames / metrics.movingFrames).toBeLessThan(0.005);
   });
 
   it('lässt keinen Gast minutenlang festhängen', () => {

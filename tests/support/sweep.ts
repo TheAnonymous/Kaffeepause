@@ -4,7 +4,7 @@ import { activitySpotById, VENUE_LAYOUTS } from '../../src/simulation/layout';
 import { appearanceForGuestNumber } from '../../src/simulation/appearance';
 import { approachYawFor, calculateBaristaVisualState, calculateGuestVisualState, seatYawFor } from '../../src/diorama/characterVisualState';
 import { participantMidpoint } from '../../src/diorama/cameraFocus';
-import { advanceMotion, followPoint, newMotionState, type MotionState } from '../../src/diorama/figureMotion';
+import { advanceMotion, followPoint, newMotionState, trackStepping, type MotionState } from '../../src/diorama/figureMotion';
 import { VoxelFigure } from '../../src/diorama/voxelFigure';
 import { buildVenue } from '../../src/diorama/venueBuilder';
 import { CafeCat } from '../../src/diorama/cafeCat';
@@ -34,6 +34,14 @@ export interface SweepFigure {
   readonly leaveYaw?: number;
   /** Geht als letzter Ausweg durch andere hindurch (festgefahrener Gang). */
   readonly passingThrough?: boolean;
+  /** Ob die Beine gerade gehen. */
+  readonly stepping: boolean;
+  /** Seitliches Wackeln einer Geste; gehört nicht zur Bewegung durch den Raum. */
+  readonly offsetX: number;
+  /** Pose aus dem Zustand des Gastes (vor der Korrektur nach Bewegung). */
+  readonly statePose?: string;
+  /** Ob die Figur gerade auf den Stuhl gleitet oder von ihm weg (Rest-Versatz nach Hinsetzen oder Aufstehen). */
+  readonly settling: boolean;
 }
 
 export interface SweepFrame {
@@ -143,8 +151,11 @@ export function runSweep(options: SweepOptions, onFrame: (frame: SweepFrame) => 
         seat: seat && spot?.pose === 'seated' ? { x: seat.x, z: seat.z, yaw: seatYawFor(spot.seatOrientation) } : undefined,
       });
       const target = guest.waypoints?.[0] ?? guest.target;
+      const stepping = !visual.seated && trackStepping(node.motion, worldToCharacterDiorama(guest.position), time);
       node.figure.update({
-        visual, seatView: visual.seatView, spotKind: visual.activitySpotKind,
+        visual: !stepping && visual.pose === 'walking' ? { ...visual, pose: 'waiting' } : visual,
+        stepping,
+        seatView: visual.seatView, spotKind: visual.activitySpotKind,
         heading: { x: (target.x - guest.position.x) / 384 * DIORAMA.width, z: (target.y - guest.position.y) / 86 * DIORAMA.depth },
         yawOverride: approachYawFor(guest, spot) ?? holdYaw,
         seatHeight: SEAT_TOP_HEIGHT[visual.activitySpotKind ?? 'table'], time,
@@ -157,6 +168,10 @@ export function runSweep(options: SweepOptions, onFrame: (frame: SweepFrame) => 
         leaving: holdYaw !== undefined,
         leaveYaw: holdYaw,
         passingThrough: simulation.isPassingThrough(guest),
+        stepping,
+        offsetX: visual.offsetX,
+        statePose: visual.pose,
+        settling: node.motion.settleX !== 0 || node.motion.settleZ !== 0,
       });
     }
     for (const id of nodes.keys()) {
@@ -166,14 +181,16 @@ export function runSweep(options: SweepOptions, onFrame: (frame: SweepFrame) => 
     const point = worldToCharacterDiorama(snapshot.barista.position);
     const follow = followPoint(barista.motion, { x: point.x + baristaVisual.offsetX, z: point.z }, dt);
     const catchingUp = follow.lag > 0.02;
+    const baristaStepping = catchingUp || Math.hypot(snapshot.barista.target.x - snapshot.barista.position.x, snapshot.barista.target.y - snapshot.barista.position.y) > 0.2;
     barista.figure.update({
       visual: catchingUp && baristaVisual.pose !== 'walking' ? { ...baristaVisual, pose: 'walking' } : baristaVisual,
+      stepping: baristaStepping,
       heading: catchingUp ? follow.heading : { x: (snapshot.barista.target.x - snapshot.barista.position.x) / 384 * DIORAMA.width, z: 0 },
       seatHeight: 0, time,
     });
     figures.push({
       id: 'barista', barista: true, state: catchingUp ? 'walking' : snapshot.barista.task, x: barista.motion.x, z: barista.motion.z,
-      seated: false, yaw: barista.figure.root.rotation.y,
+      seated: false, yaw: barista.figure.root.rotation.y, stepping: baristaStepping, settling: false, offsetX: baristaVisual.offsetX,
     });
     if (cat) cat.update(time, false, () => false, figures.filter((figure) => !figure.barista));
     onFrame({ time, figures, cat: cat ? { x: cat.root.position.x, y: cat.root.position.y, z: cat.root.position.z } : undefined });

@@ -78,7 +78,7 @@ import {
   type CameraFocusState,
   type FocusFrameElement,
 } from './cameraFocus';
-import { advanceMotion, followPoint, newMotionState, type MotionState } from './figureMotion';
+import { advanceMotion, followPoint, newMotionState, trackStepping, type MotionState } from './figureMotion';
 import { keepBubblesOnScreen, resolveBubblePlacements, type BubbleBounds } from './bubbleLayout';
 import {
   fadeFocusOccluder,
@@ -1068,8 +1068,11 @@ export class DioramaRenderer {
       node.figureKey = figureKey;
     }
     const next = guest.waypoints?.[0] ?? guest.target;
+    // Gehen hängt daran, ob sich der Gast bewegt: Auch wer zur Schlange läuft, setzt die Füße voreinander.
+    const stepping = !seated && trackStepping(node.motion, worldToCharacterDiorama(guest.position), this.figureTime);
     node.figure.update({
-      visual,
+      visual: !stepping && visual.pose === 'walking' ? { ...visual, pose: 'waiting' } : visual,
+      stepping,
       seatView: visual.seatView,
       spotKind: visual.activitySpotKind,
       heading: { x: (next.x - guest.position.x) / 384 * DIORAMA.width, z: (next.y - guest.position.y) / 86 * DIORAMA.depth },
@@ -1114,6 +1117,8 @@ export class DioramaRenderer {
     const walkingTo = catchingUp ? follow.heading : { x: (barista.target.x - barista.position.x) / 384 * DIORAMA.width, z: 0 };
     node.figure.update({
       visual: catchingUp && visual.pose !== 'walking' ? { ...visual, pose: 'walking' } : visual,
+      // Auch mit dem Tablett in der Hand geht die Bedienung zur Ausgabe, statt zu gleiten.
+      stepping: catchingUp || Math.hypot(barista.target.x - barista.position.x, barista.target.y - barista.position.y) > 0.2,
       heading: walkingTo,
       seatHeight: 0,
       time: this.figureTime,

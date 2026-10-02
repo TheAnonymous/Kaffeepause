@@ -21,6 +21,9 @@ export interface MotionState {
   seat?: { readonly x: number; readonly z: number; readonly yaw: number };
   /** Ob `followPoint` schon einmal gesetzt wurde (das erste Mal springt die Figur an ihren Platz). */
   followed?: boolean;
+  /** Letzte Position aus der Simulation und bis wann die Figur noch als gehend gilt. */
+  lastPoint?: { readonly x: number; readonly z: number };
+  steppingUntil?: number;
 }
 
 export function newMotionState(): MotionState {
@@ -90,4 +93,19 @@ export function followPoint(
   state.x += dx / lag * step;
   state.z += dz / lag * step;
   return { lag: lag - step, heading: { x: dx, z: dz } };
+}
+
+/** So lange nach der letzten Bewegung gehen die Beine noch weiter; überbrückt kurze Stopps beim Ausweichen. */
+const STEPPING_HOLD_SECONDS = 0.25;
+
+/**
+ * Ob die Figur gerade geht, gemessen daran, ob sie sich bewegt, nicht an ihrem Zustand: Wer zur Schlange
+ * oder zur Wartestelle läuft, geht auch; wer im Gang aufgehalten wird, tritt nicht auf der Stelle.
+ */
+export function trackStepping(state: MotionState, point: { readonly x: number; readonly z: number }, time: number): boolean {
+  if (state.lastPoint && Math.hypot(point.x - state.lastPoint.x, point.z - state.lastPoint.z) > 0.002) {
+    state.steppingUntil = time + STEPPING_HOLD_SECONDS;
+  }
+  state.lastPoint = { x: point.x, z: point.z };
+  return time < (state.steppingUntil ?? Number.NEGATIVE_INFINITY);
 }
