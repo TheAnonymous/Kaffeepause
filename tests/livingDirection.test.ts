@@ -140,7 +140,9 @@ describe('deterministische Navigations-Langzeitmatrix', () => {
               for (let right = left + 1; right < inside.length; right += 1) {
                 const first = inside[left]!;
                 const second = inside[right]!;
-                const separation = distance(first.position, second.position);
+                // Wer sich festgefahren hat, geht als letzter Ausweg kurz durch andere hindurch.
+                if (simulation.isPassingThrough(first) || simulation.isPassingThrough(second)) continue;
+                const separation = distance(simulation.bodyPosition(first), simulation.bodyPosition(second));
                 minimumGuestDistance = Math.min(minimumGuestDistance, separation);
                 if (separation < GUEST_RADIUS * 1.9) {
                   throw new Error(`overlap:${venue}:${seed}:${first.id}:${second.id}:${separation.toFixed(2)}`);

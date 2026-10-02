@@ -155,6 +155,8 @@ const BELL_CLICK_OFFSET = new Vector3(0, 0.1, 0);
 // Regen fällt draußen: hinter der Rückwand (−3,41 bis −3,63) und vor der Stadtkulisse
 // (−3,66), nur so breit wie das Fenster des Ortes. Wo die Wand geschlossen ist, verdeckt sie ihn.
 const SKY_BACKDROP_LIFT = new Color('#ffffff');
+/** Farbe von Nebel und Schnee draußen: ein helles, leicht kühles Grau. */
+const EXTERIOR_HAZE = new Color('#b9c4cc');
 const RAIN_Z = -3.635;
 
 const INITIAL_CAMERA_TRANSFORM: CameraTransform = Object.freeze({
@@ -184,6 +186,7 @@ export class DioramaRenderer {
   private look: DioramaLook;
   private active = false;
   private reducedMotion = false;
+  private readonly exteriorHaze = new Color();
   private sceneWidth = WORLD_WIDTH;
   /** Breite zu Höhe des gezeichneten Bilds; entspricht dem Fenster. */
   private viewAspect = WORLD_WIDTH / WORLD_HEIGHT;
@@ -654,7 +657,8 @@ export class DioramaRenderer {
   private applyLook(time: number): void {
     if (this.scene.fog instanceof FogExp2) {
       this.scene.fog.color.copy(this.look.sky);
-      this.scene.fog.density = 0.006 + this.look.fog * 0.038;
+      // Nebel liegt draußen vor dem Fenster, nicht im Raum: Der Raum bekommt nur einen leichten Schleier.
+      this.scene.fog.density = 0.006 + this.look.fog * 0.012;
     }
     this.webgl.toneMappingExposure = this.look.exposure;
     this.hemisphere.color.copy(this.look.fillColor).lerp(this.look.ambient, 0.28);
@@ -671,11 +675,14 @@ export class DioramaRenderer {
     for (const pool of this.venueSet.lightPools) pool.material.opacity = this.look.lightPoolOpacity;
     this.venueSet.floorMaterial.roughness = 0.55 - this.look.wetness * 0.2;
     this.venueSet.floorMaterial.metalness = 0.08 + this.look.wetness * 0.14;
+    // Nebel und Schnee machen die Welt draußen hell und weich: tags milchig, nachts matt.
+    const haze = Math.min(1, this.look.fog * 0.85 + this.look.snow * 0.45);
+    this.exteriorHaze.copy(EXTERIOR_HAZE).multiplyScalar(0.22 + this.look.daylight * 0.78);
     for (const [index, material] of this.venueSet.exteriorMaterials.entries()) {
       if (index === 0) {
         // Der Himmel hinter den Fenstern folgt Tageszeit und Wetter. Er leuchtet selbst
         // und nimmt kaum Raumlicht an, sonst hellen ihn nachts die Lampen durch die Wand auf.
-        material.emissive.copy(this.look.sky).lerp(SKY_BACKDROP_LIFT, 0.06);
+        material.emissive.copy(this.look.sky).lerp(SKY_BACKDROP_LIFT, 0.06).lerp(this.exteriorHaze, haze);
         material.color.copy(material.emissive).multiplyScalar(0.18);
         material.emissiveIntensity = 0.12 + this.look.daylight * 0.68;
         continue;
@@ -685,13 +692,13 @@ export class DioramaRenderer {
         ? material.userData.exteriorBase as Color
         : (material.userData.exteriorBase = material.color.clone()) as Color;
       material.color.copy(base).multiplyScalar(0.12);
-      material.emissive.copy(base);
+      material.emissive.copy(base).lerp(this.exteriorHaze, haze * 0.9);
       material.emissiveIntensity = 0.28 + this.look.daylight * 0.62;
     }
     if (this.windowArt) {
       // Das gemalte Stadtbild zeigt eine Abendstadt. Tagsüber tritt es zurück,
       // damit Himmel und Tageslicht durch die Scheibe fallen.
-      this.windowArt.material.opacity = 0.18 + this.look.night * 0.64;
+      this.windowArt.material.opacity = (0.18 + this.look.night * 0.64) * (1 - this.look.fog * 0.7);
     }
     const atmosphereCue = atmosphereLightCue(this.atmosphere, time);
     this.atmosphereTint.set(atmosphereCue.tint);
@@ -1495,7 +1502,7 @@ export class DioramaRenderer {
       const x = bounds.left + (projected.x + 1) * bounds.width / 2;
       const y = bounds.top + (1 - projected.y) * bounds.height / 2;
       return Math.hypot(pointer.x - x, pointer.y - y) <= REACTION_ACTIVATION_RADIUS;
-    });
+    }, [...this.guestNodes.values()].map((node) => node.motion));
     if (petted && !this.catPetted) {
       this.catPurrToken += 1;
       this.canvas.dataset.catPurr = String(this.catPurrToken);

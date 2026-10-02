@@ -7,6 +7,7 @@ import { participantMidpoint } from '../../src/diorama/cameraFocus';
 import { advanceMotion, followPoint, newMotionState, type MotionState } from '../../src/diorama/figureMotion';
 import { VoxelFigure } from '../../src/diorama/voxelFigure';
 import { buildVenue } from '../../src/diorama/venueBuilder';
+import { CafeCat } from '../../src/diorama/cafeCat';
 import { BARISTA_APPEARANCE, BARISTA_PALETTES, SEAT_TOP_HEIGHT } from '../../src/diorama/characters';
 import { DIORAMA, worldToCharacterDiorama } from '../../src/diorama/types';
 import type { VenueKind } from '../../src/venue';
@@ -31,11 +32,15 @@ export interface SweepFigure {
   readonly leaving?: boolean;
   /** Drehung, in der ein Aufgestandener noch bleibt. */
   readonly leaveYaw?: number;
+  /** Geht als letzter Ausweg durch andere hindurch (festgefahrener Gang). */
+  readonly passingThrough?: boolean;
 }
 
 export interface SweepFrame {
   readonly time: number;
   readonly figures: readonly SweepFigure[];
+  /** Mochi, nur im Café. */
+  readonly cat?: { readonly x: number; readonly y: number; readonly z: number };
 }
 
 export interface SweepOptions {
@@ -99,6 +104,7 @@ export function runSweep(options: SweepOptions, onFrame: (frame: SweepFrame) => 
     motion: newMotionState(),
   };
 
+  const cat = venue === 'cafe' ? new CafeCat() : undefined;
   let time = 0;
   for (let frame = 0; frame < seconds / dt; frame += 1) {
     simulation.update(dt);
@@ -150,6 +156,7 @@ export function runSweep(options: SweepOptions, onFrame: (frame: SweepFrame) => 
         spotId: guest.activitySpotId,
         leaving: holdYaw !== undefined,
         leaveYaw: holdYaw,
+        passingThrough: simulation.isPassingThrough(guest),
       });
     }
     for (const id of nodes.keys()) {
@@ -168,6 +175,7 @@ export function runSweep(options: SweepOptions, onFrame: (frame: SweepFrame) => 
       id: 'barista', barista: true, state: catchingUp ? 'walking' : snapshot.barista.task, x: barista.motion.x, z: barista.motion.z,
       seated: false, yaw: barista.figure.root.rotation.y,
     });
-    onFrame({ time, figures });
+    if (cat) cat.update(time, false, () => false, figures.filter((figure) => !figure.barista));
+    onFrame({ time, figures, cat: cat ? { x: cat.root.position.x, y: cat.root.position.y, z: cat.root.position.z } : undefined });
   }
 }

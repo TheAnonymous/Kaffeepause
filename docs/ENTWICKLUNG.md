@@ -18,6 +18,10 @@ Alle Gelenke, die Körperhöhe und die Blickrichtung folgen ihrer Zielhaltung we
 
 Wo eine Gast-Figur gezeichnet wird und wohin sie sich dreht, entscheidet `figureMotion.ts` (Darstellung und Tests nutzen dasselbe): Der Körper eines Sitzenden folgt immer dem Stuhl, nie der Blickrichtung einer Reaktion oder Geschichte, sonst dreht er sich in die Lehne. Auf den letzten Schritten zum Platz dreht sich der Gast schon zum Stuhl, und nach dem Aufstehen bleibt er noch ein Stück zum Stuhl gedreht. Springt die Simulation die Bedienung an einen anderen Platz (Szenen an der Theke), läuft sie in der Darstellung hinüber.
 
+Damit sich die Simulation nicht festfährt, gelten vier Regeln (`cafeSimulation.ts`, `layout.ts`): Neue Gäste stellen sich nur hinten in der Schlange an (`nextQueuePlace`), denn ein reservierter Platz vorn, an dem man nicht vorbeikommt, hat früher ganze Schlangen minutenlang eingefroren. Wege weichen erst mit bequemem, dann mit knappem Abstand allen Wartenden und Stühlen aus (`findVenueRoute`). Kommt ein Gast fünf Sekunden nicht weiter oder 25 Sekunden seinem Ziel nicht näher, geht er als letzter Ausweg kurz durch andere hindurch (`passThroughUntil`, `isPassingThrough`). Wer auf der Fensterbank sitzt, sitzt hinter dem Gang vor ihr (`bodyOffset`), sonst wäre der schmale Gang für alle versperrt. `tests/queue.test.ts` hält fest, dass auch in Fällen, die früher festhingen, niemand länger als zwei Minuten wartet.
+
+Mochi (`cafeCat.ts`) wartet, bevor sie losläuft, solange jemand in ihrem Weg steht, und bleibt stehen, wenn ihr unterwegs jemand nahe kommt (`catMustWait`). Ganz vermeiden lässt sich das Zusammentreffen im schmalen Gang vor der Bank nicht; in den Läufen steht noch in etwa ein bis zwei Prozent der Zeit jemand auf ihrem Platz.
+
 `tests/sweep.test.ts` spielt pro Ort 15 Minuten Szenenzeit durch (mit Geschichten, Missgeschicken und einer Maus, die Gäste zufällig zur Seite wendet) und vermisst jedes Bild: Stehen Gehende in Möbeln oder Sitzenden? Drehen sich Sitzende in die Lehne? Springt die Bedienung? Das Prüfgerüst steht in `tests/support/sweep.ts`; neue Fehler lassen sich dort als weitere Messung ergänzen. Die Laufwege weichen leeren Stühlen und Hockern aus (`planRoute` in `cafeSimulation.ts`), und Abstände zwischen Figuren zählen in Diorama-Einheiten, weil ein Pixel des Grundrisses in der Tiefe doppelt so lang ist wie in der Breite (`worldDistance` in `layout.ts`).
 
 Die Eingangstür beschreibt `doorSpec()` in `venueBuilder.ts`: Scharnier an einer Zarge der Wandöffnung, Schwenk nach innen. `doorShouldBeOpen()` hält sie offen, solange jemand ein- oder ausgeht oder sich im Schwenkbereich bewegt. `tests/door.test.ts` prüft den ganzen Schwenk gegen Wände, Möbel, Sitzplätze und den Laufweg.
@@ -41,6 +45,8 @@ Jeder Ort hat ein Fenster in der Rückwand (`VENUE_WINDOWS` in `venueBuilder.ts`
 Die Szene wird zuerst linear in einen Zwischenpuffer gerendert. Erst der letzte Schritt in `fixedRenderPipeline.ts` wendet Belichtung, Tone-Mapping und die sRGB-Umrechnung an (`#include <tonemapping_fragment>` und `#include <colorspace_fragment>`). Fehlen diese beiden Zeilen, wird das Bild deutlich zu dunkel und zu satt.
 
 Helligkeit, Lampen und Aufhellung pro Ort und Tageszeit stehen in `src/diorama/look.ts` und `src/diorama/visualProfiles.ts`. Nach Änderungen dort zeigt `npx playwright test e2e/look.spec.ts` das Ergebnis als Bilder in `look/` und prüft Mindesthelligkeit und Kontrast.
+
+Nebel und Schnee wirken draußen vor dem Fenster, nicht im Raum: Der Raum bekommt nur einen leichten Schleier (`FogExp2` in `applyLook()`), während Himmel und Häuser hinter dem Fenster zur hellen, weichen Farbe `EXTERIOR_HAZE` verblassen. Wer das Wetter prüfen will, lässt alle Kombinationen aus `?time=` und `?weather=` durchlaufen und legt die Bilder nebeneinander; der Unterschied zwischen klarem Himmel, Regen und Schnee ist nur im Fenster sichtbar.
 
 ## Testparameter
 

@@ -3,7 +3,10 @@ import {
   VENUE_LAYOUTS,
   WORLD_WIDTH,
   activitySpotById,
+  findVenueRoute,
+  PASSING_CLEARANCE,
   planVenueRoute,
+  TIGHT_CLEARANCE,
   pointIsOutsideVenue,
   pointHitsVenueCollider,
   pointWithinVenueWalkableArea,
@@ -224,6 +227,12 @@ interface GuestSnapshot {
   reservedResources: readonly string[];
 }
 
+/** Nach so vielen Sekunden Stillstand geht ein Gast durch andere hindurch, und zwar so lange. */
+const PASS_THROUGH_AFTER_SECONDS = 5;
+const PASS_THROUGH_SECONDS = 4;
+/** So lange darf ein Gast seinem Ziel nicht näher kommen, bevor er als festgefahren gilt. */
+const NO_PROGRESS_SECONDS = 25;
+
 interface NavigationRuntime {
   lastPosition: Point;
   progressOrigin: Point;
@@ -233,6 +242,11 @@ interface NavigationRuntime {
   yieldUntil: number;
   avoidGuestId?: string;
   priorityBoostUntil: number;
+  /** Bis dahin geht der Gast durch andere hindurch: letzter Ausweg aus einem festgefahrenen Gang. */
+  passThroughUntil: number;
+  /** Geringster bisher erreichter Abstand zum Ziel und wann; kommt ein Gast lange nicht näher, steckt er fest. */
+  bestDistance: number;
+  bestDistanceAt: number;
   recoveryPlaceId?: string;
   bypassBlockerId?: string;
   deadlockReported: boolean;
@@ -569,7 +583,7 @@ export class CafeSimulation {
 
   spawnGuest(): Guest | undefined {
     if (this.guests.length >= this.maxGuests) return undefined;
-    const queuePlace = this.findAvailable(this.layout.queuePlaces);
+    const queuePlace = this.nextQueuePlace();
     if (!queuePlace) return undefined;
 
     const guest = this.makeGuest('entering', this.layout.outside);
@@ -1589,6 +1603,8 @@ export class CafeSimulation {
       runtime.lastPosition = copyPoint(guest.position);
       runtime.progressOrigin = copyPoint(guest.position);
       runtime.bypassBlockerId = undefined;
+      runtime.bestDistance = Number.POSITIVE_INFINITY;
+      runtime.bestDistanceAt = this.stats.elapsed;
     }
     guest.target = copyPoint(target);
     guest.waypoints = this.planRoute(guest.position, guest.target);
@@ -1616,7 +1632,7 @@ export class CafeSimulation {
       .filter((guest) => !this.guestIsMoving(guest)
         && !this.isOutside(guest.position)
         && distance(guest.position, start) > 0.2)
-      .map((guest) => guest.position);
+      .map((guest) => this.bodyPosition(guest));
     // Auch leere Stühle und Hocker sind im Weg; nur das Ziel selbst darf man betreten.
     // Bank und Sofa zählen nicht: Ihr Platz steht vor dem Möbel, das als Hindernis schon eingetragen ist.
     const seats = this.layout.activitySpots
@@ -1624,13 +1640,13 @@ export class CafeSimulation {
         && distance(spot, target) > 0.2 && distance(spot, start) > 0.2);
     const occupied = [...standing, ...seats];
     const planInsideVenue = (from: Point, to: Point): Point[] => {
-      const occupiedAware = planVenueRoute(this.layout, from, to, occupied);
-      // An empty route can mean either "direct" or "no occupied-aware path".
-      // If furniture blocks the direct segment, fall back to the static route
-      // instead of repeatedly attempting an impossible diagonal.
-      return occupiedAware.length > 0 || segmentIsClear(this.layout, from, to)
-        ? occupiedAware
-        : planVenueRoute(this.layout, from, to);
+      // Erst mit bequemem Abstand zu allen im Weg, dann knapper; nur wenn gar nichts bleibt,
+      // der freie Weg an den Möbeln entlang. Wer dann auf Wartende trifft, weicht ihnen im Gehen aus.
+      for (const clearance of [PASSING_CLEARANCE, TIGHT_CLEARANCE]) {
+        const route = findVenueRoute(this.layout, from, to, occupied, clearance);
+        if (route) return route;
+      }
+      return planVenueRoute(this.layout, from, to);
     };
     const { minX, maxX, minY } = this.layout.navigation;
     const beforeEntrance = this.layout.entryFlow === 'left' ? start.x < minX
@@ -1660,6 +1676,9 @@ export class CafeSimulation {
       recoveryCooldown: 0,
       yieldUntil: 0,
       priorityBoostUntil: 0,
+      passThroughUntil: 0,
+      bestDistance: Number.POSITIVE_INFINITY,
+      bestDistanceAt: this.stats.elapsed,
       deadlockReported: false,
       mode: 'idle',
     };
@@ -1673,12 +1692,24 @@ export class CafeSimulation {
     this.navigationRuntime.delete(guestId);
   }
 
+  /** Ob der Gast gerade als letzter Ausweg durch andere hindurchgeht (siehe `passThroughUntil`). */
+  isPassingThrough(guest: Guest): boolean {
+    return (this.navigationRuntime.get(guest.id)?.passThroughUntil ?? 0) > this.stats.elapsed;
+  }
+
   private guestIsMoving(guest: Guest): boolean {
     return guest.state === 'entering'
       || guest.state === 'exiting'
       || guest.state === 'queueing'
       || guest.state === 'waiting'
       || guest.state.includes('walking');
+  }
+
+  /** Wo der Körper eines Gastes ist: Wer auf der Fensterbank sitzt, sitzt hinter dem Gang vor ihr. */
+  bodyPosition(guest: Guest): Point {
+    if (guest.state !== 'activity') return guest.position;
+    const offset = activitySpotById(this.layout, guest.activitySpotId)?.bodyOffset;
+    return offset ? { x: guest.position.x + offset.x, y: guest.position.y + offset.y } : guest.position;
   }
 
   private guestClearance(other: Guest): number {
@@ -1688,10 +1719,11 @@ export class CafeSimulation {
 
   private occupancyBlocker(guest: Guest, candidate: Point): Guest | undefined {
     if (this.isOutside(candidate)) return undefined;
+    if (this.navigationFor(guest).passThroughUntil > this.stats.elapsed) return undefined;
     return this.guests.find((other) => (
       other !== guest
       && !this.isOutside(other.position)
-      && distance(candidate, other.position) < this.guestClearance(other)
+      && distance(candidate, this.bodyPosition(other)) < this.guestClearance(other)
     ));
   }
 
@@ -1817,6 +1849,27 @@ export class CafeSimulation {
     }
   }
 
+  /**
+   * Letzte Sicherung gegen festgefahrene Gäste: Kommt jemand lange seinem Ziel nicht näher (auch wenn er
+   * sich dabei hin und her bewegt), geht er den freien Weg und durch andere hindurch, bis er ankommt.
+   */
+  private watchProgress(guest: Guest, runtime: NavigationRuntime): void {
+    if (this.isOutside(guest.position)) return;
+    const remaining = distance(guest.position, guest.target);
+    const now = this.stats.elapsed;
+    // Wer angekommen ist und wartet, steckt nicht fest.
+    if (remaining < runtime.bestDistance - 2 || remaining <= 1) {
+      runtime.bestDistance = remaining;
+      runtime.bestDistanceAt = now;
+      return;
+    }
+    if (now - runtime.bestDistanceAt < NO_PROGRESS_SECONDS) return;
+    runtime.passThroughUntil = now + PASS_THROUGH_SECONDS * 2;
+    guest.waypoints = planVenueRoute(this.layout, guest.position, guest.target);
+    runtime.bestDistance = remaining;
+    runtime.bestDistanceAt = now;
+  }
+
   private replanGuest(guest: Guest, runtime: NavigationRuntime): void {
     if (runtime.replanCooldown > 0) return;
     const route = this.planRoute(guest.position, guest.target);
@@ -1885,6 +1938,9 @@ export class CafeSimulation {
     if (runtime.blockedSeconds >= 0.35) this.replanGuest(guest, runtime);
     if (runtime.blockedSeconds >= 0.85 && this.tryNavigationRecovery(guest, runtime, blocker)) return;
     if (runtime.blockedSeconds >= 1.5) runtime.priorityBoostUntil = this.stats.elapsed + 2.8;
+    // Hilft kein Ausweichen und keine Umleitung, geht der Gast kurz durch die anderen hindurch,
+    // statt mit ihnen in einem schmalen Gang für immer festzustecken.
+    if (runtime.blockedSeconds >= PASS_THROUGH_AFTER_SECONDS) runtime.passThroughUntil = this.stats.elapsed + PASS_THROUGH_SECONDS;
     if (runtime.blockedSeconds >= 6 && !runtime.deadlockReported) {
       runtime.deadlockReported = true;
       this.stats.navigationDeadlocks += 1;
@@ -1902,6 +1958,7 @@ export class CafeSimulation {
     const runtime = this.navigationFor(guest);
     runtime.replanCooldown = Math.max(0, runtime.replanCooldown - delta);
     runtime.recoveryCooldown = Math.max(0, runtime.recoveryCooldown - delta);
+    this.watchProgress(guest, runtime);
     if (runtime.yieldUntil > this.stats.elapsed && runtime.avoidGuestId) {
       const priorityGuest = this.guests.find((entry) => entry.id === runtime.avoidGuestId);
       if (priorityGuest) {
@@ -1997,6 +2054,19 @@ export class CafeSimulation {
     return true;
   }
 
+  /**
+   * Der Platz hinter dem Letzten in der Schlange. Ein freier Platz weiter vorn gehört dem Nächsten in der
+   * Reihe, der gleich aufrückt; wer ihn sich vorher reserviert, käme an den Wartenden nicht vorbei und
+   * würde mit ihnen für immer feststecken. Dann kommt vorerst niemand Neues herein.
+   */
+  private nextQueuePlace(): Place | undefined {
+    const places = this.layout.queuePlaces;
+    let last = -1;
+    for (const [index, place] of places.entries()) if (this.reservations.ownerOf(place.id)) last = index;
+    const behind = places[last + 1];
+    return behind && !this.reservations.ownerOf(behind.id) ? behind : undefined;
+  }
+
   private findAvailable<T extends Place>(places: readonly T[]): T | undefined {
     const open = places.filter((place) => !this.reservations.ownerOf(place.id));
     return open.length > 0 ? this.random.pick(open) : undefined;
@@ -2015,7 +2085,7 @@ export class CafeSimulation {
       for (let right = left + 1; right < this.guests.length; right += 1) {
         const second = this.guests[right];
         if (!second || this.isOutside(second.position)) continue;
-        minimumGuestDistance = Math.min(minimumGuestDistance, distance(first.position, second.position));
+        minimumGuestDistance = Math.min(minimumGuestDistance, distance(this.bodyPosition(first), this.bodyPosition(second)));
       }
     }
     const runtimes = this.guests.map((guest) => this.navigationFor(guest));

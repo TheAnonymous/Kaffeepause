@@ -51,6 +51,15 @@ function lerp(from: Point3, to: Point3, progress: number, hop = 0): Point3 {
   };
 }
 
+/** Wie nah jemand sein darf, bevor Mochi stehen bleibt und wartet (in Diorama-Einheiten). */
+const YIELD_DISTANCE = 0.85;
+/** Streifen vor der Bank bis zum Kuchen, den Mochi läuft und auf dem auch Gäste zur Schlange gehen. */
+const LANE = { minX: -5.6, maxX: 2.8, minZ: -1.5, maxZ: -0.55 } as const;
+/** Zeitpunkte im Tagesablauf, kurz bevor Mochi losläuft. */
+const DEPARTURES = [83.6, 125.6] as const;
+
+export interface CatObstacle { readonly x: number; readonly z: number }
+
 /** Ablauf über 150 Sekunden; beim Betreten schläft Mochi. */
 export function catStateAt(time: number, reducedMotion = false): CatState {
   if (reducedMotion) return { pose: 'sleep', position: BENCH, facing: 1 };
@@ -65,6 +74,16 @@ export function catStateAt(time: number, reducedMotion = false): CatState {
   if (t < 138) return { pose: 'walk', position: lerp(BENCH_FLOOR, BENCH, (t - 137.4) / 0.6, 0.35), facing: -1 };
   if (t < 144) return { pose: 'sit', position: BENCH, facing: 1 };
   return { pose: 'sleep', position: BENCH, facing: 1 };
+}
+
+/** Ob Mochi jetzt warten soll: unterwegs, wenn jemand nah ist; vor dem Losgehen, solange ihr Weg belegt ist. */
+export function catMustWait(state: CatState, clock: number, obstacles: readonly CatObstacle[]): boolean {
+  if (state.pose === 'walk') {
+    return obstacles.some((entry) => Math.hypot(entry.x - state.position.x, entry.z - state.position.z) < YIELD_DISTANCE);
+  }
+  const t = ((clock % LOOP_SECONDS) + LOOP_SECONDS) % LOOP_SECONDS;
+  if (!DEPARTURES.some((start) => t >= start && t < start + 0.4)) return false;
+  return obstacles.some((entry) => entry.x > LANE.minX && entry.x < LANE.maxX && entry.z > LANE.minZ && entry.z < LANE.maxZ);
 }
 
 export class CafeCat {
@@ -83,6 +102,9 @@ export class CafeCat {
   private visitFrom?: CatState;
   /** Summe aller Besuche; der normale Tagesablauf pausiert währenddessen. */
   private visitedSeconds = 0;
+  /** Zeit, die Mochi gewartet hat, weil Gäste im Weg standen; der Tagesablauf pausiert währenddessen. */
+  private waitedSeconds = 0;
+  private lastUpdate?: number;
   private readonly screenPoint = new Vector3();
 
   constructor() {
@@ -142,9 +164,14 @@ export class CafeCat {
   /** Klick auf Mochi: Sie kommt zu dir. Gibt false zurück, wenn sie schon unterwegs ist. */
   summon(time: number, reducedMotion: boolean): boolean {
     if (this.visitStart !== undefined) return false;
-    this.visitFrom = catStateAt(time - this.visitedSeconds, reducedMotion);
+    this.visitFrom = catStateAt(time - this.visitedSeconds - this.waitedSeconds, reducedMotion);
     this.visitStart = time;
     return true;
+  }
+
+  /** Wie lange Mochi insgesamt gewartet hat, weil jemand im Weg stand. */
+  get waited(): number {
+    return this.waitedSeconds;
   }
 
   /** Punkt über Mochis Kopf für Klick und Mausnähe. */
@@ -153,7 +180,14 @@ export class CafeCat {
   }
 
   /** Gibt zurück, ob Mochi gerade gestreichelt wird (Maus liegt auf ihr). */
-  update(time: number, reducedMotion: boolean, isNear: (point: Vector3) => boolean): boolean {
+  update(
+    time: number,
+    reducedMotion: boolean,
+    isNear: (point: Vector3) => boolean,
+    obstacles: readonly CatObstacle[] = [],
+  ): boolean {
+    const step = this.lastUpdate === undefined ? 0 : time - this.lastUpdate;
+    this.lastUpdate = time;
     let visiting = false;
     let state: CatState;
     if (this.visitStart !== undefined && this.visitFrom && time - this.visitStart < CAT_VISIT_SECONDS) {
@@ -165,7 +199,13 @@ export class CafeCat {
         this.visitStart = undefined;
         this.visitFrom = undefined;
       }
-      state = catStateAt(time - this.visitedSeconds, reducedMotion);
+      const clock = time - this.visitedSeconds - this.waitedSeconds;
+      state = catStateAt(clock, reducedMotion);
+      // Mochi läuft nicht durch Gäste: Sie wartet vor dem Losgehen und bleibt stehen, wenn jemand kommt.
+      if (!reducedMotion && step > 0 && step <= 0.5 && catMustWait(state, clock, obstacles)) {
+        this.waitedSeconds += step;
+        state = { ...state, pose: state.pose === 'walk' ? 'sit' : state.pose };
+      }
     }
     this.screenPoint.set(state.position.x, state.position.y + 0.25, state.position.z);
     const petted = isNear(this.screenPoint);

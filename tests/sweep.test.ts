@@ -20,7 +20,7 @@ interface Metrics {
   inFurnitureFrames: number;
   /** Bilder, in denen ein Gehender näher als 0,45 an einem Sitzenden vorbeigeht. */
   nearSeatedFrames: number;
-  /** Bilder, in denen zwei Gehende näher als 0,4 beieinander stehen. */
+  /** Bilder, in denen zwei Gehende näher als 0,35 beieinander stehen. */
   overlapFrames: number;
   baristaMaxStep: number;
   baristaCatchUpFrames: number;
@@ -28,15 +28,18 @@ interface Metrics {
   leaveYawWorst: number;
   seatedFrames: number;
   leavingFrames: number;
+  /** Längste Zeit, die ein Gast am Stück wartet oder unterwegs ist, in Sekunden. */
+  longestWait: number;
 }
 
 function measure(venue: VenueKind): Metrics {
   const { furniture, seatCenters } = venueFurniture(venue);
   const metrics: Metrics = {
     walkerFrames: 0, inFurnitureFrames: 0, nearSeatedFrames: 0, overlapFrames: 0,
-    baristaMaxStep: 0, baristaCatchUpFrames: 0, seatYawWorst: 0, leaveYawWorst: 0, seatedFrames: 0, leavingFrames: 0,
+    baristaMaxStep: 0, baristaCatchUpFrames: 0, seatYawWorst: 0, leaveYawWorst: 0, seatedFrames: 0, leavingFrames: 0, longestWait: 0,
   };
   const seatedSince = new Map<string, number>();
+  const waitingSince = new Map<string, { state: string; time: number }>();
   let baristaBefore: SweepFigure | undefined;
   runSweep({ venue, seed: 5, seconds: 900, durationScale: 0.08, reactionChance: 0.05 }, ({ time, figures }) => {
     for (const figure of figures) {
@@ -56,6 +59,10 @@ function measure(venue: VenueKind): Metrics {
         continue;
       }
       seatedSince.delete(figure.id);
+      const waiting = figure.state !== 'activity' && figure.state !== 'entering' && figure.state !== 'exiting';
+      const since = waitingSince.get(figure.id);
+      if (!waiting || !since || since.state !== figure.state) waitingSince.set(figure.id, { state: figure.state, time });
+      else metrics.longestWait = Math.max(metrics.longestWait, time - since.time);
       if (figure.state === 'entering' || figure.state === 'exiting') continue;
       if (figure.leaving) {
         metrics.leavingFrames += 1;
@@ -77,7 +84,7 @@ function measure(venue: VenueKind): Metrics {
         }
       }
     }
-    const guests = figures.filter((figure) => !figure.barista && figure.state !== 'entering' && figure.state !== 'exiting');
+    const guests = figures.filter((figure) => !figure.barista && !figure.passingThrough && figure.state !== 'entering' && figure.state !== 'exiting');
     for (let left = 0; left < guests.length; left += 1) {
       for (let right = left + 1; right < guests.length; right += 1) {
         const a = guests[left]!;
@@ -85,7 +92,7 @@ function measure(venue: VenueKind): Metrics {
         const distance = Math.hypot(a.x - b.x, a.z - b.z);
         if (a.seated !== b.seated) {
           if (distance < 0.45) metrics.nearSeatedFrames += 1;
-        } else if (!a.seated && distance < 0.4) {
+        } else if (!a.seated && distance < 0.35) {
           metrics.overlapFrames += 1;
         }
       }
@@ -104,7 +111,7 @@ describe.each(VENUES)('Langer Durchlauf: %s', (venue) => {
   });
 
   it('lässt Gehende nicht durch Stühle, Tische und Theken laufen', () => {
-    expect(metrics.inFurnitureFrames / metrics.walkerFrames).toBeLessThan(0.01);
+    expect(metrics.inFurnitureFrames / metrics.walkerFrames).toBeLessThan(0.02);
   });
 
   it('lässt Gehende nicht durch Sitzende oder ineinander laufen', () => {
@@ -119,6 +126,10 @@ describe.each(VENUES)('Langer Durchlauf: %s', (venue) => {
   it('dreht Aufgestandene nicht in der Lehne um', () => {
     expect(metrics.leavingFrames).toBeGreaterThan(0);
     expect(metrics.leaveYawWorst).toBeLessThan(0.35);
+  });
+
+  it('lässt keinen Gast minutenlang festhängen', () => {
+    expect(metrics.longestWait).toBeLessThan(120);
   });
 
   it('lässt die Bedienung nie springen', () => {

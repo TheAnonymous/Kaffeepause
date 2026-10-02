@@ -44,6 +44,11 @@ interface ActivitySpotBase extends Place {
   readonly groupId: string;
   readonly tags: readonly ActivitySpotTag[];
   readonly activities: readonly GuestActivity[];
+  /**
+   * Wo der Körper des Sitzenden gegenüber dem Platz tatsächlich ist (Pixel). Auf der Fensterbank
+   * sitzt man hinter dem Gang, in dem man vorher stand; wer vorbeigeht, kommt dem Sitzenden nicht in die Quere.
+   */
+  readonly bodyOffset?: Readonly<Point>;
 }
 
 export interface SeatedActivitySpot extends ActivitySpotBase {
@@ -98,9 +103,10 @@ const cafe: VenueLayout = {
   entrance: { x: 20, y: 184 },
   outside: { x: -16, y: 184 },
   colliders: [
-    // Reicht bis zur Vorderkante der Polster, damit Vorbeigehende nicht an der Bank kleben.
-    { id: 'cafe-window-bench', x: 60, y: 145, width: 110, height: 10 },
-    { id: 'cafe-table-a', x: 102, y: 172, width: 38, height: 10 },
+    // Nicht tiefer: Zwischen Bank und Tisch bleibt nur ein schmaler Gang, in dem sich sonst Gäste festfahren.
+    { id: 'cafe-window-bench', x: 60, y: 145, width: 110, height: 8 },
+    // Vier Pixel tiefer als früher: Der Gang zwischen Fensterbank und Tisch muss breit genug sein, dass zwei Gäste aneinander vorbeikommen.
+    { id: 'cafe-table-a', x: 102, y: 176, width: 38, height: 10 },
     // Auf Höhe der beiden Kopfplätze (y 198), damit die Gäste an den Tischenden sitzen.
     { id: 'cafe-table-b', x: 176, y: 192, width: 44, height: 11 },
     { id: 'cafe-counter', x: 274, y: 139, width: 105, height: 18 },
@@ -123,10 +129,10 @@ const cafe: VenueLayout = {
     { id: 'cafe-pass-counter', x: 214, y: 208 },
   ],
   activitySpots: [
-    { id: 'cafe-window-a', x: 86, y: 160, kind: 'bench', pose: 'seated', seatOrientation: 'front', facing: 1, groupId: 'cafe-window', tags: ['window'], activities: QUIET_ACTIVITIES },
-    { id: 'cafe-window-b', x: 145, y: 160, kind: 'bench', pose: 'seated', seatOrientation: 'front', facing: -1, groupId: 'cafe-window', tags: ['window'], activities: QUIET_ACTIVITIES },
-    { id: 'cafe-table-a1', x: 91, y: 180, kind: 'table', pose: 'seated', seatOrientation: 'right', facing: 1, groupId: 'cafe-table-a', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
-    { id: 'cafe-table-a2', x: 151, y: 180, kind: 'table', pose: 'seated', seatOrientation: 'left', facing: -1, groupId: 'cafe-table-a', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
+    { id: 'cafe-window-a', x: 86, y: 160, bodyOffset: { x: 0, y: -8 }, kind: 'bench', pose: 'seated', seatOrientation: 'front', facing: 1, groupId: 'cafe-window', tags: ['window'], activities: QUIET_ACTIVITIES },
+    { id: 'cafe-window-b', x: 145, y: 160, bodyOffset: { x: 0, y: -8 }, kind: 'bench', pose: 'seated', seatOrientation: 'front', facing: -1, groupId: 'cafe-window', tags: ['window'], activities: QUIET_ACTIVITIES },
+    { id: 'cafe-table-a1', x: 91, y: 184, kind: 'table', pose: 'seated', seatOrientation: 'right', facing: 1, groupId: 'cafe-table-a', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
+    { id: 'cafe-table-a2', x: 151, y: 184, kind: 'table', pose: 'seated', seatOrientation: 'left', facing: -1, groupId: 'cafe-table-a', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
     { id: 'cafe-table-b1', x: 165, y: 198, kind: 'table', pose: 'seated', seatOrientation: 'right', facing: 1, groupId: 'cafe-table-b', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
     { id: 'cafe-table-b2', x: 231, y: 198, kind: 'table', pose: 'seated', seatOrientation: 'left', facing: -1, groupId: 'cafe-table-b', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
   ],
@@ -311,8 +317,22 @@ export function planVenueRoute(
   target: Point,
   avoidPoints: readonly Readonly<Point>[] = [],
 ): Point[] {
+  return findVenueRoute(layout, start, target, avoidPoints) ?? [];
+}
+
+/** Knappster Abstand, mit dem man an jemandem vorbeigeht, wenn sonst kein Weg bliebe (Schultern fast an Schultern). */
+export const TIGHT_CLEARANCE = 0.45;
+
+/** Wie `planVenueRoute`, meldet aber `undefined`, wenn es mit den Hindernissen keinen Weg gibt. */
+export function findVenueRoute(
+  layout: VenueLayout,
+  start: Point,
+  target: Point,
+  avoidPoints: readonly Readonly<Point>[] = [],
+  clearance = PASSING_CLEARANCE,
+): Point[] | undefined {
   const avoidsOccupiedPoint = (point: Point): boolean => avoidPoints.every((occupied) => (
-    worldDistance(point, occupied) >= PASSING_CLEARANCE
+    worldDistance(point, occupied) >= clearance
   ));
   const segmentAvoidsOccupiedPoints = (from: Point, to: Point): boolean => {
     const steps = Math.max(1, Math.ceil(Math.hypot(from.x - to.x, from.y - to.y) / 2));
@@ -347,7 +367,7 @@ export function planVenueRoute(
   };
   const startKey = nearestVisibleNode(start);
   const endKey = nearestVisibleNode(target);
-  if (!startKey || !endKey) return [];
+  if (!startKey || !endKey) return undefined;
   const queue = [startKey];
   const visited = new Set(queue);
   const previous = new Map<string, string>();
@@ -369,11 +389,11 @@ export function planVenueRoute(
       queue.push(nextKey);
     }
   }
-  if (!visited.has(endKey)) return [];
+  if (!visited.has(endKey)) return undefined;
   const pathKeys = [endKey];
   while (pathKeys[0] !== startKey) {
     const predecessor = previous.get(pathKeys[0] ?? '');
-    if (!predecessor) return [];
+    if (!predecessor) return undefined;
     pathKeys.unshift(predecessor);
   }
   return pathKeys.map((key) => {
