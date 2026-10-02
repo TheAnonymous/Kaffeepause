@@ -135,6 +135,14 @@ function seeded(index: number, salt: number): number {
   return value - Math.floor(value);
 }
 
+/** Seitenverhältnis, für das der Raum gebaut ist (16:9). */
+const DESIGN_ASPECT = WORLD_WIDTH / WORLD_HEIGHT;
+/** Schmaler als das zeigt die Kamera nur einen Ausschnitt und fährt durch den Raum (Handys, Tablets hochkant). */
+const TOUR_ASPECT = 1.5;
+const MINIMUM_SCENE_WIDTH = 96;
+/** Breiter als das zeigt das Bild links und rechts etwas mehr als den Raum, statt noch weiter heranzurücken. */
+const WIDEST_FITTED_ASPECT = 2.4;
+
 /** Kopfhöhe einer Figur an ihrem Platz; ohne Platz steht sie. */
 function characterTop(spot: ActivitySpot | undefined): number {
   return spot?.pose === 'seated' ? seatedHeadHeight(spot.kind) : DIORAMA.standingHeight;
@@ -177,6 +185,8 @@ export class DioramaRenderer {
   private active = false;
   private reducedMotion = false;
   private sceneWidth = WORLD_WIDTH;
+  /** Breite zu Höhe des gezeichneten Bilds; entspricht dem Fenster. */
+  private viewAspect = WORLD_WIDTH / WORLD_HEIGHT;
   private doorOpen = 0;
   private activeSpeechBubbles = 0;
   private pointerSample?: PointerSample;
@@ -533,19 +543,32 @@ export class DioramaRenderer {
 
   resize(reducedMotion: boolean): void {
     this.reducedMotion = reducedMotion;
-    const mobile = window.innerWidth < 700;
     const aspect = window.innerWidth / Math.max(1, window.innerHeight);
-    this.sceneWidth = mobile
-      ? Math.max(112, Math.min(210, Math.round(WORLD_HEIGHT * aspect)))
-      : WORLD_WIDTH;
-    const width = this.sceneWidth * this.qualityProfile.renderScale;
+    // Das Bild hat immer das Seitenverhältnis des Fensters, sonst wäre es verzerrt.
+    // Sehr schmale Fenster zeigen nur einen Ausschnitt, durch den die Kamera fährt;
+    // alle anderen zeigen die ganze Breite des Raums (siehe `fitFieldOfView`).
+    const touring = aspect < TOUR_ASPECT;
+    this.sceneWidth = touring ? Math.max(MINIMUM_SCENE_WIDTH, Math.round(WORLD_HEIGHT * aspect)) : WORLD_WIDTH;
+    this.viewAspect = touring ? this.sceneWidth / WORLD_HEIGHT : aspect;
     const height = WORLD_HEIGHT * this.qualityProfile.renderScale;
+    const width = Math.round(height * this.viewAspect);
     this.webgl.setSize(width, height, false);
     this.pipeline.resize(width, height);
     this.perspective.aspect = width / height;
     this.perspective.updateProjectionMatrix();
-    this.camera.configure(this.sceneWidth, mobile, reducedMotion);
+    this.camera.configure(this.sceneWidth, touring, reducedMotion);
     this.canvas.dataset.cameraMode = this.camera.mode;
+  }
+
+  /**
+   * Hält die Breite des Raums im Bild, egal wie breit das Fenster ist: schmalere Fenster zeigen mehr
+   * Höhe, breitere rücken etwas näher heran. Im Ausschnitt-Modus bleibt der Blickwinkel, wie er ist.
+   */
+  private fitFieldOfView(verticalFov: number): number {
+    if (this.sceneWidth < WORLD_WIDTH) return verticalFov;
+    const fitted = Math.min(WIDEST_FITTED_ASPECT, this.viewAspect);
+    const scale = Math.tan(verticalFov * Math.PI / 360) * DESIGN_ASPECT / fitted;
+    return Math.atan(scale) * 360 / Math.PI;
   }
 
   render(elapsed: number, snapshot: SceneSnapshot): RendererFrameMetrics {
@@ -884,14 +907,15 @@ export class DioramaRenderer {
 
   private overviewCameraTransform(): CameraTransform {
     const worldCenter = this.camera.x + this.sceneWidth / 2;
-    const mobileStatic = this.sceneWidth < WORLD_WIDTH && this.reducedMotion;
-    const venueOffset = mobileStatic
-      ? this.venue === 'cafe' ? -1.4 : this.venue === 'ramen' ? -3.1 : 4.5
+    // Im ruhigen Ausschnitt (Handy, Tablet hochkant) sitzt die Kamera je Ort anders; je breiter das Fenster, desto weniger.
+    const narrowness = this.reducedMotion
+      ? Math.max(0, Math.min(1, (WORLD_WIDTH - this.sceneWidth) / (WORLD_WIDTH - 210)))
       : 0;
+    const venueOffset = (this.venue === 'cafe' ? -1.4 : this.venue === 'ramen' ? -3.1 : 4.5) * narrowness;
     const overviewX = cameraPanForWorldX(worldCenter) - DIORAMA.width / 2 + venueOffset;
-    const targetY = mobileStatic
-      ? this.venue === 'cafe' ? 2.3 : this.venue === 'ramen' ? 1.8 : 1.45
-      : this.venue === 'arcade' ? 1.9 : 2.55;
+    const wideTargetY = this.venue === 'arcade' ? 1.9 : 2.55;
+    const narrowTargetY = this.venue === 'cafe' ? 2.3 : this.venue === 'ramen' ? 1.8 : 1.45;
+    const targetY = wideTargetY + (narrowTargetY - wideTargetY) * narrowness;
     return {
       position: { x: overviewX, y: 6.7, z: 15.8 },
       target: { x: overviewX, y: targetY, z: -0.2 },
@@ -908,9 +932,9 @@ export class DioramaRenderer {
       transform.position.y + this.focusPanY,
       transform.position.z,
     );
-    const framedFov = this.focusState.active && this.focusState.amount > 0.7
+    const framedFov = this.fitFieldOfView(this.focusState.active && this.focusState.amount > 0.7
       ? Math.min(30, transform.fieldOfView + this.focusFovLift)
-      : transform.fieldOfView;
+      : transform.fieldOfView);
     if (Math.abs(this.perspective.fov - framedFov) > 0.001) {
       this.perspective.fov = framedFov;
       this.perspective.updateProjectionMatrix();

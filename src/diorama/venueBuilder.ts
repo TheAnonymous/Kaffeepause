@@ -1055,10 +1055,20 @@ function buildArcade(context: BuildContext, root: Group, animated: AnimatedProp[
   const lounge = new Group();
   lounge.name = 'focus-occluder:chair:arcade-lounge';
   root.add(lounge);
-  const loungeSeat = box(context, lounge, [3.1, 0.34, 0.72], [0, 0.26, 2.18], { color: '#4a6379', roughness: 0.9, surface: 'plaster' });
+  // Das Sofa behält Sitzhöhe (Oberkante 0,43) und Standfläche; Kissen und Armlehnen machen es erkennbar.
+  const loungeSeat = box(context, lounge, [3.1, 0.2, 0.72], [0, 0.18, 2.18], { color: '#4a6379', roughness: 0.9, surface: 'plaster' });
   loungeSeat.name = 'seat-surface:arcade-lounge';
+  for (const x of [-1.04, 0, 1.04]) {
+    box(context, lounge, [0.98, 0.15, 0.68], [x, 0.355, 2.2], { color: '#6a8aa6', roughness: 0.92, surface: 'plaster' });
+    box(context, lounge, [0.96, 0.42, 0.16], [x, 0.66, 2.0], { color: '#6a8aa6', roughness: 0.92, surface: 'plaster' });
+  }
   const loungeBackrest = box(context, lounge, [3.1, 0.62, 0.18], [0, 0.56, 1.88], { color: '#354e64', roughness: 0.9, surface: 'plaster' });
   loungeBackrest.name = 'seat-backrest:arcade-lounge';
+  for (const side of [-1, 1]) {
+    box(context, lounge, [0.2, 0.62, 0.74], [side * 1.65, 0.39, 2.18], { color: '#354e64', roughness: 0.9, surface: 'plaster' });
+  }
+  const pillow = box(context, lounge, [0.46, 0.4, 0.13], [-1.0, 0.7, 2.1], { color: '#d2628f', roughness: 0.85, surface: 'plaster' });
+  pillow.rotation.z = -0.18;
   const loungeEdge = box(context, lounge, [3.1, 0.055, 0.04], [0, 0.45, 2.55], {
     color: '#5cdade', emissive: '#5cdade', emissiveIntensity: 0.28, roughness: 0.5, castShadow: false, surface: 'emissive',
   });

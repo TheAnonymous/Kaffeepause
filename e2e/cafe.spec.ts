@@ -244,6 +244,21 @@ test('wechselt auf schmalen Bildschirmen in die ruhige Kamerafahrt', async ({ pa
   await expectNoPageScroll(page, 390, 844);
 });
 
+// Das Bild muss das Seitenverhältnis des Fensters haben, sonst wirken alle Figuren gequetscht oder gestreckt.
+for (const [width, height] of [[1440, 810], [1100, 700], [1024, 768], [768, 1024], [390, 844], [844, 390], [2000, 850]] as const) {
+  test(`zeichnet unverzerrt in einem ${width}×${height}-Fenster`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await openCafe(page);
+    const sizes = await page.locator('#cafe').evaluate((element) => {
+      const canvas = element as HTMLCanvasElement;
+      return { buffer: canvas.width / canvas.height, window: canvas.clientWidth / canvas.clientHeight };
+    });
+    expect(sizes.buffer / sizes.window).toBeGreaterThan(0.97);
+    expect(sizes.buffer / sizes.window).toBeLessThan(1.03);
+    await expectNoPageScroll(page, width, height);
+  });
+}
+
 test('respektiert reduzierte Bewegung ohne automatische Kamerafahrt', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' });

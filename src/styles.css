@@ -368,8 +368,12 @@ body[data-entered="true"][data-ui-idle="true"] .controls:not(:focus-within) {
   color: #fbe2af;
   background: #382833;
   box-shadow: inset 1px 1px 0 rgba(255, 235, 195, 0.12), inset -2px -2px 0 rgba(13, 10, 17, 0.42);
-  font-size: 1.05rem;
   line-height: 1;
+}
+
+.control .icon {
+  width: 1.3rem;
+  height: 1.3rem;
 }
 
 .control:hover {
@@ -383,8 +387,19 @@ body[data-entered="true"][data-ui-idle="true"] .controls:not(:focus-within) {
 }
 
 .control[hidden] { display: none; }
-#sound[aria-pressed="true"] span { opacity: 0.42; text-decoration: line-through; }
-#fullscreen[aria-pressed="true"] .fullscreen__icon { transform: rotate(180deg); }
+#sound .icon--sound-off,
+#fullscreen .icon--fullscreen-exit { display: none; }
+#sound[aria-pressed="true"] .icon--sound-on,
+#fullscreen[aria-pressed="true"] .icon--fullscreen-enter { display: none; }
+#sound[aria-pressed="true"] .icon--sound-off,
+#fullscreen[aria-pressed="true"] .icon--fullscreen-exit { display: block; }
+#sound[aria-pressed="true"] { color: #d98f80; }
+
+/* Auf Touchgeräten größere Knöpfe, damit man sie sicher trifft. */
+@media (pointer: coarse) {
+  .control { width: 3rem; height: 3rem; }
+  .control .icon { width: 1.5rem; height: 1.5rem; }
+}
 
 .sr-only {
   position: absolute;

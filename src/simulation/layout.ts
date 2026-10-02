@@ -202,10 +202,10 @@ const arcade: VenueLayout = {
     { id: 'arcade-queue-0', x: 226, y: 150 },
     { id: 'arcade-queue-1', x: 210, y: 158 },
     { id: 'arcade-queue-2', x: 192, y: 170 },
-    { id: 'arcade-queue-3', x: 192, y: 188 },
+    { id: 'arcade-queue-3', x: 172, y: 186 },
   ],
   waitPlaces: [
-    { id: 'arcade-wait-0', x: 246, y: 162 },
+    { id: 'arcade-wait-0', x: 262, y: 164 },
     { id: 'arcade-wait-1', x: 270, y: 176 },
   ],
   passingPlaces: [

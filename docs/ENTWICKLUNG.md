@@ -28,6 +28,10 @@ Tische werden aus den Tischflächen in `src/simulation/layout.ts` gebaut. Wer ei
 
 Ein Klick ins Diorama geht an `handleClick()` im Renderer: Gäste und Bedienung winken sofort zurück, Mochi kommt vor die Fensterbank und schnurrt (`CafeCat.summon()`), die Klingel auf der Theke (`COUNTER_BELLS`) ruft die Bedienung zur Ausgabe (`CafeSimulation.callBarista()`). Kleine Ziele wie Mochi und die Klingel haben Vorrang vor Figuren in der Nähe. Im Testmodus stehen ihre Bildschirmpositionen in `data-click-targets`, Zeichenaufrufe und Dreiecke in `data-draw-calls` und `data-triangles`.
 
+## Bildformat
+
+Das Bild hat immer das Seitenverhältnis des Fensters (`resize()` in `DioramaRenderer.ts`), sonst wäre es verzerrt: Die Zeichenfläche wird auf die Fenstergröße gestreckt, und ein festes 16:9-Bild sähe in 4:3 oder hochkant gequetscht aus. `fitFieldOfView()` hält dabei die Breite des Raums im Bild: Schmalere Fenster zeigen mehr Höhe, breitere rücken etwas näher heran. Ab einem Seitenverhältnis unter 1,5 (`TOUR_ASPECT`) zeigt die Kamera nur einen Ausschnitt und fährt durch den Raum (Handy, Tablet hochkant). `e2e/cafe.spec.ts` prüft in sieben Fenstergrößen, dass Bild und Fenster dasselbe Verhältnis haben.
+
 ## Fenster und Draußen
 
 Jeder Ort hat ein Fenster in der Rückwand (`VENUE_WINDOWS` in `venueBuilder.ts`): das große Café-Fenster, ein Fenster mit Holzgitter im Ramen-Restaurant und ein Neon-gerahmtes Fenster in der Arcade. Dahinter liegen Himmel und Häuser, die selbst leuchten und der Tageszeit folgen; sie nehmen kaum Raumlicht an, sonst würden die Lampen sie nachts durch die Wand aufhellen. Regen und Schnee fallen nur hinter dem Fenster des aktuellen Ortes. Hinter den Seitentüren von Café und Ramen-Restaurant liegt eine Häuserzeile, die man sieht, wenn die Tür offen steht.

@@ -51,13 +51,15 @@
       </section>
       <div class="controls" data-testid="controls" aria-label="Café-Steuerung" hidden>
         <button id="sound" class="control" type="button" data-testid="sound" aria-label="Ton ausschalten" aria-pressed="false">
-          <span aria-hidden="true">♪</span>
+          <svg class="icon icon--sound-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h4l5-4v14l-5-4H3z" fill="currentColor"/><path d="M15.5 9.5q2 2.5 0 5M18.5 6.5q4.5 5.5 0 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></svg>
+          <svg class="icon icon--sound-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9h4l5-4v14l-5-4H3z" fill="currentColor"/><path d="M16 9l6 6M22 9l-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></svg>
         </button>
         <button id="venue-switch" class="control" type="button" data-testid="venue-switch" aria-label="Anderen Ort wählen" title="Anderen Ort wählen">
-          <span aria-hidden="true">⇄</span>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h15M15 4l4 4-4 4M20 16H5M9 12l-4 4 4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></svg>
         </button>
         <button id="fullscreen" class="control" type="button" data-testid="fullscreen" aria-label="Vollbild öffnen" aria-pressed="false">
-          <span class="fullscreen__icon" aria-hidden="true">⛶</span>
+          <svg class="icon icon--fullscreen-enter" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></svg>
+          <svg class="icon icon--fullscreen-exit" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M20 15h-5v5M4 15h5v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"/></svg>
           <span class="sr-only" data-fullscreen-label>Vollbild öffnen</span>
         </button>
       </div>
