@@ -2,7 +2,7 @@
 
 Ein kleines Diorama aus Klötzchen zum Zuschauen – für mich und meine Freunde.
 
-**[Kaffeepause öffnen →](https://kaffeepause.jodie-oesterling.de/)**
+**[Kaffeepause öffnen →](https://games.jodie-oesterling.de/kaffeepause/)**
 
 ![Das Café am Mittag](docs/kaffeepause-preview.webp)
 
@@ -20,7 +20,7 @@ Du suchst dir einen Ort aus: ein gemütliches Café, ein warmes Ramen-Restaurant
 - Der Link zeigt in Chats eine Vorschau, und auf dem Handy lässt sich die Seite zum Startbildschirm hinzufügen.
 - Das Bild passt sich jedem Fenster an, ohne Figuren zu quetschen: Breite Fenster zeigen den ganzen Raum, sehr schmale (Handy, Tablet hochkant) einen Ausschnitt, durch den die Kamera langsam fährt. Bei reduzierter Bewegung bleibt sie still.
 
-Mit einem Direktlink landet man gleich am richtigen Ort: [#cafe](https://kaffeepause.jodie-oesterling.de/#cafe), [#ramen](https://kaffeepause.jodie-oesterling.de/#ramen) oder [#arcade](https://kaffeepause.jodie-oesterling.de/#arcade).
+Mit einem Direktlink landet man gleich am richtigen Ort: [#cafe](https://games.jodie-oesterling.de/kaffeepause/#cafe), [#ramen](https://games.jodie-oesterling.de/kaffeepause/#ramen) oder [#arcade](https://games.jodie-oesterling.de/kaffeepause/#arcade).
 
 ## Freunde als Stammgäste
 

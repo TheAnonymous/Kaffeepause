@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
-# Prüft Kaffeepause lokal und veröffentlicht dist/ auf kaffeepause.jodie-oesterling.de.
+# Prüft Kaffeepause lokal und veröffentlicht dist/ auf games.jodie-oesterling.de/kaffeepause/.
 #
 #   npm run release                 prüfen, bauen, nachfragen, veröffentlichen
 #   npm run release -- --yes        ohne Rückfrage veröffentlichen
 #   npm run release -- --rollback   zurück auf das vorherige Release
 #
-# Jedes Release landet in einem eigenen Ordner unter releases/. Der Symlink
+# Auf dem Server liegt jedes Spiel in games/<name>/ mit eigenen Releases; die Seite
+# selbst (`site/`) enthält die Übersicht und je Spiel einen Link `site/<name>` auf dessen
+# `current`. Jedes Release landet in einem eigenen Ordner unter releases/, der Symlink
 # `current` wird atomar umgestellt, `previous` merkt sich den Stand davor.
 # Auf dem Server bleiben die fünf neuesten Releases (siehe release-switch.sh).
 set -Eeuo pipefail
 
 target="admin@10.77.0.1" # RS2000 über WireGuard
-site_root="/srv/www/kaffeepause.jodie-oesterling.de"
-site_url="https://kaffeepause.jodie-oesterling.de/"
+game="kaffeepause"
+games_root="/srv/www/games.jodie-oesterling.de"
+site_root="${games_root}/games/${game}"
+site_url="https://games.jodie-oesterling.de/${game}/"
 
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
@@ -59,13 +63,14 @@ release_id="$(date -u +%Y%m%dT%H%M%SZ)"
 release_dir="${site_root}/releases/${release_id}"
 if find dist -type l | grep -q .; then die "dist/ enthält Symlinks"; fi
 
-ssh -- "${target}" sudo install -d -o root -g caddy -m 0750 -- "${site_root}/releases"
-ssh -- "${target}" sudo install -d -o root -g caddy -m 0750 -- "${release_dir}"
+ssh -- "${target}" sudo install -d -o root -g caddy -m 0750 -- \
+  "${games_root}" "${games_root}/site" "${games_root}/games" "${site_root}" "${site_root}/releases" "${release_dir}"
 tar --create --file=- --format=posix --directory=dist . \
   | ssh -- "${target}" sudo tar --extract --file=- --directory="${release_dir}" --no-same-owner --no-same-permissions
 ssh -- "${target}" sudo chown -R root:caddy -- "${release_dir}"
 ssh -- "${target}" sudo find "${release_dir}" -type d -exec chmod 0750 '{}' +
 ssh -- "${target}" sudo find "${release_dir}" -type f -exec chmod 0640 '{}' +
 remote_switch "${release_id}"
+ssh -- "${target}" sudo ln -sfn -- "../games/${game}/current" "${games_root}/site/${game}"
 live_check
 printf 'Veröffentlicht: %s (Release %s)\n' "${site_url}" "${release_id}"

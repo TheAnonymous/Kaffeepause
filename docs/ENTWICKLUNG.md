@@ -101,4 +101,4 @@ Der Canvas veröffentlicht nur noch die `data-*`-Attribute, die Tests oder die A
 
 ## Veröffentlichen
 
-`npm run release` führt `npm run check` aus, fragt nach und lädt `dist/` per SSH auf den Server (`/srv/www/kaffeepause.jodie-oesterling.de/releases/<Zeitstempel>`). Danach zeigt `current` atomar auf das neue Release und `previous` auf das alte. `npm run release -- --rollback` tauscht zurück. Der Server-Teil steht in `scripts/release-switch.sh`: Nach dem Umschalten bleiben nur die fünf neuesten Releases liegen; worauf `current` oder `previous` zeigt, wird nie gelöscht.
+`npm run release` führt `npm run check` aus, fragt nach und lädt `dist/` per SSH auf den Server (`/srv/www/games.jodie-oesterling.de/games/kaffeepause/releases/<Zeitstempel>`, erreichbar unter `games.jodie-oesterling.de/kaffeepause/`; `site/kaffeepause` ist ein Link auf `current`). Danach zeigt `current` atomar auf das neue Release und `previous` auf das alte. `npm run release -- --rollback` tauscht zurück. Der Server-Teil steht in `scripts/release-switch.sh`: Nach dem Umschalten bleiben nur die fünf neuesten Releases liegen; worauf `current` oder `previous` zeigt, wird nie gelöscht.
