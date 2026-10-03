@@ -49,6 +49,11 @@ interface ActivitySpotBase extends Place {
    * sitzt man hinter dem Gang, in dem man vorher stand; wer vorbeigeht, kommt dem Sitzenden nicht in die Quere.
    */
   readonly bodyOffset?: Readonly<Point>;
+  /**
+   * Wo man vor dem Hinsetzen steht und nach dem Aufstehen hintritt, relativ zum Platz (Pixel). Bei Stühlen und
+   * Hockern ist der Platz die Sitzmitte; ohne Standplatz stünde man vor dem Hinsetzen mitten im Stuhl.
+   */
+  readonly standOffset?: Readonly<Point>;
 }
 
 export interface SeatedActivitySpot extends ActivitySpotBase {
@@ -131,10 +136,10 @@ const cafe: VenueLayout = {
   activitySpots: [
     { id: 'cafe-window-a', x: 86, y: 160, bodyOffset: { x: 0, y: -8 }, kind: 'bench', pose: 'seated', seatOrientation: 'front', facing: 1, groupId: 'cafe-window', tags: ['window'], activities: QUIET_ACTIVITIES },
     { id: 'cafe-window-b', x: 145, y: 160, bodyOffset: { x: 0, y: -8 }, kind: 'bench', pose: 'seated', seatOrientation: 'front', facing: -1, groupId: 'cafe-window', tags: ['window'], activities: QUIET_ACTIVITIES },
-    { id: 'cafe-table-a1', x: 91, y: 184, kind: 'table', pose: 'seated', seatOrientation: 'right', facing: 1, groupId: 'cafe-table-a', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
-    { id: 'cafe-table-a2', x: 151, y: 184, kind: 'table', pose: 'seated', seatOrientation: 'left', facing: -1, groupId: 'cafe-table-a', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
-    { id: 'cafe-table-b1', x: 165, y: 198, kind: 'table', pose: 'seated', seatOrientation: 'right', facing: 1, groupId: 'cafe-table-b', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
-    { id: 'cafe-table-b2', x: 231, y: 198, kind: 'table', pose: 'seated', seatOrientation: 'left', facing: -1, groupId: 'cafe-table-b', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
+    { id: 'cafe-table-a1', x: 91, y: 184, standOffset: { x: 0, y: 8 }, kind: 'table', pose: 'seated', seatOrientation: 'right', facing: 1, groupId: 'cafe-table-a', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
+    { id: 'cafe-table-a2', x: 151, y: 184, standOffset: { x: 0, y: 8 }, kind: 'table', pose: 'seated', seatOrientation: 'left', facing: -1, groupId: 'cafe-table-a', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
+    { id: 'cafe-table-b1', x: 165, y: 198, standOffset: { x: 0, y: 8 }, kind: 'table', pose: 'seated', seatOrientation: 'right', facing: 1, groupId: 'cafe-table-b', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
+    { id: 'cafe-table-b2', x: 231, y: 198, standOffset: { x: 0, y: 8 }, kind: 'table', pose: 'seated', seatOrientation: 'left', facing: -1, groupId: 'cafe-table-b', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
   ],
   staffPlaces: {
     // Neben der Espressomaschine (x 328–354), nicht dahinter, damit man die Bedienung sieht.
@@ -173,13 +178,13 @@ const ramen: VenueLayout = {
     { id: 'ramen-pass-right', x: 350, y: 170 },
   ],
   activitySpots: [
-    { id: 'ramen-counter-1', x: 74, y: 166, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: 1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES },
-    { id: 'ramen-counter-2', x: 118, y: 166, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: 1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES },
-    { id: 'ramen-counter-3', x: 162, y: 166, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: 1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES },
-    { id: 'ramen-counter-4', x: 206, y: 166, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: -1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES },
-    { id: 'ramen-counter-5', x: 250, y: 166, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: -1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES },
-    { id: 'ramen-table-a', x: 293, y: 181, kind: 'table', pose: 'seated', seatOrientation: 'right', facing: 1, groupId: 'ramen-table', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
-    { id: 'ramen-table-b', x: 343, y: 181, kind: 'table', pose: 'seated', seatOrientation: 'left', facing: -1, groupId: 'ramen-table', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
+    { id: 'ramen-counter-1', x: 74, y: 166, standOffset: { x: 0, y: 8 }, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: 1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES },
+    { id: 'ramen-counter-2', x: 118, y: 166, standOffset: { x: 0, y: 8 }, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: 1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES },
+    { id: 'ramen-counter-3', x: 162, y: 166, standOffset: { x: 0, y: 8 }, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: 1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES },
+    { id: 'ramen-counter-4', x: 206, y: 166, standOffset: { x: 0, y: 8 }, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: -1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES },
+    { id: 'ramen-counter-5', x: 250, y: 166, standOffset: { x: 0, y: 8 }, kind: 'counter-stool', pose: 'seated', seatOrientation: 'radial', facing: -1, groupId: 'ramen-counter', tags: ['counter-adjacent'], activities: RAMEN_COUNTER_ACTIVITIES },
+    { id: 'ramen-table-a', x: 293, y: 181, standOffset: { x: 0, y: 8 }, kind: 'table', pose: 'seated', seatOrientation: 'right', facing: 1, groupId: 'ramen-table', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
+    { id: 'ramen-table-b', x: 343, y: 181, standOffset: { x: 0, y: 8 }, kind: 'table', pose: 'seated', seatOrientation: 'left', facing: -1, groupId: 'ramen-table', tags: ['table-pair'], activities: QUIET_ACTIVITIES },
   ],
   staffPlaces: {
     machine: { x: 228, y: 134 }, serving: { x: 188, y: 134 }, wiping: { x: 92, y: 134 },
@@ -220,12 +225,13 @@ const arcade: VenueLayout = {
     { id: 'arcade-pass-right', x: 268, y: 186 },
   ],
   activitySpots: [
-    { id: 'arcade-left-1', x: 76, y: 150, kind: 'arcade-cabinet', pose: 'standing', facing: -1, groupId: 'arcade-pair-1', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES },
-    { id: 'arcade-left-2', x: 76, y: 176, kind: 'arcade-cabinet', pose: 'standing', facing: -1, groupId: 'arcade-pair-2', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES },
-    { id: 'arcade-left-3', x: 76, y: 202, kind: 'arcade-cabinet', pose: 'standing', facing: -1, groupId: 'arcade-pair-3', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES },
-    { id: 'arcade-right-1', x: 308, y: 150, kind: 'arcade-cabinet', pose: 'standing', facing: 1, groupId: 'arcade-pair-1', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES },
-    { id: 'arcade-right-2', x: 308, y: 176, kind: 'arcade-cabinet', pose: 'standing', facing: 1, groupId: 'arcade-pair-2', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES },
-    { id: 'arcade-right-3', x: 308, y: 202, kind: 'arcade-cabinet', pose: 'standing', facing: 1, groupId: 'arcade-pair-3', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES },
+    // Etwas Abstand zum Automaten, damit der gesenkte Kopf nicht ins Bildschirmgehäuse ragt.
+    { id: 'arcade-left-1', x: 79, y: 150, kind: 'arcade-cabinet', pose: 'standing', facing: -1, groupId: 'arcade-pair-1', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES },
+    { id: 'arcade-left-2', x: 79, y: 176, kind: 'arcade-cabinet', pose: 'standing', facing: -1, groupId: 'arcade-pair-2', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES },
+    { id: 'arcade-left-3', x: 79, y: 202, kind: 'arcade-cabinet', pose: 'standing', facing: -1, groupId: 'arcade-pair-3', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES },
+    { id: 'arcade-right-1', x: 305, y: 150, kind: 'arcade-cabinet', pose: 'standing', facing: 1, groupId: 'arcade-pair-1', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES },
+    { id: 'arcade-right-2', x: 305, y: 176, kind: 'arcade-cabinet', pose: 'standing', facing: 1, groupId: 'arcade-pair-2', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES },
+    { id: 'arcade-right-3', x: 305, y: 202, kind: 'arcade-cabinet', pose: 'standing', facing: 1, groupId: 'arcade-pair-3', tags: ['cabinet-pair'], activities: ARCADE_MACHINE_ACTIVITIES },
     { id: 'arcade-lounge', x: 192, y: 204, kind: 'lounge', pose: 'seated', seatOrientation: 'front', facing: 1, groupId: 'arcade-lounge', tags: ['lounge'], activities: QUIET_ACTIVITIES },
   ],
   staffPlaces: {
@@ -413,6 +419,11 @@ export function routeIsClear(layout: VenueLayout, start: Point, target: Point): 
   return true;
 }
 
+/** Wo man vor dem Hinsetzen steht: neben dem Stuhl oder hinter dem Hocker, sonst der Platz selbst. */
+export function standPointFor(spot: ActivitySpot): Point {
+  return spot.standOffset ? { x: spot.x + spot.standOffset.x, y: spot.y + spot.standOffset.y } : { x: spot.x, y: spot.y };
+}
+
 export function activitySpotById(layout: VenueLayout, id?: string): ActivitySpot | undefined {
   return id ? layout.activitySpots.find((spot) => spot.id === id) : undefined;
 }
@@ -457,6 +468,12 @@ export function validateVenueLayout(layout: VenueLayout): VenueLayoutReport {
   if (!routeIsClear(layout, layout.outside, layout.entrance)) issues.push('unreachable-entry');
   for (const place of [...layout.queuePlaces, ...layout.waitPlaces, ...layout.activitySpots]) {
     if (!routeIsClear(layout, layout.entrance, place)) issues.push(`unreachable:${place.id}`);
+  }
+  for (const spot of layout.activitySpots) {
+    if (!spot.standOffset) continue;
+    const stand = standPointFor(spot);
+    if (pointHitsVenueCollider(layout, stand) || !pointWithinVenueWalkableArea(layout, stand)) issues.push(`blocked-stand:${spot.id}`);
+    if (!routeIsClear(layout, layout.entrance, stand)) issues.push(`unreachable-stand:${spot.id}`);
   }
   for (const place of layout.passingPlaces) {
     if (!routeIsClear(layout, layout.entrance, place)) issues.push(`unreachable-passing-place:${place.id}`);

@@ -1,4 +1,4 @@
-import { Bone, Color, Group, MeshStandardMaterial, type Object3D, type SkinnedMesh } from 'three';
+import { Bone, Color, Group, MeshStandardMaterial, type Object3D, type SkinnedMesh, type Vector3 } from 'three';
 import type { Guest, GuestAppearance, GuestPalette } from '../simulation/types';
 import type { ActivitySpotKind } from '../simulation/layout';
 import type { VenueKind } from '../venue';
@@ -442,6 +442,14 @@ export class VoxelFigure {
     this.body.position.y += visual.offsetY;
   }
 
+  /** Mitte des Kopfes in Weltkoordinaten (für Prüfungen, ob etwas das Gesicht verdeckt). */
+  headCenter(target: Vector3): Vector3 {
+    this.head.updateWorldMatrix(true, false);
+    this.head.getWorldPosition(target);
+    target.y += FIGURE.head / 2;
+    return target;
+  }
+
   /** Lichtrand der Figur; 0 schaltet ihn aus. */
   setGlow(color: Color, strength: number): void {
     this.rim.rimColor.value.copy(color);
@@ -465,7 +473,7 @@ export class VoxelFigure {
     if ((input.stepping ?? visual.pose === 'walking') && input.heading && Math.hypot(input.heading.x, input.heading.z) > 0.01) {
       return Math.atan2(input.heading.x, input.heading.z);
     }
-    if (input.spotKind === 'arcade-cabinet') return visual.facing * Math.PI / 2;
+    if (input.spotKind === 'arcade-cabinet') return (visual.seatFacing ?? visual.facing) * Math.PI / 2;
     if (visual.pose === 'ordering') return Math.PI;
     if (this.options.barista) return 0;
     return visual.facing * 0.4;

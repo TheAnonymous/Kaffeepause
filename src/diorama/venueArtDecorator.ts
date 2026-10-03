@@ -45,7 +45,8 @@ const DETAIL_PLANES: Readonly<Record<VenueKind, readonly DetailPlaneSpec[]>> = {
   ramen: [
     { region: 'surface-metal', size: [3.1, 1.72], position: [-4.48, 2.52, -2.9], opacity: 0.62 },
     { region: 'prop-noren', size: [10.25, 1.58], position: [-0.48, 4.03, -2.96], opacity: 0.94 },
-    { region: 'foreground-detail', size: [0.86, 0.86], position: [5.9, 0.7, 2.39], opacity: 0.9 },
+    // Keine gemalte Laterne vorn rechts mehr: Dort steht eine aus Klötzchen, das flache Bild mit seinem
+    // dunklen Rechteck lag als zweite Laterne dahinter.
   ],
   arcade: [
     { region: 'foreground-detail', size: [5.05, 3.2], position: [0, 0.17, 1.2], rotationX: -Math.PI / 2, opacity: 0.86, depthWrite: false, unlit: true },

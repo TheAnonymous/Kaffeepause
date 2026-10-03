@@ -33,7 +33,7 @@ export interface CharacterVisualState {
   readonly offsetY: number;
   readonly seated: boolean;
   readonly seatView?: SeatView;
-  /** Richtung, in die ein seitlich sitzender Gast durch seinen Stuhl blickt; unabhängig von `facing`. */
+  /** Richtung, in die der Platz zeigt (seitlicher Stuhl oder Automat); unabhängig von `facing`, das Reaktionen umdrehen. */
   readonly seatFacing?: -1 | 1;
   readonly activitySpotKind?: ActivitySpotKind;
   readonly momentKind?: CafeMoment['kind'];
@@ -211,7 +211,9 @@ export function calculateGuestVisualState(input: GuestVisualStateInput): Charact
     pose, frame, facing, expression, gesture, offsetX, offsetY,
     seated,
     seatView: seated ? seatViewFor(input.seatOrientation) : undefined,
-    seatFacing: seated ? seatFacingFor(input.seatOrientation) : undefined,
+    seatFacing: seated
+      ? seatFacingFor(input.seatOrientation)
+      : guest.state === 'activity' && input.activitySpotKind === 'arcade-cabinet' ? input.activityFacing : undefined,
     activitySpotKind: input.activitySpotKind,
     momentKind: participant ? moment?.kind : undefined,
   };

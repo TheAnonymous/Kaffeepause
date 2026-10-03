@@ -8,6 +8,7 @@ import {
   pointIsOutsideVenue,
   pointWithinVenueWalkableArea,
   routeIsClear,
+  worldDistance,
 } from '../src/simulation/layout';
 import {
   GOLDEN_LIVING_SEQUENCES,
@@ -24,6 +25,8 @@ const moving = (guest: Guest): boolean => guest.state === 'entering'
   || guest.state === 'waiting'
   || guest.state.includes('walking');
 const distance = (left: Point, right: Point): number => Math.hypot(left.x - right.x, left.y - right.y);
+/** Kleinster erlaubter Abstand zweier Gäste in Diorama-Einheiten (knapp eine Körperbreite). */
+const MINIMUM_SEPARATION = GUEST_RADIUS * 1.9 * 16 / 384;
 
 describe('handinszenierte Raumbewegung', () => {
   it.each(VENUES)('%s besitzt drei begehbare, venue-spezifische Wege und eine Golden Sequence', (venue) => {
@@ -142,9 +145,10 @@ describe('deterministische Navigations-Langzeitmatrix', () => {
                 const second = inside[right]!;
                 // Wer sich festgefahren hat, geht als letzter Ausweg kurz durch andere hindurch.
                 if (simulation.isPassingThrough(first) || simulation.isPassingThrough(second)) continue;
-                const separation = distance(simulation.bodyPosition(first), simulation.bodyPosition(second));
+                // In Diorama-Einheiten: Ein Pixel des Grundrisses ist in der Tiefe doppelt so lang wie in der Breite.
+                const separation = worldDistance(simulation.bodyPosition(first), simulation.bodyPosition(second));
                 minimumGuestDistance = Math.min(minimumGuestDistance, separation);
-                if (separation < GUEST_RADIUS * 1.9) {
+                if (separation < MINIMUM_SEPARATION) {
                   throw new Error(`overlap:${venue}:${seed}:${first.id}:${second.id}:${separation.toFixed(2)}`);
                 }
               }
@@ -156,7 +160,7 @@ describe('deterministische Navigations-Langzeitmatrix', () => {
         expect(snapshot.navigation.deadlocks, `${venue}:${seed}`).toBe(0);
         expect(snapshot.navigation.maxBlockedSeconds, `${venue}:${seed}`).toBeLessThan(6);
         expect(maximumStationarySeconds, `${venue}:${seed}`).toBeLessThan(6);
-        expect(minimumGuestDistance, `${venue}:${seed}`).toBeGreaterThanOrEqual(GUEST_RADIUS * 1.9);
+        expect(minimumGuestDistance, `${venue}:${seed}`).toBeGreaterThanOrEqual(MINIMUM_SEPARATION);
         expect(simulation.stats.livingSequencesCompleted, `${venue}:${seed}`).toBeGreaterThanOrEqual(2);
         expect(pointHitsVenueCollider(VENUE_LAYOUTS[venue], simulation.barista.position, 3), `${venue}:${seed}:staff`).toBe(false);
         for (const guest of simulation.guests) {

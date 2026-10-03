@@ -1,5 +1,7 @@
 import { Bone, Group, MeshStandardMaterial, Vector3, type SkinnedMesh } from 'three';
 import { BoxBatch, VoxelRig } from './voxelKit';
+import { VENUE_LAYOUTS } from '../simulation/layout';
+import { worldToDiorama } from './types';
 
 // Mochi, die Café-Katze aus Klötzchen: schläft auf der Fensterbank, schaut nach dem
 // Kuchen, putzt sich und schlendert zurück. Läuft rein im Renderer und stört keine Gäste.
@@ -60,6 +62,33 @@ const DEPARTURES = [83.6, 125.6] as const;
 
 export interface CatObstacle { readonly x: number; readonly z: number }
 
+/** Sprung auf die Bank und wieder herunter (Sekunden). */
+const HOP_SECONDS = 0.4;
+/** Über diesen Abschnitt des Gangs steht die Fensterbank, auf die Mochi ausweichen kann. */
+const BENCH_SPAN = { minX: -5.4, maxX: -0.9 } as const;
+
+/** Wo auf der Bank Gäste sitzen (Mitte der Sitzplätze); dort springt Mochi nicht hin. */
+const BENCH_SEATS_X = VENUE_LAYOUTS.cafe.activitySpots
+  .filter((spot) => spot.kind === 'bench')
+  .map((spot) => worldToDiorama(spot).x);
+
+/** Freie Stelle auf der Bank, möglichst nah: zwischen den Sitzplätzen, nie auf einem. */
+export function benchRestX(x: number): number {
+  const candidates: number[] = [];
+  for (let candidate = BENCH_SPAN.minX; candidate <= BENCH_SPAN.maxX; candidate += 0.05) {
+    if (BENCH_SEATS_X.every((seat) => Math.abs(seat - candidate) >= 0.75)) candidates.push(candidate);
+  }
+  return candidates.reduce((best, candidate) => (Math.abs(candidate - x) < Math.abs(best - x) ? candidate : best), candidates[0] ?? x);
+}
+
+/** Ob Mochi von ihrem Platz im Gang auf die Bank springen kann: Die Bank ist dort und an der freien Stelle sitzt niemand. */
+export function canDodgeOntoBench(position: { readonly x: number; readonly y: number }, obstacles: readonly CatObstacle[]): boolean {
+  if (position.y > 0.3 || position.x < BENCH_SPAN.minX || position.x > BENCH_SPAN.maxX) return false;
+  const restX = benchRestX(position.x);
+  if (Math.abs(restX - position.x) > 1) return false;
+  return !obstacles.some((entry) => Math.hypot(entry.x - restX, entry.z - BENCH.z) < 0.6);
+}
+
 /** Ablauf über 150 Sekunden; beim Betreten schläft Mochi. */
 export function catStateAt(time: number, reducedMotion = false): CatState {
   if (reducedMotion) return { pose: 'sleep', position: BENCH, facing: 1 };
@@ -105,6 +134,8 @@ export class CafeCat {
   /** Zeit, die Mochi gewartet hat, weil Gäste im Weg standen; der Tagesablauf pausiert währenddessen. */
   private waitedSeconds = 0;
   private lastUpdate?: number;
+  /** Ausweichen auf die Bank: wo sie hochgesprungen ist und seit wann der Gang wieder frei ist. */
+  private dodge?: { x: number; laneZ: number; startedAt: number; clearSince?: number; downAt?: number };
   private readonly screenPoint = new Vector3();
 
   constructor() {
@@ -164,6 +195,7 @@ export class CafeCat {
   /** Klick auf Mochi: Sie kommt zu dir. Gibt false zurück, wenn sie schon unterwegs ist. */
   summon(time: number, reducedMotion: boolean): boolean {
     if (this.visitStart !== undefined) return false;
+    this.dodge = undefined;
     this.visitFrom = catStateAt(time - this.visitedSeconds - this.waitedSeconds, reducedMotion);
     this.visitStart = time;
     return true;
@@ -201,10 +233,21 @@ export class CafeCat {
       }
       const clock = time - this.visitedSeconds - this.waitedSeconds;
       state = catStateAt(clock, reducedMotion);
-      // Mochi läuft nicht durch Gäste: Sie wartet vor dem Losgehen und bleibt stehen, wenn jemand kommt.
-      if (!reducedMotion && step > 0 && step <= 0.5 && catMustWait(state, clock, obstacles)) {
+      const stepping = !reducedMotion && step > 0 && step <= 0.5;
+      if (stepping && this.dodge) {
+        // Mochi wartet auf der Bank, bis der Gang wieder frei ist, und springt dann zurück.
         this.waitedSeconds += step;
-        state = { ...state, pose: state.pose === 'walk' ? 'sit' : state.pose };
+        state = this.dodgeState(time, state, obstacles);
+      } else if (stepping && catMustWait(state, clock, obstacles)) {
+        // Mochi läuft nicht durch Gäste: Sie wartet vor dem Losgehen und bleibt stehen, wenn jemand kommt.
+        // Steht sie dabei vor der Bank und ist dort Platz, springt sie hinauf und lässt den Gast vorbei.
+        this.waitedSeconds += step;
+        if (state.pose === 'walk' && canDodgeOntoBench(state.position, obstacles)) {
+          this.dodge = { x: state.position.x, laneZ: state.position.z, startedAt: time, clearSince: undefined, downAt: undefined };
+          state = this.dodgeState(time, state, obstacles);
+        } else {
+          state = { ...state, pose: state.pose === 'walk' ? 'sit' : state.pose };
+        }
       }
     }
     this.screenPoint.set(state.position.x, state.position.y + 0.25, state.position.z);
@@ -264,6 +307,27 @@ export class CafeCat {
       }
     }
     return petted;
+  }
+
+  private dodgeState(time: number, walking: CatState, obstacles: readonly CatObstacle[]): CatState {
+    const dodge = this.dodge!;
+    const lane: Point3 = { x: dodge.x, y: 0.08, z: dodge.laneZ };
+    const bench: Point3 = { x: benchRestX(dodge.x), y: BENCH.y, z: BENCH.z };
+    if (time - dodge.startedAt < HOP_SECONDS) {
+      return { pose: 'walk', position: lerp(lane, bench, (time - dodge.startedAt) / HOP_SECONDS, 0.3), facing: walking.facing };
+    }
+    if (dodge.downAt !== undefined) {
+      const progress = (time - dodge.downAt) / HOP_SECONDS;
+      if (progress >= 1) {
+        this.dodge = undefined;
+        return walking;
+      }
+      return { pose: 'walk', position: lerp(bench, lane, progress, 0.3), facing: walking.facing };
+    }
+    const clear = !obstacles.some((entry) => Math.hypot(entry.x - lane.x, entry.z - lane.z) < YIELD_DISTANCE);
+    dodge.clearSince = clear ? dodge.clearSince ?? time : undefined;
+    if (dodge.clearSince !== undefined && time - dodge.clearSince > 0.6) dodge.downAt = time;
+    return { pose: 'sit', position: bench, facing: walking.facing };
   }
 
   dispose(): void {

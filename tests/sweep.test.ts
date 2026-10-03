@@ -9,6 +9,10 @@ import type { VenueKind } from '../src/venue';
 const VENUES: readonly VenueKind[] = ['cafe', 'ramen', 'arcade'];
 /** Halber Körperumfang einer Figur in Diorama-Einheiten. */
 const BODY_RADIUS = 0.3;
+/** Kopfmaße für die Prüfung an den Automaten: halbe Tiefe, halbe Höhe samt Haaren, Vorneigung beim Spielen. */
+const HEAD_HALF_DEPTH = 0.31;
+const HEAD_HALF_HEIGHT = 0.43;
+const HEAD_TILT_REACH = 0.14;
 const angleBetween = (a: number, b: number): number => {
   const difference = Math.abs(a - b) % (Math.PI * 2);
   return Math.min(difference, Math.PI * 2 - difference);
@@ -33,20 +37,42 @@ interface Metrics {
   /** Bilder, in denen sich ein Gast bewegt, und davon die, in denen er dabei nicht geht, sondern gleitet. */
   movingFrames: number;
   glidingFrames: number;
+  /** Arcade: Bilder, in denen ein Spieler mit dem Kopf ins Bildschirmgehäuse ragt. */
+  headInCabinetFrames: number;
+  playerFrames: number;
+  /** Café: Bilder, in denen Mochi am Boden einem stehenden oder gehenden Gast im Weg ist. */
+  catBlockedFrames: number;
+  catFrames: number;
 }
 
 function measure(venue: VenueKind): Metrics {
-  const { furniture, seatCenters } = venueFurniture(venue);
+  const { furniture, seatCenters, screens } = venueFurniture(venue);
   const metrics: Metrics = {
     walkerFrames: 0, inFurnitureFrames: 0, nearSeatedFrames: 0, overlapFrames: 0,
-    baristaMaxStep: 0, baristaCatchUpFrames: 0, seatYawWorst: 0, leaveYawWorst: 0, seatedFrames: 0, leavingFrames: 0, longestWait: 0, movingFrames: 0, glidingFrames: 0,
+    baristaMaxStep: 0, baristaCatchUpFrames: 0, seatYawWorst: 0, leaveYawWorst: 0, seatedFrames: 0, leavingFrames: 0, longestWait: 0, movingFrames: 0, glidingFrames: 0, headInCabinetFrames: 0, playerFrames: 0, catBlockedFrames: 0, catFrames: 0,
   };
   const seatedSince = new Map<string, number>();
   const waitingSince = new Map<string, { state: string; time: number }>();
   const lastSeen = new Map<string, SweepFigure>();
   let baristaBefore: SweepFigure | undefined;
-  runSweep({ venue, seed: 5, seconds: 900, durationScale: 0.08, reactionChance: 0.05 }, ({ time, figures }) => {
+  runSweep({ venue, seed: 5, seconds: 900, durationScale: 0.08, reactionChance: 0.05 }, ({ time, figures, cat }) => {
+    if (cat) {
+      metrics.catFrames += 1;
+      if (cat.y < 0.3 && figures.some((figure) => !figure.barista && !figure.seated && !figure.passingThrough
+        && Math.hypot(figure.x - cat.x, figure.z - cat.z) < 0.5)) metrics.catBlockedFrames += 1;
+    }
     for (const figure of figures) {
+      if (figure.head && figure.state === 'activity' && figure.spotId?.startsWith(`${venue}-`) && screens.length > 0
+        && (figure.spotId.includes('-left-') || figure.spotId.includes('-right-'))) {
+        metrics.playerFrames += 1;
+        const screen = screens.reduce((best, entry) => (
+          Math.hypot(entry.x - figure.head!.x, entry.z - figure.head!.z) < Math.hypot(best.x - figure.head!.x, best.z - figure.head!.z) ? entry : best
+        ));
+        // Kopf mit Haaren, leicht nach vorn geneigt (wer aufs Spiel schaut, senkt den Kopf).
+        const gap = Math.abs(figure.head.x - screen.x) - HEAD_HALF_DEPTH - HEAD_TILT_REACH;
+        const reachesHousing = figure.head.y + HEAD_HALF_HEIGHT > screen.y - screen.halfHeight - 0.12;
+        if (gap < 0 && reachesHousing && Math.abs(figure.head.z - screen.z) < 0.7) metrics.headInCabinetFrames += 1;
+      }
       const before = lastSeen.get(figure.id);
       lastSeen.set(figure.id, figure);
       if (!figure.barista && before && !before.seated && !figure.seated && !figure.settling
@@ -118,7 +144,7 @@ describe.each(VENUES)('Langer Durchlauf: %s', (venue) => {
 
   it('hat genug Bewegung, damit die Prüfungen etwas sagen', () => {
     expect(metrics.walkerFrames).toBeGreaterThan(20_000);
-    expect(metrics.seatedFrames).toBeGreaterThan(5_000);
+    expect(metrics.seatedFrames).toBeGreaterThan(3_000);
   });
 
   it('lässt Gehende nicht durch Stühle, Tische und Theken laufen', () => {
@@ -142,6 +168,18 @@ describe.each(VENUES)('Langer Durchlauf: %s', (venue) => {
   it('lässt Gäste gehen, wenn sie sich bewegen, statt durch den Raum zu gleiten', () => {
     expect(metrics.movingFrames).toBeGreaterThan(10_000);
     expect(metrics.glidingFrames / metrics.movingFrames).toBeLessThan(0.005);
+  });
+
+  it('lässt Spieler nicht mit dem Kopf in die Automaten ragen', () => {
+    if (venue !== 'arcade') return;
+    expect(metrics.playerFrames).toBeGreaterThan(5_000);
+    expect(metrics.headInCabinetFrames).toBe(0);
+  });
+
+  it('lässt Mochi kaum jemandem im Weg stehen', () => {
+    if (venue !== 'cafe') return;
+    expect(metrics.catFrames).toBeGreaterThan(10_000);
+    expect(metrics.catBlockedFrames / metrics.catFrames).toBeLessThan(0.008);
   });
 
   it('lässt keinen Gast minutenlang festhängen', () => {

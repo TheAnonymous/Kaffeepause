@@ -79,7 +79,7 @@ import {
   type FocusFrameElement,
 } from './cameraFocus';
 import { advanceMotion, followPoint, newMotionState, trackStepping, type MotionState } from './figureMotion';
-import { keepBubblesOnScreen, resolveBubblePlacements, type BubbleBounds } from './bubbleLayout';
+import { avoidFaces, keepBubblesOnScreen, resolveBubblePlacements, type BubbleBounds, type FaceBox } from './bubbleLayout';
 import {
   fadeFocusOccluder,
   restoreFocusOccluders,
@@ -120,6 +120,14 @@ import { FixedRenderPipeline } from './fixedRenderPipeline';
 import { GpuFrameTimer } from './gpuTimer';
 import { AtmosphereArtLoader, type AtmosphereArtPack } from './atmosphereAssets';
 import { AtmosphereLayer, atmosphereLightCue } from './atmosphereLayer';
+
+interface ScreenRect {
+  readonly id: string;
+  readonly left: number;
+  readonly right: number;
+  readonly top: number;
+  readonly bottom: number;
+}
 
 interface CharacterNode {
   readonly root: Group;
@@ -614,6 +622,7 @@ export class DioramaRenderer {
         // Nur im Testmodus: Zeichenaufrufe über alle Durchgänge eines Bildes (Schatten, Bloom, Bild).
         this.canvas.dataset.drawCalls = String(this.webgl.info.render.calls);
         this.canvas.dataset.triangles = String(this.webgl.info.render.triangles);
+        this.canvas.dataset.bubbleLayout = JSON.stringify(this.measureBubbleLayout());
       }
       gpuMs ??= this.gpuTimer.poll();
       this.visualRenderCount += 1;
@@ -954,6 +963,7 @@ export class DioramaRenderer {
   }
 
   private updateVenue(time: number): void {
+    for (const screen of this.venueSet.screens) screen.update(this.reducedMotion ? 0 : time);
     if (this.reducedMotion) return;
     for (const prop of this.venueSet.animatedProps) {
       const value = Math.sin(time * prop.speed + prop.phase) * prop.amplitude;
@@ -1139,10 +1149,11 @@ export class DioramaRenderer {
       .map((line) => this.projectBubbleBounds(line, snapshot))
       .filter((entry): entry is BubbleBounds => entry !== undefined);
     const projected = new Map(bounds.map((entry) => [entry.speakerId, entry]));
+    const screenWidth = this.canvas.getBoundingClientRect().width;
     const placements = keepBubblesOnScreen(
       bounds,
-      resolveBubblePlacements(bounds),
-      this.canvas.getBoundingClientRect().width,
+      avoidFaces(bounds, resolveBubblePlacements(bounds), this.projectFaces(), screenWidth),
+      screenWidth,
     );
     return new Map(dialogue.map((line) => {
       const placement = placements.find((entry) => entry.speakerId === line.speakerId);
@@ -1164,7 +1175,9 @@ export class DioramaRenderer {
     const guest = snapshot.guests.find((entry) => entry.id === line.speakerId);
     const participant = guest ?? (line.speakerId === 'barista' ? snapshot.barista : undefined);
     if (!participant) return undefined;
-    const point = worldToCharacterDiorama(participant.position);
+    // Wo die Figur gezeichnet wird (Sitzmitte, Gleiten aufs Polster), nicht wo die Simulation sie führt.
+    const node = line.speakerId === 'barista' ? this.baristaNode : this.guestNodes.get(line.speakerId);
+    const point = node?.figure ? { x: node.root.position.x, z: node.root.position.z } : worldToCharacterDiorama(participant.position);
     const spot = guest?.state === 'activity' ? activitySpotById(VENUE_LAYOUTS[snapshot.venue], guest.activitySpotId) : undefined;
     const characterHeight = guest ? characterTop(spot) : DIORAMA.standingHeight;
     const tailLeft = point.x < -6 ? true : point.x > 6 ? false : participant.facing > 0;
@@ -1435,6 +1448,73 @@ export class DioramaRenderer {
     this.canvas.dataset.reactionTargets = this.reactionTargets
       .map((target) => `${target.id}:${Math.round(target.x)},${Math.round(target.y)}`)
       .join('|');
+  }
+
+  /** Köpfe aller Figuren auf dem Bildschirm (CSS-Pixel), damit Sprechblasen ihnen ausweichen können. */
+  private projectFaces(): FaceBox[] {
+    const bounds = this.canvas.getBoundingClientRect();
+    const right = new Vector3(1, 0, 0).applyQuaternion(this.perspective.quaternion);
+    const up = new Vector3(0, 1, 0).applyQuaternion(this.perspective.quaternion);
+    const faces: FaceBox[] = [];
+    const nodes: [string, CharacterNode][] = [...this.guestNodes.entries(), ['barista', this.baristaNode]];
+    for (const [id, node] of nodes) {
+      if (!node.figure) continue;
+      const center = node.figure.headCenter(new Vector3());
+      const corners = [[-1, -1], [1, 1]].map(([x, y]) => {
+        const projected = center.clone().addScaledVector(right, x! * 0.32).addScaledVector(up, y! * 0.34).project(this.perspective);
+        return { x: (projected.x + 1) * bounds.width / 2, y: (1 - projected.y) * bounds.height / 2 };
+      });
+      const [a, b] = corners as [{ x: number; y: number }, { x: number; y: number }];
+      faces.push({ id, left: Math.min(a.x, b.x), right: Math.max(a.x, b.x), top: Math.min(a.y, b.y), bottom: Math.max(a.y, b.y) });
+    }
+    return faces;
+  }
+
+  /**
+   * Nur im Testmodus: wo Sprechblasen und Köpfe gerade auf dem Bildschirm liegen (CSS-Pixel), damit Tests
+   * prüfen können, ob Blasen einander oder Gesichter verdecken oder aus dem Bild ragen.
+   */
+  private measureBubbleLayout(): {
+    readonly width: number;
+    readonly height: number;
+    readonly bubbles: readonly ScreenRect[];
+    readonly heads: readonly ScreenRect[];
+  } {
+    const bounds = this.canvas.getBoundingClientRect();
+    const toScreen = (point: Vector3): { x: number; y: number } => {
+      const projected = point.project(this.perspective);
+      return { x: (projected.x + 1) * bounds.width / 2, y: (1 - projected.y) * bounds.height / 2 };
+    };
+    const rect = (id: string, points: readonly { x: number; y: number }[]): ScreenRect => ({
+      id,
+      left: Math.min(...points.map((point) => point.x)),
+      right: Math.max(...points.map((point) => point.x)),
+      top: Math.min(...points.map((point) => point.y)),
+      bottom: Math.max(...points.map((point) => point.y)),
+    });
+    const bubbles: ScreenRect[] = [];
+    const heads: ScreenRect[] = [];
+    const halfWidth = SPEECH_BUBBLE_WORLD_WIDTH / 2;
+    const halfHeight = SPEECH_BUBBLE_WORLD_HEIGHT / 2;
+    const right = new Vector3(1, 0, 0).applyQuaternion(this.perspective.quaternion);
+    const up = new Vector3(0, 1, 0).applyQuaternion(this.perspective.quaternion);
+    const nodes: [string, CharacterNode][] = [...this.guestNodes.entries(), ['barista', this.baristaNode]];
+    for (const [id, node] of nodes) {
+      node.root.updateMatrixWorld(true);
+      const mesh = node.speech.mesh;
+      if (mesh.visible && mesh.material.opacity > 0.2) {
+        bubbles.push(rect(id, [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => toScreen(
+          new Vector3(x! * halfWidth, y! * halfHeight, 0).applyMatrix4(mesh.matrixWorld),
+        ))));
+      }
+      if (node.figure) {
+        const center = node.figure.headCenter(new Vector3());
+        heads.push(rect(id, [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, y]) => toScreen(
+          center.clone().addScaledVector(right, x! * 0.32).addScaledVector(up, y! * 0.34),
+        ))));
+      }
+    }
+    return { width: bounds.width, height: bounds.height, bubbles, heads };
   }
 
   private createCharacterNode(name: string): CharacterNode {

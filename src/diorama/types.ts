@@ -1,3 +1,4 @@
+import type { ArcadeScreen } from './arcadeScreens';
 import type {
   BufferGeometry,
   ColorRepresentation,
@@ -195,6 +196,8 @@ export interface DioramaSet {
   readonly exteriorMaterials: readonly MeshStandardMaterial[];
   readonly lightPools: readonly Mesh<PlaneGeometry, MeshBasicMaterial>[];
   readonly animatedProps: readonly AnimatedProp[];
+  /** Bildschirme der Arcade-Automaten mit ihren kleinen Spielen. */
+  readonly screens: readonly ArcadeScreen[];
   readonly focusOccluders: readonly FocusOccluder[];
   readonly seatBindings: readonly SeatVisualBinding[];
   readonly theme: DioramaTheme;

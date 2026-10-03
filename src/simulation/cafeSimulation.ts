@@ -7,11 +7,13 @@ import {
   PASSING_CLEARANCE,
   planVenueRoute,
   TIGHT_CLEARANCE,
+  worldDistance,
   pointIsOutsideVenue,
   pointHitsVenueCollider,
   pointWithinVenueWalkableArea,
   routeIsClear,
   segmentIsClear,
+  standPointFor,
   type ActivitySpot,
   type ActivitySpotTag,
   type Place,
@@ -1329,12 +1331,21 @@ export class CafeSimulation {
       case 'waiting':
         if (this.moveToward(guest, delta) && guest.stateTime >= guest.stateDuration && guest.activitySpotId) {
           if (guest.destinationId) this.reservations.release(guest.destinationId, guest.id);
-          const activitySpot = this.placeById(guest.activitySpotId);
-          if (activitySpot) this.transition(guest, 'walking-to-seat', activitySpot);
+          const activitySpot = activitySpotById(this.layout, guest.activitySpotId);
+          if (activitySpot) this.transition(guest, 'walking-to-seat', standPointFor(activitySpot));
         }
         break;
       case 'walking-to-seat':
         if (this.moveToward(guest, delta)) {
+          // Vom Standplatz neben dem Stuhl setzt sich der Gast auf den Sitz; die Darstellung lässt ihn hinübergleiten.
+          // Geht gerade jemand dicht am Stuhl vorbei, wartet er kurz, statt sich in ihn hineinzusetzen.
+          const seat = activitySpotById(this.layout, guest.activitySpotId);
+          if (seat?.standOffset && this.occupancyBlocker(guest, seat)) break;
+          if (seat) {
+            guest.position = copyPoint(seat);
+            guest.target = copyPoint(seat);
+            guest.waypoints = [];
+          }
           guest.state = 'activity';
           guest.stateTime = 0;
           guest.stateDuration = this.duration(this.random.range(guest.regularId ? 38 : 20, guest.regularId ? 56 : 38));
@@ -1352,7 +1363,11 @@ export class CafeSimulation {
         if (guest.stateTime >= guest.stateDuration) this.advanceLivingSequence(guest);
         break;
       case 'walking-back-to-activity':
-        if (this.moveToward(guest, delta)) this.finishLivingSequence(guest);
+        if (this.moveToward(guest, delta)) {
+          const home = activitySpotById(this.layout, guest.movementHomeSpotId);
+          if (home?.standOffset && this.occupancyBlocker(guest, home)) break;
+          this.finishLivingSequence(guest);
+        }
         break;
       case 'walking-to-exit':
         if (this.moveToward(guest, delta)) {
@@ -1387,6 +1402,11 @@ export class CafeSimulation {
   }
 
   private finishActivity(guest: Guest): void {
+    // Steht neben dem Stuhl gerade jemand, bleibt der Gast noch kurz sitzen, statt in ihn hineinzutreten.
+    if (!this.canStepOutOfSeat(guest)) {
+      guest.stateDuration += this.duration(1.2);
+      return;
+    }
     const regular = guest.regularId !== undefined;
     const maxRounds = regular ? 3 : 1;
     const stayChance = regular ? 0.84 : 0.58;
@@ -1405,6 +1425,7 @@ export class CafeSimulation {
       guest.stateDuration = this.duration(2);
       return;
     }
+    this.stepOutOfSeat(guest);
     if (guest.activitySpotId) this.reservations.release(guest.activitySpotId, guest.id);
     guest.activitySpotId = undefined;
     this.transition(guest, 'walking-to-exit', this.layout.entrance);
@@ -1420,6 +1441,20 @@ export class CafeSimulation {
       ]);
     }
     guest.destinationId = 'exit-lane';
+  }
+
+  private canStepOutOfSeat(guest: Guest): boolean {
+    const seat = activitySpotById(this.layout, guest.activitySpotId);
+    if (!seat || (!seat.standOffset && !seat.bodyOffset) || distance(guest.position, seat) > 0.5) return true;
+    // Von der Bank tritt man in den Gang davor, vom Stuhl auf den Standplatz daneben.
+    return this.occupancyBlocker(guest, standPointFor(seat)) === undefined;
+  }
+
+  /** Wer vom Stuhl aufsteht, tritt zuerst auf den Standplatz daneben und geht von dort los. */
+  private stepOutOfSeat(guest: Guest): void {
+    const seat = activitySpotById(this.layout, guest.activitySpotId);
+    if (!seat?.standOffset || distance(guest.position, seat) > 0.5) return;
+    guest.position = standPointFor(seat);
   }
 
   private beginLivingSequence(guest: Guest): boolean {
@@ -1455,6 +1490,7 @@ export class CafeSimulation {
       this.reservations.release(`living:${route.id}`, guest.id);
       return false;
     }
+    this.stepOutOfSeat(guest);
     guest.movementRouteId = route.id;
     guest.movementStopIndex = 0;
     guest.movementHomeSpotId = home.id;
@@ -1508,7 +1544,7 @@ export class CafeSimulation {
     guest.state = 'walking-back-to-activity';
     guest.stateTime = 0;
     guest.stateDuration = 0;
-    this.setGuestTargetVia(guest, home, route.returnVia);
+    this.setGuestTargetVia(guest, standPointFor(home), route.returnVia);
   }
 
   private finishLivingSequence(guest: Guest): void {
@@ -1545,7 +1581,7 @@ export class CafeSimulation {
     if (home) {
       guest.destinationId = home.id;
       guest.state = 'walking-back-to-activity';
-      this.setGuestTarget(guest, home);
+      this.setGuestTarget(guest, standPointFor(home));
     } else {
       guest.state = 'activity';
       guest.stateTime = 0;
@@ -1720,11 +1756,14 @@ export class CafeSimulation {
   private occupancyBlocker(guest: Guest, candidate: Point): Guest | undefined {
     if (this.isOutside(candidate)) return undefined;
     if (this.navigationFor(guest).passThroughUntil > this.stats.elapsed) return undefined;
-    return this.guests.find((other) => (
-      other !== guest
-      && !this.isOutside(other.position)
-      && distance(candidate, this.bodyPosition(other)) < this.guestClearance(other)
-    ));
+    return this.guests.find((other) => {
+      if (other === guest || this.isOutside(other.position)) return false;
+      const body = this.bodyPosition(other);
+      // Wer auf der Fensterbank sitzt, sitzt hinter dem Gang: Dort gilt derselbe Abstand wie bei der Wegplanung,
+      // sonst wäre der Gang für Vorbeigehende gesperrt und sie wichen in die Stühle aus.
+      if (body !== other.position) return worldDistance(candidate, body) < PASSING_CLEARANCE;
+      return distance(candidate, body) < this.guestClearance(other);
+    });
   }
 
   private canOccupy(guest: Guest, candidate: Point): boolean {

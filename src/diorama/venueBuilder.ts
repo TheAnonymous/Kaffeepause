@@ -41,6 +41,7 @@ import {
 import { createPixelLightPoolTexture, PixelSurfaceLibrary } from './pixelSurfaceLibrary';
 import { VENUE_VISUAL_PROFILES, type SurfaceKind, type VenueVisualProfile } from './visualProfiles';
 import { countSelectiveBloomSurfaces, registerSelectiveBloomSurface } from './selectiveBloom';
+import { ARCADE_GAMES, ArcadeScreen } from './arcadeScreens';
 import { batchStaticVenuePrimitives } from './venueBatching';
 import type { Season } from './season';
 
@@ -57,6 +58,7 @@ interface BuildContext {
   readonly focusOccluders: FocusOccluder[];
   readonly seatBindings: SeatVisualBinding[];
   readonly lightPoolTexture: Texture;
+  readonly screens: ArcadeScreen[];
   focusOccluderSerial: number;
 }
 
@@ -1014,8 +1016,14 @@ function arcadeCabinet(
   const bodyWidth = variant % 3 === 0 ? 1.08 : variant % 3 === 1 ? 1.18 : 1.12;
   const bodyHeight = variant % 2 === 0 ? 2.7 : 2.84;
   box(context, cabinet, [bodyWidth, bodyHeight, 0.88], [0, bodyHeight / 2, 0], { color: variant % 2 === 0 ? context.theme.wood : '#282d3c', metalness: 0.12, surface: 'metal' });
-  box(context, cabinet, [bodyWidth + 0.12, 0.68 + (variant % 2) * 0.08, 1.02], [0, bodyHeight - 0.34, 0.02], { color: context.theme.ink, surface: 'metal' });
-  glowPanel(context, cabinet, [0.76 + (variant % 3) * 0.04, 0.5 + (variant % 2) * 0.06, 0.05], [0, bodyHeight - 0.36, 0.54], color);
+  // Das Bildschirmgehäuse steht kaum über den Korpus vor; sonst stößt der Kopf des Spielers hinein.
+  box(context, cabinet, [bodyWidth + 0.12, 0.68 + (variant % 2) * 0.08, 0.94], [0, bodyHeight - 0.34, -0.02], { color: context.theme.ink, surface: 'metal' });
+  // Auf jedem Automaten läuft ein eigenes kleines Pixelspiel.
+  const screen = new ArcadeScreen(ARCADE_GAMES[variant % ARCADE_GAMES.length]!, color, 0.76 + (variant % 3) * 0.04, 0.5 + (variant % 2) * 0.06);
+  screen.mesh.position.set(0, bodyHeight - 0.36, 0.475);
+  registerSelectiveBloomSurface(screen.mesh);
+  cabinet.add(screen.mesh);
+  context.screens.push(screen);
   box(context, cabinet, [0.96, 0.18, 0.58], [0, 1.67, 0.46], { color: context.theme.metal, metalness: 0.38, surface: 'metal' });
   box(context, cabinet, [0.82, 0.045, 0.05], [0, bodyHeight + 0.04, 0.48], { color, emissive: color, emissiveIntensity: 0.32, castShadow: false, surface: 'emissive' });
   cylinder(context, cabinet, 0.08, 0.2, [-0.25, 1.66, 0.68], '#f1d477', 8, 'emissive');
@@ -1181,7 +1189,7 @@ export function buildVenue(venue: VenueKind, season: Season = 'none'): DioramaSe
   const lightPoolTexture = createPixelLightPoolTexture();
   const context: BuildContext = {
     geometries, materials, theme, profile, surfaces, usedSurfaceKinds, surfaceMaterials, geometryCache, materialCache,
-    focusOccluders, seatBindings, lightPoolTexture, focusOccluderSerial: 0,
+    focusOccluders, seatBindings, lightPoolTexture, screens: [], focusOccluderSerial: 0,
   };
   const animatedProps: AnimatedProp[] = [];
   const shell = buildShell(context, root, venue);
@@ -1224,6 +1232,7 @@ export function buildVenue(venue: VenueKind, season: Season = 'none'): DioramaSe
     exteriorMaterials: shell.exteriorMaterials,
     lightPools: pendants.map((pendant) => pendant.pool),
     animatedProps,
+    screens: context.screens,
     focusOccluders,
     seatBindings,
     theme,
@@ -1238,6 +1247,7 @@ export function buildVenue(venue: VenueKind, season: Season = 'none'): DioramaSe
       for (const geometry of geometries) geometry.dispose();
       for (const entry of materials) entry.dispose();
       lightPoolTexture.dispose();
+      for (const screen of context.screens) screen.dispose();
       surfaces.dispose();
       root.removeFromParent();
     },

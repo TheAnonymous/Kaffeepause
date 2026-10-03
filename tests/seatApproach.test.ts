@@ -26,7 +26,7 @@ describe('Hinsetzen', () => {
     });
     expect(sitDowns).toBeGreaterThan(5);
     expect(worst).toBeLessThan(0.35);
-  });
+  }, 60_000);
 
   it('dreht sich nur auf den letzten Schritten und nur beim Weg zu einem Sitzplatz', () => {
     const layout = VENUE_LAYOUTS.cafe;

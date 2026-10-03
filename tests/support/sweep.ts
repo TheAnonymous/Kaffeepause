@@ -38,6 +38,8 @@ export interface SweepFigure {
   readonly stepping: boolean;
   /** Seitliches Wackeln einer Geste; gehört nicht zur Bewegung durch den Raum. */
   readonly offsetX: number;
+  /** Mitte des Kopfes in Weltkoordinaten. */
+  readonly head?: { readonly x: number; readonly y: number; readonly z: number };
   /** Pose aus dem Zustand des Gastes (vor der Korrektur nach Bewegung). */
   readonly statePose?: string;
   /** Ob die Figur gerade auf den Stuhl gleitet oder von ihm weg (Rest-Versatz nach Hinsetzen oder Aufstehen). */
@@ -76,6 +78,8 @@ export interface Furniture {
 export interface SweepVenue {
   readonly furniture: readonly Furniture[];
   readonly seatCenters: ReadonlyMap<string, { readonly x: number; readonly z: number }>;
+  /** Bildschirme der Arcade-Automaten: Mitte und halbe Höhe, in Weltkoordinaten. */
+  readonly screens: readonly { readonly x: number; readonly y: number; readonly z: number; readonly halfHeight: number }[];
 }
 
 /** Möbel samt Grundfläche, wie sie die Darstellung baut. */
@@ -88,9 +92,17 @@ export function venueFurniture(venue: VenueKind): SweepVenue {
     return { id: occluder.id, kind: occluder.kind, minX: box.min.x, maxX: box.max.x, minZ: box.min.z, maxZ: box.max.z, height: size.y };
   });
   const seatCenters = new Map(set.seatBindings.map((binding) => [binding.activitySpotId, binding.transform.seatCenter]));
+  const screens = set.screens.map((screen) => {
+    const center = screen.mesh.getWorldPosition(new Vector3());
+    const box = new Box3().setFromObject(screen.mesh);
+    return { x: center.x, y: center.y, z: center.z, halfHeight: (box.max.y - box.min.y) / 2 };
+  });
   set.dispose();
-  return { furniture, seatCenters };
+  return { furniture, seatCenters, screens };
 }
+
+/** Bodenoberkante; Figuren stehen dort (siehe `FLOOR_SURFACE_Y`). */
+const FLOOR_Y = 0.08;
 
 export function runSweep(options: SweepOptions, onFrame: (frame: SweepFrame) => void): void {
   const { venue, seconds } = options;
@@ -170,6 +182,7 @@ export function runSweep(options: SweepOptions, onFrame: (frame: SweepFrame) => 
         passingThrough: simulation.isPassingThrough(guest),
         stepping,
         offsetX: visual.offsetX,
+        head: (() => { node.figure.root.updateMatrixWorld(true); const head = node.figure.headCenter(new Vector3()); return { x: head.x + node.motion.x, y: head.y + FLOOR_Y + visual.offsetY, z: head.z + node.motion.z }; })(),
         statePose: visual.pose,
         settling: node.motion.settleX !== 0 || node.motion.settleZ !== 0,
       });

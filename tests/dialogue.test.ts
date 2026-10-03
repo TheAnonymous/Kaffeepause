@@ -4,7 +4,7 @@ import {
   calculateDialogue,
   dialogueAnimation,
 } from '../src/diorama/dialogue';
-import { keepBubblesOnScreen, resolveBubblePlacements } from '../src/diorama/bubbleLayout';
+import { avoidFaces, keepBubblesOnScreen, resolveBubblePlacements } from '../src/diorama/bubbleLayout';
 import { emotesForDialogue } from '../src/diorama/emotes';
 import type { SceneSnapshot } from '../src/scene/types';
 import type { Guest } from '../src/simulation/types';
@@ -134,5 +134,35 @@ describe('Sprechblasen am Bildrand', () => {
   it('lässt Blasen mitten im Bild unverändert', () => {
     const placements = [shown('guest-1')];
     expect(keepBubblesOnScreen([bubble('guest-1', 200)], placements, 390)).toEqual(placements);
+  });
+});
+
+describe('Sprechblasen und Gesichter', () => {
+  const bubble = { speakerId: 'guest-1', kind: 'conversation' as const, x: 400, y: 200, width: 120, height: 90 };
+
+  it('rückt eine Blase zur Seite, wenn sie das Gesicht eines Gastes dahinter verdecken würde', () => {
+    const face = { id: 'guest-2', left: 380, right: 420, top: 190, bottom: 230 };
+    const [placement] = avoidFaces([bubble], [{ speakerId: 'guest-1', visible: true, offsetX: 0, offsetY: 0 }], [face], 1440);
+    expect(placement?.visible).toBe(true);
+    const left = bubble.x + (placement?.offsetX ?? 0) - bubble.width / 2;
+    const right = bubble.x + (placement?.offsetX ?? 0) + bubble.width / 2;
+    const top = bubble.y + (placement?.offsetY ?? 0) - bubble.height / 2;
+    const bottom = bubble.y + (placement?.offsetY ?? 0) + bubble.height / 2;
+    const covered = Math.max(0, Math.min(right, face.right) - Math.max(left, face.left))
+      * Math.max(0, Math.min(bottom, face.bottom) - Math.max(top, face.top));
+    expect(covered / ((face.right - face.left) * (face.bottom - face.top))).toBeLessThanOrEqual(0.15);
+  });
+
+  it('lässt die Blase, wo sie ist, wenn sie nur über dem eigenen Kopf oder im Freien hängt', () => {
+    const own = { id: 'guest-1', left: 380, right: 420, top: 230, bottom: 270 };
+    const placements = [{ speakerId: 'guest-1', visible: true, offsetX: 0, offsetY: 0 }];
+    expect(avoidFaces([bubble], placements, [own], 1440)).toEqual(placements);
+  });
+
+  it('weicht nicht aus dem Bild heraus', () => {
+    const atEdge = { ...bubble, x: 70 };
+    const face = { id: 'guest-2', left: 50, right: 90, top: 190, bottom: 230 };
+    const [placement] = avoidFaces([atEdge], [{ speakerId: 'guest-1', visible: true, offsetX: 0, offsetY: 0 }], [face], 1440);
+    expect(atEdge.x + (placement?.offsetX ?? 0) - atEdge.width / 2).toBeGreaterThanOrEqual(6);
   });
 });

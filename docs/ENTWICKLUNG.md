@@ -20,13 +20,21 @@ Wo eine Gast-Figur gezeichnet wird und wohin sie sich dreht, entscheidet `figure
 
 Damit sich die Simulation nicht festfährt, gelten vier Regeln (`cafeSimulation.ts`, `layout.ts`): Neue Gäste stellen sich nur hinten in der Schlange an (`nextQueuePlace`), denn ein reservierter Platz vorn, an dem man nicht vorbeikommt, hat früher ganze Schlangen minutenlang eingefroren. Wege weichen erst mit bequemem, dann mit knappem Abstand allen Wartenden und Stühlen aus (`findVenueRoute`). Kommt ein Gast fünf Sekunden nicht weiter oder 25 Sekunden seinem Ziel nicht näher, geht er als letzter Ausweg kurz durch andere hindurch (`passThroughUntil`, `isPassingThrough`). Wer auf der Fensterbank sitzt, sitzt hinter dem Gang vor ihr (`bodyOffset`), sonst wäre der schmale Gang für alle versperrt. `tests/queue.test.ts` hält fest, dass auch in Fällen, die früher festhingen, niemand länger als zwei Minuten wartet.
 
-Mochi (`cafeCat.ts`) wartet, bevor sie losläuft, solange jemand in ihrem Weg steht, und bleibt stehen, wenn ihr unterwegs jemand nahe kommt (`catMustWait`). Ganz vermeiden lässt sich das Zusammentreffen im schmalen Gang vor der Bank nicht; in den Läufen steht noch in etwa ein bis zwei Prozent der Zeit jemand auf ihrem Platz.
+Mochi (`cafeCat.ts`) wartet, bevor sie losläuft, solange jemand in ihrem Weg steht (`catMustWait`). Kommt ihr unterwegs vor der Fensterbank jemand entgegen, springt sie auf eine freie Stelle der Bank zwischen den Sitzplätzen (`benchRestX`), lässt den Gast vorbei und springt zurück; anderswo bleibt sie sitzen. In den Läufen steht ihr nur noch in etwa 0,3 % der Zeit jemand im Weg.
+
+Stühle und Hocker haben einen Standplatz daneben (`standOffset` in `layout.ts`): Dort kommt der Gast an, dreht sich zum Tisch und gleitet beim Hinsetzen auf den Sitz; beim Aufstehen tritt er dorthin zurück. Steht gerade jemand auf dem Standplatz oder geht dicht am Stuhl vorbei, wartet er einen Moment.
 
 `tests/sweep.test.ts` spielt pro Ort 15 Minuten Szenenzeit durch (mit Geschichten, Missgeschicken und einer Maus, die Gäste zufällig zur Seite wendet) und vermisst jedes Bild: Stehen Gehende in Möbeln oder Sitzenden? Drehen sich Sitzende in die Lehne? Springt die Bedienung? Das Prüfgerüst steht in `tests/support/sweep.ts`; neue Fehler lassen sich dort als weitere Messung ergänzen. Die Laufwege weichen leeren Stühlen und Hockern aus (`planRoute` in `cafeSimulation.ts`), und Abstände zwischen Figuren zählen in Diorama-Einheiten, weil ein Pixel des Grundrisses in der Tiefe doppelt so lang ist wie in der Breite (`worldDistance` in `layout.ts`).
 
 Die Eingangstür beschreibt `doorSpec()` in `venueBuilder.ts`: Scharnier an einer Zarge der Wandöffnung, Schwenk nach innen. `doorShouldBeOpen()` hält sie offen, solange jemand ein- oder ausgeht oder sich im Schwenkbereich bewegt. `tests/door.test.ts` prüft den ganzen Schwenk gegen Wände, Möbel, Sitzplätze und den Laufweg.
 
 Tische werden aus den Tischflächen in `src/simulation/layout.ts` gebaut. Wer einen Tisch verschiebt oder vergrößert, ändert also Simulation und Bild zugleich.
+
+## Sprechblasen und Automaten
+
+Sprechblasen hängen über dem Kopf; verdeckt eine Blase das Gesicht eines anderen (oft sitzt dort von vorn gesehen jemand weiter hinten), rückt sie zur Seite oder etwas höher (`avoidFaces` in `bubbleLayout.ts`). Im Testmodus veröffentlicht der Canvas dazu `data-bubble-layout` mit allen Blasen und Köpfen auf dem Bildschirm.
+
+Auf jedem Arcade-Automaten läuft ein eigenes kleines Pixelspiel (`arcadeScreens.ts`: Invaders, Rennen, Klötze, Pong, Sterne, Labyrinth), zehnmal pro Sekunde neu gezeichnet. Das Bildschirmgehäuse steht kaum über den Korpus vor, und die Spieler stehen etwas zurück, damit der gesenkte Kopf nicht ins Gehäuse ragt; `tests/sweep.test.ts` prüft das.
 
 ## Anklicken
 
