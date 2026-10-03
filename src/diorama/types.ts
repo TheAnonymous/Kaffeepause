@@ -198,6 +198,8 @@ export interface DioramaSet {
   readonly animatedProps: readonly AnimatedProp[];
   /** Bildschirme der Arcade-Automaten mit ihren kleinen Spielen. */
   readonly screens: readonly ArcadeScreen[];
+  /** Café-Scheibe mit Tropfenmuster, nur bei Regen sichtbar. */
+  readonly rainGlass?: MeshBasicMaterial;
   readonly focusOccluders: readonly FocusOccluder[];
   readonly seatBindings: readonly SeatVisualBinding[];
   readonly theme: DioramaTheme;

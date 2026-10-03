@@ -59,6 +59,8 @@ interface BuildContext {
   readonly seatBindings: SeatVisualBinding[];
   readonly lightPoolTexture: Texture;
   readonly screens: ArcadeScreen[];
+  /** Café-Scheibe mit Tropfenmuster; die Darstellung blendet sie bei Regen ein. */
+  rainGlass?: MeshBasicMaterial;
   focusOccluderSerial: number;
 }
 
@@ -499,6 +501,24 @@ function addPlant(context: BuildContext, root: Group, x: number, y: number, z: n
   }
 }
 
+/** Brett unter den Regalen mit Pflanze, Bücherstapel und Tasse, früher ein gemaltes Bild. */
+function addCafeStillLife(context: BuildContext, root: Group): void {
+  box(context, root, [1.3, 0.1, 0.36], [-6.3, 1.62, -3.02], { color: context.theme.woodLight, roughness: 0.78, surface: 'wood' });
+  cylinder(context, root, 0.12, 0.2, [-6.72, 1.77, -3.0], '#b0603a', 8);
+  const greens = ['#426c55', '#56805c', '#789168'];
+  for (let index = 0; index < 5; index += 1) {
+    const leaf = box(context, root, [0.08, 0.3 - (index % 2) * 0.06, 0.06], [-6.72 + (index - 2) * 0.06, 2.0 + (index % 3) * 0.04, -3.0 + ((index % 2) - 0.5) * 0.08], {
+      color: greens[index % greens.length], castShadow: false,
+    });
+    leaf.rotation.z = (index - 2) * 0.22;
+  }
+  for (const [index, color] of ['#3d5b4a', '#7a3b2e', '#c9a46a'].entries()) {
+    const book = box(context, root, [0.36 - index * 0.03, 0.08, 0.25], [-6.2, 1.71 + index * 0.085, -3.02], { color, roughness: 0.8, surface: 'wood' });
+    book.rotation.y = (index - 1) * 0.14;
+  }
+  addMug(context, root, -5.86, 1.77, -2.98, '#4f6b52');
+}
+
 function addMug(
   context: BuildContext,
   root: Group,
@@ -594,6 +614,9 @@ function addExterior(context: BuildContext, root: Group): readonly MeshStandardM
   root.add(outside);
   const exteriorMaterials: MeshStandardMaterial[] = [];
   const city = box(context, outside, [15.7, 7.1, 0.08], [0, 4.15, 0], { color: '#668aa4', castShadow: false, surface: 'glass' });
+  // Der Himmel bekommt kein Oberflächenmuster: Das Glasmuster zeichnet Tropfen, die sonst bei jedem Wetter am Himmel hingen.
+  city.material = new MeshStandardMaterial({ color: '#668aa4' });
+  context.materials.add(city.material);
   exteriorMaterials.push(city.material);
   const skyline = ['#273448', '#354157', '#1e2b42', '#3a4557'];
   for (let index = 0; index < 19; index += 1) {
@@ -729,14 +752,15 @@ function addCafeWindow(context: BuildContext, root: Group): void {
   box(context, root, [10.9, 1.5, 0.22], [-0.45, 0.75, -3.52], { color: context.theme.wall, surface: 'plaster' });
   box(context, root, [10.9, 1.2, 0.22], [-0.45, 7.9, -3.52], { color: context.theme.wallDark, surface: 'plaster' });
   const geometry = sharedGeometry(context, 'plane:unit', () => new PlaneGeometry(1, 1));
-  const glassMaterial = new MeshStandardMaterial({
-    color: '#9fc0ca', transparent: true, opacity: 0.14, roughness: 0.1, metalness: 0,
-    depthWrite: false, side: DoubleSide,
+  // Unbeleuchtet wie die anderen Fenster: Beleuchtet würden die Lampen im Raum die Scheibe nachts aufhellen.
+  // Das Tropfenmuster zeigt die Darstellung nur bei Regen (`rainGlass`).
+  const glassMaterial = new MeshBasicMaterial({
+    color: '#9fb8c2', transparent: true, opacity: 0.02, depthWrite: false, side: DoubleSide,
     map: context.surfaces.get('glass'),
   });
-  glassMaterial.userData.surfaceKind = 'glass';
   context.usedSurfaceKinds.add('glass');
   context.materials.add(glassMaterial);
+  context.rainGlass = glassMaterial;
   const glass = new Mesh(geometry, glassMaterial);
   glass.position.set(-0.45, 4.35, -3.39);
   glass.scale.set(10.6, 6.4, 1);
@@ -942,6 +966,7 @@ function buildCafe(context: BuildContext, root: Group, animated: AnimatedProp[])
   for (const x of [2.35, 2.68, 3.01]) cylinder(context, cakeCase, 0.14, 0.13, [x, 0.93, -1.52], '#d88a5d', 12, 'tile');
   markFocusOccluder(context, cakeCase, 'counter');
   addWallShelf(context, root, -6.75, 2.9, -3.02, 1.45, 3);
+  addCafeStillLife(context, root);
   addWallShelf(context, root, 4.82, 3.12, -3.02, 2.75, 2);
   const tableA = tableFootprint('cafe', 'cafe-table-a');
   const tableB = tableFootprint('cafe', 'cafe-table-b');
@@ -1049,6 +1074,9 @@ function buildArcade(context: BuildContext, root: Group, animated: AnimatedProp[
     const left = collider.id.includes('left');
     const screenColor = index % 4 === 3 ? '#d49a55' : index % 2 ? context.theme.accent : context.theme.neon;
     arcadeCabinet(context, root, point.x, point.z, left ? Math.PI / 2 : -Math.PI / 2, screenColor, index);
+    // Der Bildschirm weiß, vor welchem Spielplatz er steht (`arcade-left-cabinet-1` → `arcade-left-1`).
+    const screen = context.screens[context.screens.length - 1];
+    if (screen) screen.spotId = collider.id.replace('-cabinet', '');
   }
   const counter = new Group();
   counter.name = 'focus-occluder:counter';
@@ -1233,6 +1261,7 @@ export function buildVenue(venue: VenueKind, season: Season = 'none'): DioramaSe
     lightPools: pendants.map((pendant) => pendant.pool),
     animatedProps,
     screens: context.screens,
+    rainGlass: context.rainGlass,
     focusOccluders,
     seatBindings,
     theme,

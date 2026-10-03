@@ -166,3 +166,15 @@ describe('Sprechblasen und Gesichter', () => {
     expect(atEdge.x + (placement?.offsetX ?? 0) - atEdge.width / 2).toBeGreaterThanOrEqual(6);
   });
 });
+
+describe('Sprechblasen am oberen Bildrand', () => {
+  it('rückt eine oben angeschnittene Blase herunter und blendet sie aus, wenn sie zu weit draußen hängt', () => {
+    const near = { speakerId: 'guest-1', kind: 'conversation' as const, x: 400, y: 30, width: 120, height: 90 };
+    const [moved] = keepBubblesOnScreen([near], [{ speakerId: 'guest-1', visible: true, offsetX: 0, offsetY: 0 }], 1440);
+    expect(moved?.visible).toBe(true);
+    expect(near.y + (moved?.offsetY ?? 0) - near.height / 2).toBeGreaterThanOrEqual(6);
+    const far = { ...near, y: -40 };
+    const [hidden] = keepBubblesOnScreen([far], [{ speakerId: 'guest-1', visible: true, offsetX: 0, offsetY: 0 }], 1440);
+    expect(hidden?.visible).toBe(false);
+  });
+});

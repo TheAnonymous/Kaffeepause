@@ -32,9 +32,9 @@ Tische werden aus den Tischflächen in `src/simulation/layout.ts` gebaut. Wer ei
 
 ## Sprechblasen und Automaten
 
-Sprechblasen hängen über dem Kopf; verdeckt eine Blase das Gesicht eines anderen (oft sitzt dort von vorn gesehen jemand weiter hinten), rückt sie zur Seite oder etwas höher (`avoidFaces` in `bubbleLayout.ts`). Im Testmodus veröffentlicht der Canvas dazu `data-bubble-layout` mit allen Blasen und Köpfen auf dem Bildschirm.
+Sprechblasen bleiben im Bild: Am Rand rücken sie hinein, oben in Nahaufnahmen herunter (`keepBubblesOnScreen`). Verdeckt eine Blase das Gesicht eines anderen (oft sitzt dort von vorn gesehen jemand weiter hinten), rückt sie zur Seite oder etwas höher (`avoidFaces` in `bubbleLayout.ts`). Im Testmodus veröffentlicht der Canvas dazu `data-bubble-layout` mit allen Blasen und Köpfen auf dem Bildschirm.
 
-Auf jedem Arcade-Automaten läuft ein eigenes kleines Pixelspiel (`arcadeScreens.ts`: Invaders, Rennen, Klötze, Pong, Sterne, Labyrinth), zehnmal pro Sekunde neu gezeichnet. Das Bildschirmgehäuse steht kaum über den Korpus vor, und die Spieler stehen etwas zurück, damit der gesenkte Kopf nicht ins Gehäuse ragt; `tests/sweep.test.ts` prüft das.
+Auf jedem Arcade-Automaten läuft ein eigenes kleines Pixelspiel (`arcadeScreens.ts`: Invaders, Rennen, Klötze, Pong, Sterne, Labyrinth), zehnmal pro Sekunde neu gezeichnet. Ohne Spieler zeigt er eine gedimmte Demo mit blinkender Münze; kommt jemand, blitzt der Start auf; geht er, fällt ein Vorhang mit großem Pixel-X („Game Over“). Beim Highscore-Moment jubelt der Bildschirm mit, in der Geschichte vom flackernden Automaten spinnt er. Bei reduzierter Bewegung bleibt er ein ruhiges Standbild. Das Bildschirmgehäuse steht kaum über den Korpus vor, und die Spieler stehen etwas zurück, damit der gesenkte Kopf nicht ins Gehäuse ragt; `tests/sweep.test.ts` prüft das.
 
 ## Anklicken
 
@@ -45,6 +45,8 @@ Ein Klick ins Diorama geht an `handleClick()` im Renderer: Gäste und Bedienung 
 Das Bild hat immer das Seitenverhältnis des Fensters (`resize()` in `DioramaRenderer.ts`), sonst wäre es verzerrt: Die Zeichenfläche wird auf die Fenstergröße gestreckt, und ein festes 16:9-Bild sähe in 4:3 oder hochkant gequetscht aus. `fitFieldOfView()` hält dabei die Breite des Raums im Bild: Schmalere Fenster zeigen mehr Höhe, breitere rücken etwas näher heran. Ab einem Seitenverhältnis unter 1,5 (`TOUR_ASPECT`) zeigt die Kamera nur einen Ausschnitt und fährt durch den Raum (Handy, Tablet hochkant). `e2e/cafe.spec.ts` prüft in sieben Fenstergrößen, dass Bild und Fenster dasselbe Verhältnis haben.
 
 ## Fenster und Draußen
+
+Die Café-Scheibe zeigt Regentropfen und die gemalte Regenstadt nur bei Regen und Gewitter (`look.rain`); bei klarem Wetter sieht man nur Himmel und Klötzchenhäuser. Von den gemalten Flächen aus der Pixel-Zeit sind nur noch die geblieben, die zu den Klötzchen passen (Kuchenvitrine, Espressomaschine, Küchenwand und Noren bei Ramen, Teppich und Pokalvitrine in der Arcade); Laterne und Stillleben sind jetzt Klötzchen.
 
 Jeder Ort hat ein Fenster in der Rückwand (`VENUE_WINDOWS` in `venueBuilder.ts`): das große Café-Fenster, ein Fenster mit Holzgitter im Ramen-Restaurant und ein Neon-gerahmtes Fenster in der Arcade. Dahinter liegen Himmel und Häuser, die selbst leuchten und der Tageszeit folgen; sie nehmen kaum Raumlicht an, sonst würden die Lampen sie nachts durch die Wand aufhellen. Regen und Schnee fallen nur hinter dem Fenster des aktuellen Ortes. Hinter den Seitentüren von Café und Ramen-Restaurant liegt eine Häuserzeile, die man sieht, wenn die Tür offen steht.
 

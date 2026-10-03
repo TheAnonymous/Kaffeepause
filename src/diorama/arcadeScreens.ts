@@ -146,14 +146,40 @@ const DRAW: Readonly<Record<ArcadeGame, Draw>> = {
   },
 };
 
+/** Was am Automaten gerade los ist. */
+export interface ArcadeScreenState {
+  /** Jemand steht davor und spielt. */
+  readonly playing: boolean;
+  /** Highscore: Der Bildschirm jubelt mit. */
+  readonly celebrating?: boolean;
+  /** Der Automat spinnt (Stammgast-Geschichte mit dem flackernden Automaten). */
+  readonly glitching?: boolean;
+  /** Reduzierte Bewegung: ruhiges Standbild, ohne Blitzen und Vorhang. */
+  readonly still?: boolean;
+}
+
+export type ArcadeScreenMode = 'demo' | 'start' | 'play' | 'over' | 'celebrate' | 'glitch';
+
+/** Nach dem Weggehen zeigt der Automat so lange „Game Over“, danach wieder die Demo. */
+const GAME_OVER_SECONDS = 2.6;
+/** So lange blitzt der Bildschirm beim Spielstart auf. */
+const START_SECONDS = 0.7;
+
 export class ArcadeScreen {
   readonly mesh: Mesh<PlaneGeometry, MeshBasicMaterial>;
+  /** Der Spielplatz vor dem Automaten (Aktivitätsplatz der Simulation). */
+  spotId?: string;
+  private playing = false;
+  private startedAt = Number.NEGATIVE_INFINITY;
+  private endedAt = Number.NEGATIVE_INFINITY;
   private readonly context?: CanvasRenderingContext2D;
   private readonly texture?: CanvasTexture;
   private readonly accent: string;
   /** Dunkle Fassung der Automatenfarbe als Hintergrund, damit der Bildschirm auch bei ruhigen Szenen leuchtet. */
   private readonly background: string;
-  private lastFrame = -1;
+  private lastKey = '';
+  /** Was der Bildschirm gerade zeigt. */
+  mode: ArcadeScreenMode = 'demo';
 
   constructor(readonly game: ArcadeGame, accent: ColorRepresentation, width: number, height: number) {
     this.accent = `#${new Color(accent).getHexString()}`;
@@ -181,18 +207,79 @@ export class ArcadeScreen {
     this.update(0);
   }
 
-  /** Zeichnet das Spiel weiter, wenn ein neues Bild fällig ist. */
-  update(time: number): void {
+  /**
+   * Zeichnet den Bildschirm weiter, wenn ein neues Bild fällig ist: Ohne Spieler läuft eine ruhige Demo mit
+   * blinkender Münze; kommt jemand, blitzt der Start auf und das Spiel läuft; geht er, fällt ein „Game Over“-Vorhang.
+   */
+  update(time: number, state: ArcadeScreenState = { playing: false }): void {
+    if (state.playing !== this.playing) {
+      if (state.playing) this.startedAt = time;
+      else this.endedAt = time;
+      this.playing = state.playing;
+    }
+    const mode: ArcadeScreenMode = state.still ? (this.playing ? 'play' : 'demo')
+      : state.glitching ? 'glitch'
+        : state.celebrating ? 'celebrate'
+          : this.playing ? (time - this.startedAt < START_SECONDS ? 'start' : 'play')
+            : time - this.endedAt < GAME_OVER_SECONDS ? 'over' : 'demo';
+    this.mode = mode;
     if (!this.context || !this.texture) return;
-    const frame = Math.max(0, Math.floor(time * FPS));
-    if (frame === this.lastFrame) return;
-    this.lastFrame = frame;
-    this.context.fillStyle = this.background;
-    this.context.fillRect(0, 0, WIDTH, HEIGHT);
-    DRAW[this.game](this.context, frame, this.accent);
+    const frame = state.still ? 0 : Math.max(0, Math.floor(time * FPS));
+    const key = `${mode}:${frame}`;
+    if (key === this.lastKey) return;
+    this.lastKey = key;
+    const context = this.context;
+    context.fillStyle = this.background;
+    context.fillRect(0, 0, WIDTH, HEIGHT);
+    if (mode === 'demo') {
+      DRAW[this.game](context, Math.floor(frame / 2), this.accent);
+      context.fillStyle = 'rgba(7, 11, 24, 0.45)';
+      context.fillRect(0, 0, WIDTH, HEIGHT);
+      // Blinkende Münze: Einwurf bitte.
+      if (frame % 10 < 6) {
+        rect(context, WIDTH / 2 - 3, HEIGHT / 2 - 3, 6, 6, '#f6d36a');
+        rect(context, WIDTH / 2 - 1, HEIGHT / 2 - 2, 2, 4, '#b8892c');
+      }
+    } else if (mode === 'start') {
+      DRAW[this.game](context, 0, this.accent);
+      const flash = 1 - (time - this.startedAt) / START_SECONDS;
+      context.fillStyle = `rgba(255, 255, 255, ${(0.85 * flash).toFixed(2)})`;
+      context.fillRect(0, 0, WIDTH, HEIGHT);
+    } else if (mode === 'over') {
+      DRAW[this.game](context, Math.floor(this.endedAt * FPS), this.accent);
+      const rows = Math.min(HEIGHT, Math.floor((time - this.endedAt) / GAME_OVER_SECONDS * HEIGHT * 1.6));
+      for (let y = 0; y < rows; y += 1) rect(context, 0, y, WIDTH, 1, y % 2 === 0 ? this.accent : '#140a24');
+      if (rows >= HEIGHT && frame % 6 < 3) {
+        // Ein großes Pixel-X statt Schrift.
+        for (let step = 0; step < 12; step += 1) {
+          rect(context, 14 + step, 9 + step, 2, 1, '#ffffff');
+          rect(context, 25 - step, 9 + step, 2, 1, '#ffffff');
+        }
+      }
+    } else if (mode === 'celebrate') {
+      DRAW[this.game](context, frame, this.accent);
+      const colors = ['#ff6fb5', '#f6e27a', '#7dff9a', '#9cf7ff', '#b48cff'];
+      for (let index = 0; index < WIDTH; index += 2) rect(context, index, 0, 2, 2, colors[(index / 2 + frame) % colors.length]!);
+      for (let index = 0; index < WIDTH; index += 2) rect(context, index, HEIGHT - 2, 2, 2, colors[(index / 2 + frame + 2) % colors.length]!);
+      for (let spark = 0; spark < 6; spark += 1) {
+        const x = (spark * 13 + frame * 3) % WIDTH;
+        const y = 4 + ((spark * 7 + frame * 2) % (HEIGHT - 8));
+        rect(context, x, y, 1, 1, '#ffffff');
+      }
+    } else if (mode === 'glitch') {
+      DRAW[this.game](context, frame, this.accent);
+      for (let band = 0; band < 5; band += 1) {
+        const y = (band * 7 + frame * 5) % HEIGHT;
+        const image = context.getImageData(0, y, WIDTH, 3);
+        context.putImageData(image, ((frame + band) % 7) - 3, y);
+        if ((frame + band) % 3 === 0) rect(context, 0, y, WIDTH, 1, band % 2 ? '#ff6fb5' : '#9cf7ff');
+      }
+    } else {
+      DRAW[this.game](context, frame, this.accent);
+    }
     // Leichte Bildzeilen wie auf einem Röhrenmonitor.
-    this.context.fillStyle = 'rgba(0, 0, 0, 0.14)';
-    for (let y = 1; y < HEIGHT; y += 2) this.context.fillRect(0, y, WIDTH, 1);
+    context.fillStyle = 'rgba(0, 0, 0, 0.14)';
+    for (let y = 1; y < HEIGHT; y += 2) context.fillRect(0, y, WIDTH, 1);
     this.texture.needsUpdate = true;
   }
 

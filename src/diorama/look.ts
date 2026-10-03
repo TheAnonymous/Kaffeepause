@@ -10,6 +10,8 @@ export interface DioramaLook {
   readonly wetness: number;
   readonly fog: number;
   readonly snow: number;
+  /** Regen oder Gewitter (0–1); nur dann zeigt das Café-Fenster Regenspuren. */
+  readonly rain: number;
   readonly precipitation: number;
   readonly exposure: number;
   readonly ambientIntensity: number;
@@ -82,6 +84,7 @@ export function calculateDioramaLook(
     wetness: clamp(rain * 0.9 + snow * 0.22),
     fog,
     snow,
+    rain: clamp(rain),
     precipitation: clamp(rain + snow * 0.7),
     exposure: 1.14 + daylight * 0.14 + (venue === 'ramen' ? 0.06 : venue === 'arcade' ? 0.2 : 0),
     ambientIntensity: 1.3 + daylight * 0.28 + (venue === 'ramen' ? 0.18 : venue === 'arcade' ? 0.75 : 0),

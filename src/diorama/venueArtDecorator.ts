@@ -40,7 +40,7 @@ const DETAIL_PLANES: Readonly<Record<VenueKind, readonly DetailPlaneSpec[]>> = {
     { region: 'surface-glass', size: [10.45, 5.72], position: [-0.45, 4.36, -3.66], opacity: 0.82, depthWrite: false, unlit: true },
     { region: 'prop-primary', size: [1.34, 1.08], position: [2.68, 0.73, -1.24], opacity: 0.92 },
     { region: 'surface-metal', size: [1.06, 1.06], position: [6.2, 1.89, -1.75], opacity: 0.9 },
-    { region: 'foreground-detail', size: [1.22, 1.22], position: [-6.3, 2.1, -2.94], opacity: 0.88 },
+    // Das Stillleben links (Pflanze, Bücher, Tasse) steht als Klötzchen auf einem Brett (`addCafeStillLife`).
   ],
   ramen: [
     { region: 'surface-metal', size: [3.1, 1.72], position: [-4.48, 2.52, -2.9], opacity: 0.62 },

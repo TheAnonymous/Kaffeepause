@@ -604,6 +604,7 @@ export class DioramaRenderer {
     this.figureDelta = Math.max(0, Math.min(0.5, time - this.figureTime));
     this.figureTime = time;
     this.updateCharacters(snapshot, time, dialogue);
+    this.updateArcadeScreens(snapshot, time);
     this.updateCat(time);
     this.updateBell(time);
     this.updateFocusEffects(snapshot);
@@ -704,10 +705,12 @@ export class DioramaRenderer {
       material.emissive.copy(base).lerp(this.exteriorHaze, haze * 0.9);
       material.emissiveIntensity = 0.28 + this.look.daylight * 0.62;
     }
+    if (this.venueSet.rainGlass) this.venueSet.rainGlass.opacity = 0.02 + this.look.rain * 0.08;
     if (this.windowArt) {
-      // Das gemalte Stadtbild zeigt eine Abendstadt. Tagsüber tritt es zurück,
-      // damit Himmel und Tageslicht durch die Scheibe fallen.
-      this.windowArt.material.opacity = (0.18 + this.look.night * 0.64) * (1 - this.look.fog * 0.7);
+      // Das gemalte Bild zeigt eine verregnete Abendstadt mit Tropfen auf der Scheibe. Es erscheint nur bei Regen
+      // und Gewitter, tagsüber schwächer; sonst sieht man durchs Fenster Himmel und Häuser aus Klötzchen.
+      this.windowArt.material.opacity = (0.18 + this.look.night * 0.64) * (1 - this.look.fog * 0.7) * this.look.rain;
+      this.windowArt.visible = this.windowArt.material.opacity > 0.01;
     }
     const atmosphereCue = atmosphereLightCue(this.atmosphere, time);
     this.atmosphereTint.set(atmosphereCue.tint);
@@ -962,8 +965,23 @@ export class DioramaRenderer {
     );
   }
 
+  /** Die Automaten spielen, wenn jemand davorsteht; beim Highscore jubeln sie, in der Geschichte vom kaputten Automaten spinnt er. */
+  private updateArcadeScreens(snapshot: SceneSnapshot, time: number): void {
+    if (this.venueSet.screens.length === 0) return;
+    const moment = snapshot.moment;
+    for (const screen of this.venueSet.screens) {
+      const player = snapshot.guests.find((guest) => guest.state === 'activity' && guest.activitySpotId === screen.spotId);
+      const involved = player !== undefined && moment?.participantIds.includes(player.id) === true;
+      screen.update(time, {
+        still: this.reducedMotion,
+        playing: player !== undefined,
+        celebrating: involved && moment?.kind === 'arcade-high-score',
+        glitching: involved && moment?.story === 'glitched-coop' && moment.storyStep === 1,
+      });
+    }
+  }
+
   private updateVenue(time: number): void {
-    for (const screen of this.venueSet.screens) screen.update(this.reducedMotion ? 0 : time);
     if (this.reducedMotion) return;
     for (const prop of this.venueSet.animatedProps) {
       const value = Math.sin(time * prop.speed + prop.phase) * prop.amplitude;
