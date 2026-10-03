@@ -96,6 +96,7 @@ import {
 } from './types';
 import { buildVenue, doorShouldBeOpen, VENUE_WINDOWS } from './venueBuilder';
 import { parseSeasonOverride, seasonForDate, type Season } from './season';
+import { LuckyCat } from './luckyCat';
 import { CafeCat } from './cafeCat';
 import {
   VENUE_VISUAL_PROFILES,
@@ -141,6 +142,16 @@ interface CharacterNode {
 function seeded(index: number, salt: number): number {
   const value = Math.sin(index * 91.73 + salt * 17.17) * 43_758.5453;
   return value - Math.floor(value);
+}
+
+/**
+ * Becher eines Gastes: Wer trinkt, leert ihn über die Zeit am Platz; anfangs dampft er noch.
+ * Bei reduzierter Bewegung steigt kein Dampf auf.
+ */
+function cupFor(guest: Guest, reducedMotion: boolean): { cupFill: number; steaming: boolean } {
+  if (guest.state !== 'activity' || guest.activity !== 'drinking' || guest.stateDuration <= 0) return { cupFill: 1, steaming: false };
+  const progress = Math.max(0, Math.min(1, guest.stateTime / guest.stateDuration));
+  return { cupFill: 1 - progress * 0.85, steaming: !reducedMotion && progress < 0.4 };
 }
 
 /** Seitenverhältnis, für das der Raum gebaut ist (16:9). */
@@ -233,6 +244,7 @@ export class DioramaRenderer {
   private bellRungAt = Number.NEGATIVE_INFINITY;
   private readonly season: Season;
   private cat?: CafeCat;
+  private luckyCat?: LuckyCat;
   private catPetted = false;
   private catPurrToken = 0;
   private artGeneration = 0;
@@ -373,6 +385,10 @@ export class DioramaRenderer {
       const point = screen(this.cat.focusPoint);
       candidates.push({ result: { kind: 'cat' }, distance: Math.hypot(clientX - point.x, clientY - point.y) - CLICK_RADIUS_SMALL });
     }
+    if (this.luckyCat) {
+      const point = screen(this.luckyCat.focusPoint);
+      candidates.push({ result: { kind: 'lucky-cat' }, distance: Math.hypot(clientX - point.x, clientY - point.y) - CLICK_RADIUS_SMALL });
+    }
     const bell = screen(this.venueSet.bell.getWorldPosition(new Vector3()).add(BELL_CLICK_OFFSET));
     candidates.push({ result: { kind: 'bell' }, distance: Math.hypot(clientX - bell.x, clientY - bell.y) - CLICK_RADIUS_SMALL });
     for (const target of this.reactionTargets) {
@@ -381,8 +397,8 @@ export class DioramaRenderer {
         distance: Math.hypot(clientX - target.x, clientY - target.y) - REACTION_ACTIVATION_RADIUS,
       });
     }
-    // Kleine Ziele (Mochi, Klingel) gewinnen, wenn man sie direkt trifft; Figuren haben einen größeren Radius.
-    const small = (result: ClickResult): boolean => result.kind === 'cat' || result.kind === 'bell';
+    // Kleine Ziele (Mochi, Winkekatze, Klingel) gewinnen, wenn man sie direkt trifft; Figuren haben einen größeren Radius.
+    const small = (result: ClickResult): boolean => result.kind === 'cat' || result.kind === 'lucky-cat' || result.kind === 'bell';
     const best = candidates
       .filter((entry) => entry.distance <= 0)
       .sort((left, right) => Number(small(right.result)) - Number(small(left.result)) || left.distance - right.distance)[0];
@@ -398,6 +414,8 @@ export class DioramaRenderer {
     if (!hit) return undefined;
     if (hit.kind === 'cat') {
       if (!this.cat?.summon(this.figureTime, this.reducedMotion)) return undefined;
+    } else if (hit.kind === 'lucky-cat') {
+      if (!this.luckyCat?.wave(this.figureTime)) return undefined;
     } else if (hit.kind === 'bell') {
       this.bellRungAt = this.figureTime;
     } else if (hit.target) {
@@ -605,6 +623,7 @@ export class DioramaRenderer {
     this.figureTime = time;
     this.updateCharacters(snapshot, time, dialogue);
     this.updateArcadeScreens(snapshot, time);
+    this.updateSeatSteam(snapshot);
     this.updateCat(time);
     this.updateBell(time);
     this.updateFocusEffects(snapshot);
@@ -648,6 +667,7 @@ export class DioramaRenderer {
     this.releaseAtmosphereArt();
     this.atmosphereLayer.dispose();
     this.cat?.dispose();
+    this.luckyCat?.dispose();
     this.venueSet.dispose();
     for (const node of this.guestNodes.values()) this.disposeCharacterNode(node);
     this.disposeCharacterNode(this.baristaNode);
@@ -966,6 +986,12 @@ export class DioramaRenderer {
   }
 
   /** Die Automaten spielen, wenn jemand davorsteht; beim Highscore jubeln sie, in der Geschichte vom kaputten Automaten spinnt er. */
+  private updateSeatSteam(snapshot: SceneSnapshot): void {
+    for (const [spotId, steam] of this.venueSet.seatSteam) {
+      steam.visible = snapshot.guests.some((guest) => guest.state === 'activity' && guest.activitySpotId === spotId);
+    }
+  }
+
   private updateArcadeScreens(snapshot: SceneSnapshot, time: number): void {
     if (this.venueSet.screens.length === 0) return;
     const moment = snapshot.moment;
@@ -1105,6 +1131,7 @@ export class DioramaRenderer {
       spotKind: visual.activitySpotKind,
       heading: { x: (next.x - guest.position.x) / 384 * DIORAMA.width, z: (next.y - guest.position.y) / 86 * DIORAMA.depth },
       yawOverride: approachYawFor(guest, activitySpot) ?? holdYaw,
+      ...cupFor(guest, this.reducedMotion),
       seatHeight: SEAT_TOP_HEIGHT[visual.activitySpotKind ?? 'table'],
       time: this.figureTime,
     });
@@ -1147,6 +1174,8 @@ export class DioramaRenderer {
       visual: catchingUp && visual.pose !== 'walking' ? { ...visual, pose: 'walking' } : visual,
       // Auch mit dem Tablett in der Hand geht die Bedienung zur Ausgabe, statt zu gleiten.
       stepping: catchingUp || Math.hypot(barista.target.x - barista.position.x, barista.target.y - barista.position.y) > 0.2,
+      // Beim Polieren hat die Bedienung eine leere Tasse in der Hand.
+      cupFill: barista.task === 'polishing' ? 0 : 1,
       heading: walkingTo,
       seatHeight: 0,
       time: this.figureTime,
@@ -1580,6 +1609,7 @@ export class DioramaRenderer {
       };
       const targets = [`bell:${screen(this.venueSet.bell.getWorldPosition(new Vector3()).add(BELL_CLICK_OFFSET))}`];
       if (this.cat) targets.push(`cat:${screen(this.cat.focusPoint.clone())}`);
+      if (this.luckyCat) targets.push(`lucky-cat:${screen(this.luckyCat.focusPoint.clone())}`);
       this.canvas.dataset.clickTargets = targets.join('|');
     }
   }
@@ -1593,9 +1623,19 @@ export class DioramaRenderer {
       this.cat.dispose();
       this.cat = undefined;
     }
+    // Im Ramen-Restaurant winkt eine Glückskatze auf der Theke.
+    if (this.venue === 'ramen' && !this.luckyCat) {
+      this.luckyCat = new LuckyCat();
+      this.scene.add(this.luckyCat.root);
+    } else if (this.venue !== 'ramen' && this.luckyCat) {
+      this.luckyCat.root.removeFromParent();
+      this.luckyCat.dispose();
+      this.luckyCat = undefined;
+    }
   }
 
   private updateCat(time: number): void {
+    this.luckyCat?.update(time, this.reducedMotion);
     if (!this.cat) return;
     const pointer = this.active ? this.pointerSample : undefined;
     const bounds = this.canvas.getBoundingClientRect();

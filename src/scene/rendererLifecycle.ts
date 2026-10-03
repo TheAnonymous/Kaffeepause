@@ -11,7 +11,7 @@ export type RendererState = 'loading' | 'ready' | 'failed';
 
 /** Was ein Klick ins Diorama getroffen hat. */
 export interface ClickResult {
-  readonly kind: 'guest' | 'barista' | 'cat' | 'bell';
+  readonly kind: 'guest' | 'barista' | 'cat' | 'lucky-cat' | 'bell';
   readonly id?: string;
 }
 

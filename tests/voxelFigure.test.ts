@@ -107,4 +107,18 @@ describe('Klötzchen-Figuren bewegen sich weich', () => {
     for (let step = 21; step <= 60; step += 1) subject.update({ visual: walking, heading: { x: 0, z: -1 }, yawOverride: 0, seatHeight: 0, time: step * 0.05 });
     expect(Math.abs(subject.root.rotation.y)).toBeLessThan(0.05);
   });
+
+  it('leert den Becher mit der Zeit und lässt nur frischen Kaffee dampfen', () => {
+    const subject = figure();
+    const drinking = visual({ pose: 'drinking', seated: true, seatView: 'side', seatFacing: 1, activitySpotKind: 'table' });
+    const pour = (fill: number, steaming: boolean) => {
+      subject.update({ visual: drinking, seatView: 'side', seatHeight: SEAT_TOP_HEIGHT.table, time: fill, cupFill: fill, steaming });
+      return subject.cupState;
+    };
+    const full = pour(1, true);
+    const half = pour(0.5, false);
+    expect(full.coffeeY).toBeGreaterThan(half.coffeeY + 0.03);
+    expect(full.steaming).toBe(true);
+    expect(half.steaming).toBe(false);
+  });
 });

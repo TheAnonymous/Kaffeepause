@@ -295,11 +295,11 @@ test('reagiert nach Mausverweildauer genau einmal mit Emote, Fokus und leisem Ak
 
 // Klick-Tests laufen mit ruhender Kamera: Fährt sie gerade zu einem Gespräch, wandern
 // die Ziele zwischen dem Auslesen ihrer Position und dem Klick über den Bildschirm.
-async function clickTarget(page: Page, name: 'bell' | 'cat'): Promise<void> {
+async function clickTarget(page: Page, name: 'bell' | 'cat' | 'lucky-cat'): Promise<void> {
   const canvas = page.locator('#cafe');
   await expect.poll(async () => await canvas.getAttribute('data-click-targets')).toContain(`${name}:`);
   const raw = await canvas.getAttribute('data-click-targets') ?? '';
-  const match = raw.match(new RegExp(`${name}:(-?\\d+),(-?\\d+)`));
+  const match = raw.match(new RegExp(`(?:^|\\|)${name}:(-?\\d+),(-?\\d+)`));
   if (!match) throw new Error(`${name} nicht gefunden: ${raw}`);
   await page.mouse.click(Number(match[1]), Number(match[2]));
 }
@@ -327,6 +327,15 @@ test('lässt Mochi auf Klick herüberkommen', async ({ page }) => {
   await page.getByTestId('enter').click();
   await clickTarget(page, 'cat');
   await expect(page.getByTestId('caption')).toHaveText(/Mochi kommt zu dir/);
+});
+
+test('lässt die Winkekatze im Ramen-Restaurant auf Klick eifrig winken', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 810 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await openCafe(page, '/?time=12:30&weather=clear#ramen');
+  await page.getByTestId('enter').click();
+  await clickTarget(page, 'lucky-cat');
+  await expect(page.getByTestId('caption')).toHaveText(/Winkekatze winkt/);
 });
 
 test('lässt einen angeklickten Gast sofort winken', async ({ page }) => {

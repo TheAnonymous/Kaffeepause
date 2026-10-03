@@ -4,7 +4,7 @@ import {
   calculateDialogue,
   dialogueAnimation,
 } from '../src/diorama/dialogue';
-import { avoidFaces, keepBubblesOnScreen, resolveBubblePlacements } from '../src/diorama/bubbleLayout';
+import { avoidFaces, keepBubblesOnScreen, MAX_SIDE_SHIFT, MAX_UP_SHIFT, resolveBubblePlacements } from '../src/diorama/bubbleLayout';
 import { emotesForDialogue } from '../src/diorama/emotes';
 import type { SceneSnapshot } from '../src/scene/types';
 import type { Guest } from '../src/simulation/types';
@@ -176,5 +176,19 @@ describe('Sprechblasen am oberen Bildrand', () => {
     const far = { ...near, y: -40 };
     const [hidden] = keepBubblesOnScreen([far], [{ speakerId: 'guest-1', visible: true, offsetX: 0, offsetY: 0 }], 1440);
     expect(hidden?.visible).toBe(false);
+  });
+});
+
+describe('Sprechblasen bleiben beim Sprecher', () => {
+  it('rückt beim Ausweichen nie so weit, dass die Blase frei im Raum hängt', () => {
+    const bubble = { speakerId: 'guest-1', kind: 'conversation' as const, x: 400, y: 200, width: 120, height: 90 };
+    // Ein Gesicht direkt darunter und zu beiden Seiten: Es gibt keinen freien Platz in der Nähe.
+    const faces = [-130, -65, 0, 65, 130].flatMap((dx) => [0, -45].map((dy) => ({
+      id: `guest-${dx}-${dy}`, left: 380 + dx, right: 420 + dx, top: 190 + dy, bottom: 230 + dy,
+    })));
+    const [placement] = avoidFaces([bubble], [{ speakerId: 'guest-1', visible: true, offsetX: 0, offsetY: 0 }], faces, 1440);
+    expect(Math.abs(placement?.offsetX ?? 0)).toBeLessThanOrEqual(bubble.width * MAX_SIDE_SHIFT + 0.01);
+    expect(-(placement?.offsetY ?? 0)).toBeLessThanOrEqual(bubble.height * MAX_UP_SHIFT + 0.01);
+    expect(placement?.offsetY ?? 0).toBeLessThanOrEqual(0);
   });
 });

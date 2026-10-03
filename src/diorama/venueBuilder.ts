@@ -59,6 +59,7 @@ interface BuildContext {
   readonly seatBindings: SeatVisualBinding[];
   readonly lightPoolTexture: Texture;
   readonly screens: ArcadeScreen[];
+  readonly seatSteam: Map<string, Object3D>;
   /** Café-Scheibe mit Tropfenmuster; die Darstellung blendet sie bei Regen ein. */
   rainGlass?: MeshBasicMaterial;
   focusOccluderSerial: number;
@@ -581,7 +582,7 @@ function addSteamPlume(
   y: number,
   z: number,
   phase: number,
-): void {
+): Group {
   const steam = new Group();
   steam.name = 'authored-steam-plume';
   root.add(steam);
@@ -591,6 +592,7 @@ function addSteamPlume(
   });
   wisp.rotation.z = -0.08;
   animated.push({ object: steam, phase, speed: 0.42, amplitude: 0.035, axis: 'y' });
+  return steam;
 }
 
 function addStool(context: BuildContext, root: Group, spot: SeatedActivitySpot): void {
@@ -998,7 +1000,8 @@ function buildRamen(context: BuildContext, root: Group, animated: AnimatedProp[]
     addStool(context, root, spot);
     const bowl = cylinder(context, root, 0.2, 0.17, [point.x, 1.45, -1.75], index % 3 === 0 ? '#b9503d' : index % 3 === 1 ? '#b9a47e' : '#6f8078', 12, 'tile');
     bowl.scale.y = 0.55;
-    addSteamPlume(context, root, animated, point.x, 1.62, -1.75, point.x);
+    // Die Schüssel dampft nur, wenn jemand davor sitzt (siehe `seatSteam`).
+    context.seatSteam.set(spot.id, addSteamPlume(context, root, animated, point.x, 1.62, -1.75, point.x));
   }
   addTable(context, root, 'ramen', 'ramen-pair-table');
   for (const spot of VENUE_LAYOUTS.ramen.activitySpots.filter((entry) => entry.kind === 'table')) {
@@ -1217,7 +1220,7 @@ export function buildVenue(venue: VenueKind, season: Season = 'none'): DioramaSe
   const lightPoolTexture = createPixelLightPoolTexture();
   const context: BuildContext = {
     geometries, materials, theme, profile, surfaces, usedSurfaceKinds, surfaceMaterials, geometryCache, materialCache,
-    focusOccluders, seatBindings, lightPoolTexture, screens: [], focusOccluderSerial: 0,
+    focusOccluders, seatBindings, lightPoolTexture, screens: [], seatSteam: new Map(), focusOccluderSerial: 0,
   };
   const animatedProps: AnimatedProp[] = [];
   const shell = buildShell(context, root, venue);
@@ -1261,6 +1264,7 @@ export function buildVenue(venue: VenueKind, season: Season = 'none'): DioramaSe
     lightPools: pendants.map((pendant) => pendant.pool),
     animatedProps,
     screens: context.screens,
+    seatSteam: context.seatSteam,
     rainGlass: context.rainGlass,
     focusOccluders,
     seatBindings,

@@ -82,6 +82,8 @@ export class CafeAudioEngine {
   private guestCount = 0;
   private atmosphereSignature = '';
   private venue: VenueKind = 'cafe';
+  /** Nur im Testmodus: Messpunkte an den Tonspuren, um zu prüfen, was bei welchem Wetter zu hören ist. */
+  private meters?: Map<string, AnalyserNode>;
 
   async start(activatedContext?: AudioContext): Promise<AudioState> {
     if (this.context) {
@@ -285,6 +287,18 @@ export class CafeAudioEngine {
     this.playEffectTone(2_637, 2_620, start + 0.004, 0.7, 0.012, 'triangle');
   }
 
+  /** Helles Glöckchen am Halsband der Winkekatze. */
+  playChime(): void {
+    const context = this.context;
+    if (!context || !this.master || this.muted || this.state !== 'playing') return;
+    const start = context.currentTime + 0.015;
+    for (let index = 0; index < 5; index += 1) {
+      const at = start + index * 0.11;
+      this.playEffectTone(3_520, 3_500, at, 0.22, 0.01, 'sine');
+      this.playEffectTone(5_274, 5_250, at, 0.14, 0.004, 'sine');
+    }
+  }
+
   /** Leises Schnurren der Café-Katze. */
   playPurr(): void {
     const context = this.context;
@@ -373,6 +387,33 @@ export class CafeAudioEngine {
     this.bedBus.connect(master);
     this.effectsBus.connect(master);
     this.sampleBus.connect(master);
+    if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('testRender') === 'diagnostic') {
+      this.meters = new Map();
+      const taps: [string, AudioNode][] = [
+        ['rain', this.rainBus], ['wind', this.windBus], ['exterior', this.exteriorFilter], ['room', this.roomBus],
+        ['music', this.musicBus], ['samples', this.sampleBus], ['effects', this.effectsBus], ['master', master],
+      ];
+      for (const [name, node] of taps) {
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 4096;
+        node.connect(analyser);
+        this.meters.set(name, analyser);
+      }
+    }
+  }
+
+  /** Nur im Testmodus: Pegel jeder Tonspur in dBFS (−120 heißt still). */
+  measureLevels(): Record<string, number> {
+    const levels: Record<string, number> = {};
+    for (const [name, analyser] of this.meters ?? []) {
+      const data = new Float32Array(analyser.fftSize);
+      analyser.getFloatTimeDomainData(data);
+      let sum = 0;
+      for (const value of data) sum += value * value;
+      const rms = Math.sqrt(sum / data.length);
+      levels[name] = rms > 1e-6 ? Math.round(20 * Math.log10(rms) * 10) / 10 : -120;
+    }
+    return levels;
   }
 
   private async loadSelectedVenueSamples(): Promise<void> {
@@ -762,12 +803,14 @@ export class CafeAudioEngine {
     const night = atmosphere.dayPhase === 'night' || atmosphere.dayPhase === 'evening';
     const windAngle = atmosphere.weather.windDirection * Math.PI / 180;
     setTarget(this.rainBus, Math.min(1, rain + (wave?.wave === 'rain-surge' ? waveAmount * 0.42 : 0)));
-    setTarget(this.windBus, Math.min(0.3, wind * 0.16 + (wave?.wave === 'wind-gust' ? waveAmount * 0.12 : 0)));
+    // Schnee dämpft: Draußen klingt es leiser und dumpfer.
+    const snow = atmosphere.weather.kind === 'snow' ? 1 : 0;
+    setTarget(this.windBus, Math.min(0.3, wind * 0.16 * (1 - snow * 0.45) + (wave?.wave === 'wind-gust' ? waveAmount * 0.12 : 0)));
     setParameter(this.rainLowpass?.frequency, (night ? 2_400 : 3_400) + rain * 900);
     setParameter(this.rainPan?.pan, Math.sin(windAngle) * 0.42);
     setParameter(this.windFilter?.frequency, 350 + wind * 420);
     setParameter(this.windPan?.pan, -Math.sin(windAngle) * 0.34);
-    setParameter(this.exteriorFilter?.frequency, 980 + (wave?.wave === 'distant-thunder' ? waveAmount * 380 : 0), 0.8);
+    setParameter(this.exteriorFilter?.frequency, 980 - snow * 420 + (wave?.wave === 'distant-thunder' ? waveAmount * 380 : 0), 0.8);
     const roomBase = this.venue === 'arcade' ? 0.24 : this.venue === 'ramen' ? 0.29 : 0.32;
     const musicBase = this.venue === 'arcade' ? 0.68 : this.venue === 'ramen' ? 0.72 : 0.92;
     const reverbBase = this.venue === 'arcade' ? 0.055 : this.venue === 'ramen' ? 0.07 : 0.09;

@@ -30,7 +30,7 @@ const HINT_STORAGE_KEY = 'kaffeepause-tipp-gesehen';
 
 const HINT_MESSAGES: Readonly<Record<VenueKind, string>> = {
   cafe: 'Probier mal: Mochi, die Klingel und die Gäste reagieren auf dich.',
-  ramen: 'Probier mal: Die Klingel und die Gäste reagieren auf dich.',
+  ramen: 'Probier mal: Die Winkekatze, die Klingel und die Gäste reagieren auf dich.',
   arcade: 'Probier mal: Die Klingel und die Gäste reagieren auf dich.',
 };
 
@@ -311,7 +311,8 @@ export class KaffeepauseApp {
     renderDioramaVisualFrame?: () => void;
     stepDioramaDiagnosticFrame?: (deltaSeconds?: number) => void;
     setDioramaDiagnosticVenue?: (venue: VenueKind) => void;
-    readDioramaGuests?: () => readonly { id: string; state: string; x: number; y: number; targetX: number; targetY: number }[];
+    readDioramaGuests?: () => readonly { id: string; state: string; activity: string; x: number; y: number; targetX: number; targetY: number }[];
+    readAudioLevels?: () => Record<string, number>;
   } {
     return window;
   }
@@ -372,9 +373,10 @@ export class KaffeepauseApp {
       this.devRenderingWindow.setDioramaDiagnosticVenue = (venue) => {
         if (isVenueKind(venue)) this.selectVenue(venue);
       };
+      this.devRenderingWindow.readAudioLevels = () => this.audio.measureLevels();
       // Für Browser-Tests, die einen bestimmten Moment abpassen wollen (etwa das Hinsetzen eines Gastes).
       this.devRenderingWindow.readDioramaGuests = () => this.simulation.guests.map((guest) => ({
-        id: guest.id, state: guest.state, x: guest.position.x, y: guest.position.y, targetX: guest.target.x, targetY: guest.target.y,
+        id: guest.id, state: guest.state, activity: guest.activity, x: guest.position.x, y: guest.position.y, targetX: guest.target.x, targetY: guest.target.y,
       }));
     }
     this.updateFullscreenState();
@@ -623,6 +625,9 @@ export class KaffeepauseApp {
       this.audio.playPurr();
       this.lastCatAnnouncement = this.elapsed;
       this.announce('Mochi kommt zu dir und schnurrt.');
+    } else if (hit.kind === 'lucky-cat') {
+      this.audio.playChime();
+      this.announce('Die Winkekatze winkt dir eifrig zu. Das bringt Glück!');
     }
   };
 
@@ -837,6 +842,7 @@ export class KaffeepauseApp {
     delete this.devRenderingWindow.stepDioramaDiagnosticFrame;
     delete this.devRenderingWindow.setDioramaDiagnosticVenue;
     delete this.devRenderingWindow.readDioramaGuests;
+    delete this.devRenderingWindow.readAudioLevels;
     this.canvas.removeEventListener('pointermove', this.pointerMoved);
     this.canvas.removeEventListener('click', this.canvasClicked);
     this.canvas.removeEventListener('pointerleave', this.pointerLeft);

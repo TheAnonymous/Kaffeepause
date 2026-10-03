@@ -15,7 +15,7 @@ Du suchst dir einen Ort aus: ein gemütliches Café, ein warmes Ramen-Restaurant
 - Im Café wohnt Mochi, eine Katze. Sie schläft meistens auf der Fensterbank und schnurrt, wenn du sie mit der Maus streichelst.
 - Um Halloween stehen Kürbisse herum, im Dezember hängen Lichterketten.
 - Wenn du mit der Maus auf einer Figur verweilst, reagiert sie. Ein Klick auf einen Gast, und er winkt dir zu.
-- Klick auf Mochi, und sie kommt zu dir. Die Klingel auf der Theke ruft die Bedienung, die dir etwas zu trinken reicht. Wer lange zuschaut, ohne etwas anzuklicken, bekommt einmal einen kleinen Tipp dazu.
+- Klick auf Mochi, und sie kommt zu dir. Im Ramen-Restaurant winkt die Winkekatze auf der Theke eifrig, wenn man sie anklickt. Die Klingel auf der Theke ruft die Bedienung, die dir etwas zu trinken reicht. Wer lange zuschaut, ohne etwas anzuklicken, bekommt einmal einen kleinen Tipp dazu.
 - Lo-fi-Musik und Raumklang lassen sich ausschalten; es gibt einen Vollbildmodus. Der Knopf mit den Pfeilen führt zurück zur Ortswahl, mit dem nächsten Ort schon ausgewählt.
 - Der Link zeigt in Chats eine Vorschau, und auf dem Handy lässt sich die Seite zum Startbildschirm hinzufügen.
 - Das Bild passt sich jedem Fenster an, ohne Figuren zu quetschen: Breite Fenster zeigen den ganzen Raum, sehr schmale (Handy, Tablet hochkant) einen Ausschnitt, durch den die Kamera langsam fährt. Bei reduzierter Bewegung bleibt sie still.

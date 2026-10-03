@@ -198,6 +198,8 @@ export interface DioramaSet {
   readonly animatedProps: readonly AnimatedProp[];
   /** Bildschirme der Arcade-Automaten mit ihren kleinen Spielen. */
   readonly screens: readonly ArcadeScreen[];
+  /** Dampf über Schüsseln, nach Sitzplatz; sichtbar nur, wenn dort jemand sitzt. */
+  readonly seatSteam: ReadonlyMap<string, Object3D>;
   /** Café-Scheibe mit Tropfenmuster, nur bei Regen sichtbar. */
   readonly rainGlass?: MeshBasicMaterial;
   readonly focusOccluders: readonly FocusOccluder[];

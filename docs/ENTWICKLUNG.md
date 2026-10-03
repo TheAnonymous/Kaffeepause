@@ -20,6 +20,8 @@ Wo eine Gast-Figur gezeichnet wird und wohin sie sich dreht, entscheidet `figure
 
 Damit sich die Simulation nicht festfährt, gelten vier Regeln (`cafeSimulation.ts`, `layout.ts`): Neue Gäste stellen sich nur hinten in der Schlange an (`nextQueuePlace`), denn ein reservierter Platz vorn, an dem man nicht vorbeikommt, hat früher ganze Schlangen minutenlang eingefroren. Wege weichen erst mit bequemem, dann mit knappem Abstand allen Wartenden und Stühlen aus (`findVenueRoute`). Kommt ein Gast fünf Sekunden nicht weiter oder 25 Sekunden seinem Ziel nicht näher, geht er als letzter Ausweg kurz durch andere hindurch (`passThroughUntil`, `isPassingThrough`). Wer auf der Fensterbank sitzt, sitzt hinter dem Gang vor ihr (`bodyOffset`), sonst wäre der schmale Gang für alle versperrt. `tests/queue.test.ts` hält fest, dass auch in Fällen, die früher festhingen, niemand länger als zwei Minuten wartet.
 
+Im Ramen-Restaurant steht eine Winkekatze auf der Theke (`luckyCat.ts`); sie winkt gemächlich, auf Klick eifrig mit klingelndem Glöckchen.
+
 Mochi (`cafeCat.ts`) wartet, bevor sie losläuft, solange jemand in ihrem Weg steht (`catMustWait`). Kommt ihr unterwegs vor der Fensterbank jemand entgegen, springt sie auf eine freie Stelle der Bank zwischen den Sitzplätzen (`benchRestX`), lässt den Gast vorbei und springt zurück; anderswo bleibt sie sitzen. In den Läufen steht ihr nur noch in etwa 0,3 % der Zeit jemand im Weg.
 
 Stühle und Hocker haben einen Standplatz daneben (`standOffset` in `layout.ts`): Dort kommt der Gast an, dreht sich zum Tisch und gleitet beim Hinsetzen auf den Sitz; beim Aufstehen tritt er dorthin zurück. Steht gerade jemand auf dem Standplatz oder geht dicht am Stuhl vorbei, wartet er einen Moment.
@@ -35,6 +37,10 @@ Tische werden aus den Tischflächen in `src/simulation/layout.ts` gebaut. Wer ei
 Sprechblasen bleiben im Bild: Am Rand rücken sie hinein, oben in Nahaufnahmen herunter (`keepBubblesOnScreen`). Verdeckt eine Blase das Gesicht eines anderen (oft sitzt dort von vorn gesehen jemand weiter hinten), rückt sie zur Seite oder etwas höher (`avoidFaces` in `bubbleLayout.ts`). Im Testmodus veröffentlicht der Canvas dazu `data-bubble-layout` mit allen Blasen und Köpfen auf dem Bildschirm.
 
 Auf jedem Arcade-Automaten läuft ein eigenes kleines Pixelspiel (`arcadeScreens.ts`: Invaders, Rennen, Klötze, Pong, Sterne, Labyrinth), zehnmal pro Sekunde neu gezeichnet. Ohne Spieler zeigt er eine gedimmte Demo mit blinkender Münze; kommt jemand, blitzt der Start auf; geht er, fällt ein Vorhang mit großem Pixel-X („Game Over“). Beim Highscore-Moment jubelt der Bildschirm mit, in der Geschichte vom flackernden Automaten spinnt er. Bei reduzierter Bewegung bleibt er ein ruhiges Standbild. Das Bildschirmgehäuse steht kaum über den Korpus vor, und die Spieler stehen etwas zurück, damit der gesenkte Kopf nicht ins Gehäuse ragt; `tests/sweep.test.ts` prüft das.
+
+## Kleinigkeiten am Platz
+
+Wer trinkt, leert seinen Becher über die Zeit am Platz (`cupFor` in `DioramaRenderer.ts`, Füllstand und Dampf in `voxelFigure.ts`); in der ersten Zeit steigen ein paar Dampfwölkchen auf. Über den Ramen-Schüsseln an der Theke dampft es nur, wenn dort jemand sitzt (`seatSteam`).
 
 ## Anklicken
 
@@ -57,6 +63,10 @@ Die Szene wird zuerst linear in einen Zwischenpuffer gerendert. Erst der letzte 
 Helligkeit, Lampen und Aufhellung pro Ort und Tageszeit stehen in `src/diorama/look.ts` und `src/diorama/visualProfiles.ts`. Nach Änderungen dort zeigt `npx playwright test e2e/look.spec.ts` das Ergebnis als Bilder in `look/` und prüft Mindesthelligkeit und Kontrast.
 
 Nebel und Schnee wirken draußen vor dem Fenster, nicht im Raum: Der Raum bekommt nur einen leichten Schleier (`FogExp2` in `applyLook()`), während Himmel und Häuser hinter dem Fenster zur hellen, weichen Farbe `EXTERIOR_HAZE` verblassen. Wer das Wetter prüfen will, lässt alle Kombinationen aus `?time=` und `?weather=` durchlaufen und legt die Bilder nebeneinander; der Unterschied zwischen klarem Himmel, Regen und Schnee ist nur im Fenster sichtbar.
+
+## Ton
+
+Im Testmodus hängen Messpunkte an jeder Tonspur (Regen, Wind, Draußen, Raum, Musik, Aufnahmen, Effekte, Gesamt); `readAudioLevels()` liefert ihre Pegel in dBFS. `e2e/audio.spec.ts` prüft damit, dass es nur bei Regen und Gewitter rauscht, Schnee draußen dämpft und die drei Orte etwa gleich laut sind. Pegel immer als Mittel über die Leistung vieler kurzer Messfenster vergleichen: Musik besteht aus Noten und Pausen, ein Mittel über Dezibelwerte unterschätzt sie stark.
 
 ## Testparameter
 

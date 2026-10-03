@@ -106,6 +106,11 @@ export interface FaceBox {
   readonly bottom: number;
 }
 
+/** Weiteste seitliche Verschiebung beim Ausweichen, in Blasenbreiten. */
+export const MAX_SIDE_SHIFT = 0.35;
+/** Weiteste Verschiebung nach oben beim Ausweichen, in Blasenhöhen. */
+export const MAX_UP_SHIFT = 0.8;
+
 /** Ab diesem Anteil gilt ein Gesicht als verdeckt. */
 const FACE_COVER_LIMIT = 0.15;
 
@@ -146,8 +151,11 @@ export function avoidFaces(
       if (left < SCREEN_MARGIN || right > screenWidth - SCREEN_MARGIN || top < SCREEN_MARGIN) return false;
       return placed.every((other) => !overlaps(entry, other.entry, offsetX, offsetY, other.offsetX, other.offsetY));
     };
+    // Nur so weit, dass der Zipfel der Blase noch beim Sprecher bleibt: lieber etwas höher als weit zur Seite.
+    // Früher rückte sie bis zu einer Blasenbreite seitlich und hing dann frei im Raum, ohne erkennbaren Sprecher.
     const shifts: readonly (readonly [number, number])[] = [
-      [0, 0], [-0.62, 0], [0.62, 0], [0, -0.5], [-0.62, -0.5], [0.62, -0.5], [-1.05, 0], [1.05, 0], [-1.05, -0.5], [1.05, -0.5],
+      [0, -0.45], [0, -0.8], [-MAX_SIDE_SHIFT, -0.45], [MAX_SIDE_SHIFT, -0.45], [-MAX_SIDE_SHIFT, 0], [MAX_SIDE_SHIFT, 0],
+      [-MAX_SIDE_SHIFT, -0.8], [MAX_SIDE_SHIFT, -0.8],
     ];
     let best = { offsetX: placement.offsetX, offsetY: placement.offsetY, cover: coverage(placement.offsetX, placement.offsetY) };
     if (best.cover > FACE_COVER_LIMIT) {

@@ -109,8 +109,11 @@ export class CafeAudio {
   playReaction(): boolean { return this.engine?.playReaction() ?? false; }
   playBell(): void { this.engine?.playBell(); }
   playPurr(): void { this.engine?.playPurr(); }
+  playChime(): void { this.engine?.playChime(); }
   getState(): AudioState { return this.unavailable ? 'unavailable' : this.engine?.getState() ?? 'idle'; }
   getSampleState(): VenueSampleState { return this.engine?.getSampleState() ?? 'idle'; }
+  /** Nur im Testmodus: Pegel jeder Tonspur in dBFS. */
+  measureLevels(): Record<string, number> { return this.engine?.measureLevels() ?? {}; }
   async destroy(): Promise<void> {
     if (this.engine) await this.engine.destroy();
     else if (this.activatedContext && this.activatedContext.state !== 'closed') await this.activatedContext.close();

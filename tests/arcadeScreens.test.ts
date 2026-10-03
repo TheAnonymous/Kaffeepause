@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildVenue } from '../src/diorama/venueBuilder';
 import { ARCADE_GAMES, ArcadeScreen } from '../src/diorama/arcadeScreens';
+import { VENUE_LAYOUTS } from '../src/simulation/layout';
 
 describe('Bildschirme der Automaten', () => {
   it('zeigt auf jedem der sechs Automaten ein eigenes Spiel', () => {
@@ -45,5 +46,14 @@ describe('Bildschirme der Automaten', () => {
     screen.update(4, { playing: true, still: true });
     expect(screen.mode).toBe('play');
     screen.dispose();
+  });
+});
+
+describe('Dampf über den Ramen-Schüsseln', () => {
+  it('hat über jeder Schüssel an der Theke eine eigene Dampfwolke, die nur bei Gästen erscheint', () => {
+    const set = buildVenue('ramen');
+    const stools = VENUE_LAYOUTS.ramen.activitySpots.filter((spot) => spot.kind === 'counter-stool').map((spot) => spot.id).sort();
+    expect([...set.seatSteam.keys()].sort()).toEqual(stools);
+    set.dispose();
   });
 });

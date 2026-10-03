@@ -121,8 +121,12 @@ function propBatch(kind: PropKind): BoxBatch {
       batch.add([0.06, 0.1, 0.06], [0.1, 0.06, -0.05], '#4b887d');
       break;
     case 'cup':
-      batch.add([0.11, 0.13, 0.11], [0, 0, 0], '#ead9bb');
-      batch.add([0.09, 0.01, 0.09], [0, 0.065, 0], '#7a4a36');
+      // Becher mit Wänden, damit man sieht, wie viel noch drin ist (der Kaffee selbst hängt an einem eigenen Knochen).
+      batch.add([0.11, 0.02, 0.11], [0, -0.055, 0], '#ead9bb');
+      batch.add([0.11, 0.13, 0.016], [0, 0, 0.047], '#ead9bb');
+      batch.add([0.11, 0.13, 0.016], [0, 0, -0.047], '#ead9bb');
+      batch.add([0.016, 0.13, 0.08], [0.047, 0, 0], '#ead9bb');
+      batch.add([0.016, 0.13, 0.08], [-0.047, 0, 0], '#ead9bb');
       batch.add([0.03, 0.07, 0.03], [0.07, 0, 0], '#ead9bb');
       break;
     case 'phone':
@@ -179,6 +183,10 @@ export interface VoxelPoseInput {
   readonly yawOverride?: number;
   /** Ob die Figur gerade geht (sie bewegt sich); ohne Angabe gilt die Pose „walking“ als Gehen. */
   readonly stepping?: boolean;
+  /** Wie voll der Becher ist (0–1); ohne Angabe voll. */
+  readonly cupFill?: number;
+  /** Ob aus dem Becher Dampf aufsteigt (frisch eingeschenkt). */
+  readonly steaming?: boolean;
   readonly seatHeight: number;
   readonly time: number;
 }
@@ -249,6 +257,8 @@ export class VoxelFigure {
   private sitAmount = 0;
   private sitHeight = 0;
   private pendingProp?: { kind: PropKind; anchor: Anchor };
+  private readonly coffee = new Bone();
+  private readonly steam: Bone[] = [];
 
   constructor(private readonly options: VoxelFigureOptions) {
     const { appearance } = options;
@@ -323,6 +333,16 @@ export class VoxelFigure {
       this.rig.attach(prop, propBatch(kind));
       this.props.set(kind, prop);
     }
+    // Kaffee im Becher und ein paar Dampfwölkchen darüber; beides folgt dem Becher.
+    const cup = this.props.get('cup')!;
+    cup.add(this.coffee);
+    this.rig.attach(this.coffee, new BoxBatch().add([0.078, 0.012, 0.078], [0, 0, 0], '#5e3626'));
+    for (let index = 0; index < 3; index += 1) {
+      const puff = new Bone();
+      cup.add(puff);
+      this.rig.attach(puff, new BoxBatch().add([0.03, 0.03, 0.03], [0, 0, 0], '#f1ece2'));
+      this.steam.push(puff);
+    }
     ({ material: this.material, rim: this.rim } = figureMaterial());
     this.mesh = this.rig.build(this.root, this.material);
     for (const mouth of this.mouths.values()) mouth.scale.setScalar(0);
@@ -355,6 +375,7 @@ export class VoxelFigure {
       // Derselbe Augenblick wird noch einmal gezeichnet: Die Figur bleibt, wie sie ist, statt ans Ziel zu springen.
       this.pose(input);
       this.holdSmoothedPose();
+      this.updateCup(input);
       return;
     }
     const snap = delta <= 0 || delta > 0.5;
@@ -392,6 +413,25 @@ export class VoxelFigure {
     this.yaw = delta === 0 ? targetYaw : this.yaw + wrapAngle(targetYaw - this.yaw) * (1 - Math.exp(-TURN_RATE * delta));
     this.root.rotation.y = this.yaw;
     this.showProp(this.pendingProp);
+    this.updateCup(input);
+  }
+
+  /** Höhe des Kaffees im Becher und ob gerade Dampf aufsteigt (für Prüfungen). */
+  get cupState(): { readonly coffeeY: number; readonly steaming: boolean } {
+    return { coffeeY: this.coffee.position.y, steaming: this.steam.some((puff) => puff.scale.x > 0) };
+  }
+
+  /** Füllstand und Dampf des Bechers. */
+  private updateCup(input: VoxelPoseInput): void {
+    const fill = Math.max(0, Math.min(1, input.cupFill ?? 1));
+    this.coffee.position.set(0, -0.04 + fill * 0.095, 0);
+    this.coffee.scale.setScalar(fill > 0.04 ? 1 : 0);
+    const t = input.time + this.phase;
+    for (const [index, puff] of this.steam.entries()) {
+      const rise = (t * 0.55 + index / this.steam.length) % 1;
+      puff.position.set(Math.sin(t * 1.7 + index * 2.1) * 0.025, 0.1 + rise * 0.24, Math.cos(t * 1.3 + index) * 0.015);
+      puff.scale.setScalar(input.steaming ? (1 - rise) * 1.1 : 0);
+    }
   }
 
   private pose(input: VoxelPoseInput): void {
