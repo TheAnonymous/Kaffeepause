@@ -35,7 +35,7 @@ import {
   activitySpotById,
   type ActivitySpot,
 } from '../simulation/layout';
-import type { Barista, Guest } from '../simulation/types';
+import type { Barista, CafeMoment, CafeMomentKind, Guest } from '../simulation/types';
 import { momentDefinition } from '../simulation/momentRegistry';
 import type { SceneSnapshot } from '../scene/types';
 import type { VenueKind } from '../venue';
@@ -91,12 +91,14 @@ import {
   FLOOR_SURFACE_Y,
   cameraPanForWorldX,
   worldToCharacterDiorama,
+  worldToDiorama,
   type DioramaSet,
   type FocusOccluder,
 } from './types';
 import { buildVenue, doorShouldBeOpen, VENUE_WINDOWS } from './venueBuilder';
 import { parseSeasonOverride, seasonForDate, type Season } from './season';
 import { LuckyCat } from './luckyCat';
+import { MomentProps, momentPropFixedPosition, momentPropSurface } from './momentProps';
 import { CafeCat } from './cafeCat';
 import {
   VENUE_VISUAL_PROFILES,
@@ -153,6 +155,23 @@ function cupFor(guest: Guest, reducedMotion: boolean): { cupFill: number; steami
   const progress = Math.max(0, Math.min(1, guest.stateTime / guest.stateDuration));
   return { cupFill: 1 - progress * 0.85, steaming: !reducedMotion && progress < 0.4 };
 }
+
+/** Um Halloween trägt etwa jeder dritte Gast einen Hexenhut. */
+function halloweenHat(season: Season, guestId: string): 'witch' | undefined {
+  const number = Number.parseInt(guestId.replace(/\D/g, ''), 10) || 0;
+  return season === 'halloween' && number % 3 === 1 ? 'witch' : undefined;
+}
+
+/** Oberkanten, auf die Gegenstände von Momenten gelegt werden (siehe `venueBuilder.ts`). */
+const TABLE_TOP_Y = 0.98;
+const RAMEN_COUNTER_TOP_Y = 1.33;
+/** Auf Höhe der Schüsselreihe, nah an der Vorderkante der Ramen-Theke. */
+const RAMEN_COUNTER_PROP_Z = -1.68;
+const MOMENT_PROP_SCALE = 1.7;
+const CAFE_BENCH_TOP_Y = 0.67;
+const CAFE_BENCH_Z = -1.74;
+const LOUNGE_SEAT_TOP_Y = 0.43;
+const LOUNGE_SEAT_Z = 2.2;
 
 /** Seitenverhältnis, für das der Raum gebaut ist (16:9). */
 const DESIGN_ASPECT = WORLD_WIDTH / WORLD_HEIGHT;
@@ -245,6 +264,8 @@ export class DioramaRenderer {
   private readonly season: Season;
   private cat?: CafeCat;
   private luckyCat?: LuckyCat;
+  private readonly momentProps = new MomentProps();
+  private momentProp?: { readonly kind: CafeMomentKind; readonly group: Group };
   private catPetted = false;
   private catPurrToken = 0;
   private artGeneration = 0;
@@ -633,6 +654,7 @@ export class DioramaRenderer {
     this.atmosphereLayer.update(this.atmosphere, this.qualityTier, time);
     for (const object of this.atmosphereDecorHandoffs) object.visible = this.atmosphere.intensity <= 0.004;
     this.updateEvent(snapshot, time);
+    this.updateMomentProp(snapshot);
     if (drawVisualFrame) {
       if (this.diagnosticRendering) this.webgl.info.reset();
       this.gpuTimer.begin();
@@ -668,6 +690,7 @@ export class DioramaRenderer {
     this.atmosphereLayer.dispose();
     this.cat?.dispose();
     this.luckyCat?.dispose();
+    this.momentProps.dispose();
     this.venueSet.dispose();
     for (const node of this.guestNodes.values()) this.disposeCharacterNode(node);
     this.disposeCharacterNode(this.baristaNode);
@@ -995,14 +1018,18 @@ export class DioramaRenderer {
   private updateArcadeScreens(snapshot: SceneSnapshot, time: number): void {
     if (this.venueSet.screens.length === 0) return;
     const moment = snapshot.moment;
-    for (const screen of this.venueSet.screens) {
+    const progress = moment && moment.duration > 0 ? moment.elapsed / moment.duration : 0;
+    for (const [index, screen] of this.venueSet.screens.entries()) {
       const player = snapshot.guests.find((guest) => guest.state === 'activity' && guest.activitySpotId === screen.spotId);
       const involved = player !== undefined && moment?.participantIds.includes(player.id) === true;
+      // Bei der Leuchtwelle jubeln die Automaten nacheinander, wie eine Welle durch den Raum.
+      const wave = moment?.kind === 'attract-mode-wave' && Math.sin(time * 2.4 - index * 0.95) > 0.3;
       screen.update(time, {
         still: this.reducedMotion,
         playing: player !== undefined,
-        celebrating: involved && moment?.kind === 'arcade-high-score',
+        celebrating: wave || (involved && moment?.kind === 'arcade-high-score'),
         glitching: involved && moment?.story === 'glitched-coop' && moment.storyStep === 1,
+        rebooting: involved && moment?.kind === 'cabinet-reboot' ? progress : undefined,
       });
     }
   }
@@ -1110,13 +1137,14 @@ export class DioramaRenderer {
       deltaSeconds: this.figureDelta,
     });
     node.root.position.set(node.motion.x, FLOOR_SURFACE_Y + visual.offsetY, node.motion.z);
-    const figureKey = `${this.venue}|${guest.accessory ?? 'none'}`;
+    const figureKey = `${this.venue}|${guest.accessory ?? 'none'}|${halloweenHat(this.season, guest.id) ?? ''}`;
     if (!node.figure || node.figureKey !== figureKey) {
       node.figure?.root.removeFromParent();
       node.figure?.dispose();
       node.figure = new VoxelFigure({
         palette: guest.palette, appearance: guest.appearance, venue: this.venue, accessory: guest.accessory,
         seed: Number.parseInt(guest.id.replace(/\D/g, ''), 10) || 0,
+        hat: halloweenHat(this.season, guest.id),
       });
       node.root.add(node.figure.root);
       node.figureKey = figureKey;
@@ -1458,6 +1486,70 @@ export class DioramaRenderer {
     }
   }
 
+  /** Was der Untertitel eines Moments nennt, liegt auch da: der Kuchen, die Karten, das letzte Gyoza. */
+  private updateMomentProp(snapshot: SceneSnapshot): void {
+    const moment = snapshot.moment;
+    if (this.momentProp && this.momentProp.kind !== moment?.kind) {
+      this.momentProp.group.removeFromParent();
+      this.momentProp = undefined;
+    }
+    if (!moment || !momentPropSurface(moment.kind)) return;
+    if (!this.momentProp) {
+      const group = this.momentProps.get(moment.kind);
+      const place = this.momentPropPlacement(snapshot, moment);
+      if (!group || !place) return;
+      group.position.copy(place);
+      // Etwas größer als echt, damit man Kuchen, Karten und Tickets aus der Entfernung erkennt.
+      group.scale.setScalar(MOMENT_PROP_SCALE);
+      this.scene.add(group);
+      this.momentProp = { kind: moment.kind, group };
+    }
+    const progress = moment.duration > 0 ? moment.elapsed / moment.duration : 1;
+    this.momentProps.animate(moment.kind, this.momentProp.group, this.reducedMotion ? 1 : progress);
+  }
+
+  /** Wo der Gegenstand eines Moments liegt: auf dem Tisch, der Theke oder Bank zwischen den Beteiligten, sonst am Boden. */
+  private momentPropPlacement(snapshot: SceneSnapshot, moment: CafeMoment): Vector3 | undefined {
+    const fixed = momentPropFixedPosition(moment.kind);
+    if (fixed) return new Vector3(...fixed);
+    const layout = VENUE_LAYOUTS[snapshot.venue];
+    const guests = moment.participantIds
+      .map((id) => snapshot.guests.find((guest) => guest.id === id))
+      .filter((guest): guest is Guest => guest !== undefined);
+    if (guests.length === 0) return undefined;
+    const points = guests.map((guest) => {
+      const node = this.guestNodes.get(guest.id);
+      return node?.figure ? { x: node.motion.x, z: node.motion.z } : worldToCharacterDiorama(guest.position);
+    });
+    const mid = { x: points.reduce((sum, point) => sum + point.x, 0) / points.length, z: points.reduce((sum, point) => sum + point.z, 0) / points.length };
+    // Am Boden ein Stück in den Gang hinein, Richtung Raummitte und Kamera, damit niemand davorsteht.
+    if (momentPropSurface(moment.kind) === 'floor') return new Vector3(mid.x - Math.sign(mid.x) * 0.7, FLOOR_SURFACE_Y, mid.z + 0.55);
+    const spots = guests.map((guest) => activitySpotById(layout, guest.activitySpotId));
+    const tableSpot = spots.find((spot) => spot?.kind === 'table');
+    if (tableSpot) {
+      // Mitte des Tisches, an dem die Beteiligten sitzen.
+      const seat = worldToDiorama(tableSpot);
+      const table = layout.colliders
+        .filter((collider) => collider.id.includes('table'))
+        .map((collider) => worldToDiorama({ x: collider.x + collider.width / 2, y: collider.y + collider.height / 2 }))
+        .sort((left, right) => Math.hypot(left.x - seat.x, left.z - seat.z) - Math.hypot(right.x - seat.x, right.z - seat.z))[0];
+      // Vorn auf dem Tisch, vor Tassen und Laterne in der Tischmitte.
+      if (table) return new Vector3(table.x, TABLE_TOP_Y, table.z + 0.2);
+    }
+    if (spots.some((spot) => spot?.kind === 'counter-stool')) {
+      // Zwischen zwei Schüsseln; bei nur einem Gast neben dessen Schüssel.
+      return new Vector3(guests.length > 1 ? mid.x : mid.x + 0.55, RAMEN_COUNTER_TOP_Y, RAMEN_COUNTER_PROP_Z);
+    }
+    const bench = spots.find((spot) => spot?.kind === 'bench');
+    if (bench) return new Vector3(guests.length > 1 ? mid.x : worldToDiorama(bench).x + 0.55, CAFE_BENCH_TOP_Y, CAFE_BENCH_Z);
+    const lounge = guests.find((guest) => activitySpotById(layout, guest.activitySpotId)?.kind === 'lounge');
+    if (lounge) {
+      const node = this.guestNodes.get(lounge.id);
+      return new Vector3((node?.motion.x ?? 0) + 0.55, LOUNGE_SEAT_TOP_Y, LOUNGE_SEAT_Z);
+    }
+    return new Vector3(mid.x, FLOOR_SURFACE_Y, mid.z + 0.3);
+  }
+
   private updateEvent(snapshot: SceneSnapshot, time: number): void {
     const accident = snapshot.accident;
     const moment = snapshot.moment;
@@ -1616,7 +1708,7 @@ export class DioramaRenderer {
 
   private updateCatPresence(): void {
     if (this.venue === 'cafe' && !this.cat) {
-      this.cat = new CafeCat();
+      this.cat = new CafeCat({ hat: this.season === 'halloween' });
       this.scene.add(this.cat.root);
     } else if (this.venue !== 'cafe' && this.cat) {
       this.cat.root.removeFromParent();

@@ -12,7 +12,7 @@ import {
 // Kleine Pixelspiele auf den Bildschirmen der Arcade-Automaten. Jeder Automat zeigt sein eigenes Spiel,
 // das sich ein paarmal pro Sekunde weiterzeichnet; ohne Browser (Tests) bleibt der Bildschirm einfarbig.
 
-export type ArcadeGame = 'invaders' | 'pong' | 'racer' | 'blocks' | 'maze' | 'stars';
+export type ArcadeGame = 'invaders' | 'pong' | 'racer' | 'blocks' | 'maze' | 'stars' | 'ghosts';
 
 export const ARCADE_GAMES: readonly ArcadeGame[] = ['invaders', 'racer', 'blocks', 'pong', 'stars', 'maze'];
 
@@ -129,6 +129,32 @@ const DRAW: Readonly<Record<ArcadeGame, Draw>> = {
     rect(context, ghostX - 1, ghostY - 1, 3, 3, accent);
     rect(context, ghostX, ghostY - 1, 1, 1, '#ffffff');
   },
+  ghosts(context, frame) {
+    // Gruselspiel zu Halloween: Ein Kürbis hüpft über den Friedhof, Geister schweben vorbei.
+    rect(context, 0, 24, WIDTH, 6, '#1a1230');
+    for (const x of [4, 15, 27, 36]) {
+      rect(context, x, 20, 3, 4, '#5a5470');
+      rect(context, x + 1, 19, 1, 1, '#5a5470');
+    }
+    rect(context, 31, 3, 5, 5, '#f4e9b8');
+    rect(context, 33, 3, 3, 3, '#1a1230');
+    const hop = Math.abs(Math.sin(frame / 4)) * 7;
+    const pumpkinX = 4 + (frame % 60) * 0.55;
+    rect(context, pumpkinX, 17 - hop, 6, 5, '#e07a2c');
+    rect(context, pumpkinX + 2, 16 - hop, 2, 1, '#5b8a3a');
+    rect(context, pumpkinX + 1, 18 - hop, 1, 1, '#ffd36a');
+    rect(context, pumpkinX + 4, 18 - hop, 1, 1, '#ffd36a');
+    for (let ghost = 0; ghost < 3; ghost += 1) {
+      const x = WIDTH - ((frame * (1 + ghost * 0.5) + ghost * 17) % (WIDTH + 8));
+      const y = 4 + ghost * 5 + Math.sin(frame / 5 + ghost) * 2;
+      rect(context, x, y, 5, 5, '#e8ecf4');
+      rect(context, x, y + 5, 1, 1, '#e8ecf4');
+      rect(context, x + 2, y + 5, 1, 1, '#e8ecf4');
+      rect(context, x + 4, y + 5, 1, 1, '#e8ecf4');
+      rect(context, x + 1, y + 1, 1, 1, '#1a1230');
+      rect(context, x + 3, y + 1, 1, 1, '#1a1230');
+    }
+  },
   stars(context, frame, accent) {
     for (let star = 0; star < 18; star += 1) {
       const speed = 1 + (star % 3);
@@ -156,14 +182,18 @@ export interface ArcadeScreenState {
   readonly glitching?: boolean;
   /** Reduzierte Bewegung: ruhiges Standbild, ohne Blitzen und Vorhang. */
   readonly still?: boolean;
+  /** Neustart (Moment „Automat startet neu“): Fortschritt 0–1; erst dunkel mit Cursor, dann ein Startblitz. */
+  readonly rebooting?: number;
 }
 
-export type ArcadeScreenMode = 'demo' | 'start' | 'play' | 'over' | 'celebrate' | 'glitch';
+export type ArcadeScreenMode = 'demo' | 'start' | 'play' | 'over' | 'celebrate' | 'glitch' | 'off';
 
 /** Nach dem Weggehen zeigt der Automat so lange „Game Over“, danach wieder die Demo. */
 const GAME_OVER_SECONDS = 2.6;
 /** So lange blitzt der Bildschirm beim Spielstart auf. */
 const START_SECONDS = 0.7;
+/** Beim Neustart bleibt der Bildschirm so lange (Anteil des Moments) dunkel. */
+const REBOOT_DARK = 0.4;
 
 export class ArcadeScreen {
   readonly mesh: Mesh<PlaneGeometry, MeshBasicMaterial>;
@@ -217,7 +247,11 @@ export class ArcadeScreen {
       else this.endedAt = time;
       this.playing = state.playing;
     }
+    const rebooting = state.rebooting !== undefined && !state.still;
+    if (rebooting && state.rebooting! >= REBOOT_DARK && state.rebooting! < REBOOT_DARK + 0.02) this.startedAt = time;
     const mode: ArcadeScreenMode = state.still ? (this.playing ? 'play' : 'demo')
+      : rebooting && state.rebooting! < REBOOT_DARK ? 'off'
+        : rebooting && time - this.startedAt < START_SECONDS ? 'start'
       : state.glitching ? 'glitch'
         : state.celebrating ? 'celebrate'
           : this.playing ? (time - this.startedAt < START_SECONDS ? 'start' : 'play')
@@ -231,7 +265,11 @@ export class ArcadeScreen {
     const context = this.context;
     context.fillStyle = this.background;
     context.fillRect(0, 0, WIDTH, HEIGHT);
-    if (mode === 'demo') {
+    if (mode === 'off') {
+      context.fillStyle = '#04050a';
+      context.fillRect(0, 0, WIDTH, HEIGHT);
+      if (frame % 8 < 4) rect(context, 4, HEIGHT - 7, 3, 4, this.accent);
+    } else if (mode === 'demo') {
       DRAW[this.game](context, Math.floor(frame / 2), this.accent);
       context.fillStyle = 'rgba(7, 11, 24, 0.45)';
       context.fillRect(0, 0, WIDTH, HEIGHT);

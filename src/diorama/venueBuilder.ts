@@ -60,6 +60,7 @@ interface BuildContext {
   readonly lightPoolTexture: Texture;
   readonly screens: ArcadeScreen[];
   readonly seatSteam: Map<string, Object3D>;
+  readonly season: Season;
   /** Café-Scheibe mit Tropfenmuster; die Darstellung blendet sie bei Regen ein. */
   rainGlass?: MeshBasicMaterial;
   focusOccluderSerial: number;
@@ -1047,7 +1048,9 @@ function arcadeCabinet(
   // Das Bildschirmgehäuse steht kaum über den Korpus vor; sonst stößt der Kopf des Spielers hinein.
   box(context, cabinet, [bodyWidth + 0.12, 0.68 + (variant % 2) * 0.08, 0.94], [0, bodyHeight - 0.34, -0.02], { color: context.theme.ink, surface: 'metal' });
   // Auf jedem Automaten läuft ein eigenes kleines Pixelspiel.
-  const screen = new ArcadeScreen(ARCADE_GAMES[variant % ARCADE_GAMES.length]!, color, 0.76 + (variant % 3) * 0.04, 0.5 + (variant % 2) * 0.06);
+  // Um Halloween läuft auf einem Automaten ein Gruselspiel.
+  const game = context.season === 'halloween' && variant === 4 ? 'ghosts' : ARCADE_GAMES[variant % ARCADE_GAMES.length]!;
+  const screen = new ArcadeScreen(game, color, 0.76 + (variant % 3) * 0.04, 0.5 + (variant % 2) * 0.06);
   screen.mesh.position.set(0, bodyHeight - 0.36, 0.475);
   registerSelectiveBloomSurface(screen.mesh);
   cabinet.add(screen.mesh);
@@ -1142,6 +1145,23 @@ function addPumpkin(context: BuildContext, root: Group, x: number, y: number, z:
   glowPanel(context, root, [0.2 * size, 0.04 * size, 0.02], [x, y + 0.1 * size, front], '#ffb347');
 }
 
+/** Wimpelkette in Orange, Lila und Schwarz, leicht durchhängend. */
+function addHalloweenBunting(context: BuildContext, root: Group, fromX: number, toX: number, y: number, z: number): void {
+  const colors = ['#e07a2c', '#3b2a4f', '#1c1a22', '#f0b13c'];
+  const count = Math.max(3, Math.round((toX - fromX) / 0.42) + 1);
+  box(context, root, [toX - fromX, 0.015, 0.015], [(fromX + toX) / 2, y + 0.01, z], { color: '#2a2230', castShadow: false });
+  for (let index = 0; index < count; index += 1) {
+    const progress = index / (count - 1);
+    const sag = Math.sin(progress * Math.PI) * 0.12;
+    const x = fromX + (toX - fromX) * progress;
+    const color = colors[index % colors.length]!;
+    // Ein Wimpel als kleines, nach unten schmaler werdendes Dreieck aus drei Klötzchen.
+    box(context, root, [0.24, 0.07, 0.02], [x, y - sag - 0.04, z], { color, castShadow: false });
+    box(context, root, [0.15, 0.07, 0.02], [x, y - sag - 0.11, z], { color, castShadow: false });
+    box(context, root, [0.06, 0.06, 0.02], [x, y - sag - 0.17, z], { color, castShadow: false });
+  }
+}
+
 function addStringLights(context: BuildContext, root: Group, fromX: number, toX: number, y: number, z: number): void {
   const colors = ['#ffd27a', '#ff6b6b', '#7ee07a', '#6fb7ff'];
   const count = Math.max(2, Math.round((toX - fromX) / 0.34) + 1);
@@ -1159,12 +1179,20 @@ function addSeasonalDecor(context: BuildContext, root: Group, venue: VenueKind, 
       addPumpkin(context, root, 7.35, 1.36, -1.85, 0.95);
       addPumpkin(context, root, -6.15, FLOOR_SURFACE_Y, -1.85, 1.05);
       addPumpkin(context, root, -5.7, FLOOR_SURFACE_Y, -2.25, 0.75);
+      addPumpkin(context, root, 5.1, 3.18, -3.0, 0.7);
+      addHalloweenBunting(context, root, 3.5, 7.6, 2.62, -2.9);
+      addHalloweenBunting(context, root, -5.6, -0.6, 6.4, -3.2);
     } else if (venue === 'ramen') {
-      addPumpkin(context, root, 3.7, 1.33, -1.9, 0.85);
+      // Nicht auf der Theke rechts: Dort steht die Winkekatze.
+      addPumpkin(context, root, 4.35, 2.71, -3.0, 0.75);
       addPumpkin(context, root, -6.4, FLOOR_SURFACE_Y, -1.1, 1.0);
+      addPumpkin(context, root, 6.9, FLOOR_SURFACE_Y, -2.2, 0.85);
+      addHalloweenBunting(context, root, -5.8, 3.6, 3.36, -2.88);
     } else {
       addPumpkin(context, root, -1.35, 0.87, 1.88, 0.7);
       addPumpkin(context, root, 1.35, 0.87, 1.88, 0.8);
+      addPumpkin(context, root, 2.15, 1.49, -2.85, 0.7);
+      addHalloweenBunting(context, root, -5.6, 5.6, 5.45, -3.02);
     }
   } else if (season === 'winter-lights') {
     if (venue === 'cafe') {
@@ -1220,7 +1248,7 @@ export function buildVenue(venue: VenueKind, season: Season = 'none'): DioramaSe
   const lightPoolTexture = createPixelLightPoolTexture();
   const context: BuildContext = {
     geometries, materials, theme, profile, surfaces, usedSurfaceKinds, surfaceMaterials, geometryCache, materialCache,
-    focusOccluders, seatBindings, lightPoolTexture, screens: [], seatSteam: new Map(), focusOccluderSerial: 0,
+    focusOccluders, seatBindings, lightPoolTexture, screens: [], seatSteam: new Map(), season, focusOccluderSerial: 0,
   };
   const animatedProps: AnimatedProp[] = [];
   const shell = buildShell(context, root, venue);

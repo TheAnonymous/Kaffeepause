@@ -6,6 +6,7 @@ import type { AccidentKind, CafeMoment, CafeMomentKind, CafeStoryKind, GuestActi
 import { CafeEnvironmentController, parseEnvironmentOverrides } from './environment/cafeEnvironmentController';
 import type { CafeEnvironmentSnapshot } from './environment/types';
 import type { SceneSnapshot } from './scene/types';
+import { CaptionQueue, type CaptionPriority } from './captionQueue';
 import { DEFAULT_VENUE, isVenueKind, venueEyebrow, venueStatus, VENUE_KINDS, VENUES, type VenueKind } from './venue';
 import { FRIENDS, type Friend } from './friends';
 import {
@@ -23,7 +24,6 @@ import { AtmosphereDirector } from './atmosphere/AtmosphereDirector';
 import { parseAtmosphereDevelopmentOverrides } from './atmosphere/types';
 
 const UI_IDLE_DELAY = 2_500;
-const CAPTION_SECONDS = 6.5;
 /** So lange schaut jemand zu, bevor ein Tipp verrät, dass man mitmachen kann. */
 const HINT_DELAY = 40_000;
 const HINT_STORAGE_KEY = 'kaffeepause-tipp-gesehen';
@@ -134,7 +134,7 @@ const STORY_MESSAGES: Readonly<Record<CafeStoryKind, readonly string[]>> = {
     'Linn legt jemandem gegenüber ein kleines selbstgestricktes Geschenk hin.',
   ],
   'arcade-rivals': [
-    'Sora und Kai treffen sich an einem Tisch zur freundlichen Revanche.',
+    'Sora und Kai treffen sich an den Automaten zur freundlichen Revanche.',
     'Sora und Kai feiern gemeinsam einen neuen Highscore – die Revanche bleibt offen.',
   ],
   'order-mixup': [
@@ -301,6 +301,7 @@ export class KaffeepauseApp {
   private lastAnnouncedMomentId = 0;
   private lastReactionAudioToken = 0;
   private captionTimer?: number;
+  private readonly captions = new CaptionQueue();
   private hintTimer?: number;
   private lastCatPurr = 0;
   private lastCatAnnouncement = -Infinity;
@@ -348,6 +349,7 @@ export class KaffeepauseApp {
     this.canvas.addEventListener('pointermove', this.pointerMoved);
     this.canvas.addEventListener('click', this.canvasClicked);
     this.canvas.addEventListener('pointerleave', this.pointerLeft);
+    this.captionTimer = window.setInterval(this.updateCaptions, 250);
     document.body.dataset.uiIdle = 'false';
     if (import.meta.env.DEV && new URLSearchParams(window.location.search).get('testRender') === 'diagnostic') {
       this.devRenderingWindow.renderDioramaVisualFrame = () => {
@@ -620,14 +622,14 @@ export class KaffeepauseApp {
     if (hit.kind === 'bell') {
       this.audio.playBell();
       this.simulation.callBarista();
-      this.announce(BELL_MESSAGES[this.selectedVenue]);
+      this.announce(BELL_MESSAGES[this.selectedVenue], 'interaction');
     } else if (hit.kind === 'cat') {
       this.audio.playPurr();
       this.lastCatAnnouncement = this.elapsed;
-      this.announce('Mochi kommt zu dir und schnurrt.');
+      this.announce('Mochi kommt zu dir und schnurrt.', 'interaction');
     } else if (hit.kind === 'lucky-cat') {
       this.audio.playChime();
-      this.announce('Die Winkekatze winkt dir eifrig zu. Das bringt Glück!');
+      this.announce('Die Winkekatze winkt dir eifrig zu. Das bringt Glück!', 'interaction');
     }
   };
 
@@ -696,7 +698,7 @@ export class KaffeepauseApp {
       const friend = scene.guests.find((guest) => (
         guest.id === this.canvas.dataset.reactingCharacter && guest.regularId?.startsWith('friend:')
       ));
-      if (friend) this.announce(`${friend.name} freut sich, dich zu sehen.`);
+      if (friend) this.announce(`${friend.name} freut sich, dich zu sehen.`, 'interaction');
     }
     const catPurr = Number(this.canvas.dataset.catPurr ?? 0);
     if (catPurr > this.lastCatPurr) {
@@ -776,13 +778,13 @@ export class KaffeepauseApp {
     const accident = scene.accident;
     if (accident && accident.id !== this.lastAnnouncedAccidentId) {
       this.lastAnnouncedAccidentId = accident.id;
-      this.announce(ACCIDENT_MESSAGES[scene.venue][accident.kind]);
+      this.announce(ACCIDENT_MESSAGES[scene.venue][accident.kind], 'event');
       this.audio.playAccident(accident.kind);
     }
     const moment = scene.moment;
     if (moment && moment.id !== this.lastAnnouncedMomentId) {
       this.lastAnnouncedMomentId = moment.id;
-      this.announce(momentMessage(moment));
+      this.announce(momentMessage(moment), 'event');
       this.audio.playMoment(moment.kind);
     }
     for (const guest of scene.guests) {
@@ -818,23 +820,31 @@ export class KaffeepauseApp {
     rememberHint();
   }
 
-  private announce(text: string): void {
+  private announce(text: string, priority: CaptionPriority = 'info'): void {
+    const shown = this.captions.push(text, priority, performance.now() / 1000);
+    if (shown) this.showCaption(shown);
+  }
+
+  private showCaption(text: string): void {
     this.status.textContent = text;
     this.caption.textContent = text;
     this.caption.classList.add('is-visible');
-    if (this.captionTimer !== undefined) window.clearTimeout(this.captionTimer);
-    this.captionTimer = window.setTimeout(() => {
-      this.caption.classList.remove('is-visible');
-      this.captionTimer = undefined;
-    }, CAPTION_SECONDS * 1000);
   }
+
+  /** Läuft unabhängig von der Bildschleife, damit Untertitel auch in ruhigen Momenten weiterrücken. */
+  private readonly updateCaptions = (): void => {
+    const step = this.captions.tick(performance.now() / 1000);
+    if (step.show) this.showCaption(step.show);
+    else if (step.hide) this.caption.classList.remove('is-visible');
+  };
+
 
   private readonly destroy = (): void => {
     this.rendererGeneration += 1;
     this.stopFrameLoop();
     if (this.preparationFrame !== undefined) cancelAnimationFrame(this.preparationFrame);
     if (this.idleTimer !== undefined) window.clearTimeout(this.idleTimer);
-    if (this.captionTimer !== undefined) window.clearTimeout(this.captionTimer);
+    if (this.captionTimer !== undefined) window.clearInterval(this.captionTimer);
     if (this.hintTimer !== undefined) window.clearTimeout(this.hintTimer);
     this.environmentUnsubscribe?.();
     this.environment.stop();

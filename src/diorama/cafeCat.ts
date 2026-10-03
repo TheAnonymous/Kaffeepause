@@ -138,7 +138,7 @@ export class CafeCat {
   private dodge?: { x: number; laneZ: number; startedAt: number; clearSince?: number; downAt?: number };
   private readonly screenPoint = new Vector3();
 
-  constructor() {
+  constructor(options: { readonly hat?: boolean } = {}) {
     this.root.name = 'cafe-cat';
     this.root.scale.setScalar(1.3);
     this.root.add(this.body);
@@ -165,6 +165,18 @@ export class CafeCat {
       .add([0.05, 0.06, 0.04], [-0.065, 0.15, 0.01], COLORS.dark)
       .add([0.05, 0.06, 0.04], [0.065, 0.15, 0.01], COLORS.dark)
       .add([0.13, 0.03, 0.02], [0, 0.1, 0.1], COLORS.dark));
+    if (options.hat) {
+      // Kleiner Hexenhut um Halloween, zwischen den Ohren.
+      const hat = new Bone();
+      hat.position.set(0, 0.13, 0.02);
+      this.head.add(hat);
+      this.rig.attach(hat, new BoxBatch()
+        .add([0.2, 0.02, 0.18], [0, 0, 0], '#2b1f3a')
+        .add([0.11, 0.08, 0.1], [0, 0.05, 0], '#2b1f3a')
+        .add([0.115, 0.025, 0.105], [0, 0.025, 0], '#e07a2c')
+        .add([0.06, 0.07, 0.06], [0.015, 0.12, 0], '#2b1f3a', { z: -0.3 })
+        .add([0.03, 0.04, 0.03], [0.045, 0.17, 0], '#2b1f3a', { z: -0.7 }));
+    }
     const open = new BoxBatch();
     const closed = new BoxBatch();
     for (const side of [-1, 1]) {

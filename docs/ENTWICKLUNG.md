@@ -38,6 +38,16 @@ Sprechblasen bleiben im Bild: Am Rand rücken sie hinein, oben in Nahaufnahmen h
 
 Auf jedem Arcade-Automaten läuft ein eigenes kleines Pixelspiel (`arcadeScreens.ts`: Invaders, Rennen, Klötze, Pong, Sterne, Labyrinth), zehnmal pro Sekunde neu gezeichnet. Ohne Spieler zeigt er eine gedimmte Demo mit blinkender Münze; kommt jemand, blitzt der Start auf; geht er, fällt ein Vorhang mit großem Pixel-X („Game Over“). Beim Highscore-Moment jubelt der Bildschirm mit, in der Geschichte vom flackernden Automaten spinnt er. Bei reduzierter Bewegung bleibt er ein ruhiges Standbild. Das Bildschirmgehäuse steht kaum über den Korpus vor, und die Spieler stehen etwas zurück, damit der gesenkte Kopf nicht ins Gehäuse ragt; `tests/sweep.test.ts` prüft das.
 
+## Untertitel
+
+Alle Untertitel laufen durch eine kleine Warteschlange (`captionQueue.ts`): Klicks der zuschauenden Person erscheinen sofort, Geschichten, Momente und Missgeschicke verdrängen einfache Hinweise, und gleich wichtige Untertitel stehen mindestens 3,5 Sekunden, bevor der nächste kommt. Wartende Hinweise, die älter als 14 Sekunden sind, entfallen. Früher überschrieb jeder neue Untertitel sofort den alten; beim Betreten verdrängte etwa der Hinweis auf einen Freund die Begrüßung.
+
+## Gegenstände in Momenten
+
+Was ein Moment im Untertitel nennt, liegt auch da (`momentProps.ts`): Kuchen, Karten, umkippende Zuckerpäckchen, Probierbecher, Skizzenbuch, Stift, Gyoza, Gewürzflasche, Serviette, Schüssel, Stäbchen, Ticketstreifen, Plüschtier und Münzen. Die Darstellung legt sie auf den Tisch, die Theke oder Bank zwischen die Beteiligten, sonst in den Gang davor, und bewegt manche im Lauf des Moments. Bei der Leuchtwelle jubeln die Automaten nacheinander, beim Neustart wird einer kurz dunkel.
+
+Um Halloween (15. Oktober bis 1. November) kommen Wimpelketten, mehr Kürbisse, Hexenhüte für etwa jeden dritten Gast, ein Hut für Mochi und ein Gruselspiel auf einem Automaten dazu (`?season=halloween` zeigt es jederzeit im Entwicklungsserver).
+
 ## Kleinigkeiten am Platz
 
 Wer trinkt, leert seinen Becher über die Zeit am Platz (`cupFor` in `DioramaRenderer.ts`, Füllstand und Dampf in `voxelFigure.ts`); in der ersten Zeit steigen ein paar Dampfwölkchen auf. Über den Ramen-Schüsseln an der Theke dampft es nur, wenn dort jemand sitzt (`seatSteam`).

@@ -168,6 +168,8 @@ export interface VoxelFigureOptions {
   readonly barista?: boolean;
   /** Startphase für Atmen und Blinzeln, damit nicht alle im Gleichtakt sind. */
   readonly seed?: number;
+  /** Verkleidung zur Jahreszeit, etwa ein Hexenhut um Halloween. */
+  readonly hat?: 'witch';
 }
 
 export interface VoxelPoseInput {
@@ -931,6 +933,17 @@ export class VoxelFigure {
       on([width * 0.84, 0.1, 0.03], [0, height * 0.47, front + 0.025], '#242431');
     }
     if (barista && venue === 'ramen') on([width + 0.05, 0.08, depth + 0.05], [0, height * 0.86, 0], '#f2e2c3');
+    if (this.options.hat === 'witch') {
+      // Hexenhut mit orangem Band, die Spitze leicht abgeknickt.
+      const crown = height + FIGURE.hairTop * 0.6;
+      const felt = '#2b1f3a';
+      on([width + 0.3, 0.04, depth + 0.3], [0, crown, 0], felt);
+      on([width * 0.78, 0.17, depth * 0.78], [0, crown + 0.1, 0], felt);
+      on([width * 0.8, 0.045, depth * 0.8], [0, crown + 0.05, 0], '#e07a2c');
+      on([width * 0.52, 0.15, depth * 0.52], [0.02, crown + 0.25, -0.01], felt, { z: -0.12 });
+      on([width * 0.28, 0.13, depth * 0.28], [0.07, crown + 0.37, -0.02], felt, { z: -0.35 });
+      on([0.06, 0.07, 0.06], [0.15, crown + 0.44, -0.02], felt, { z: -0.8 });
+    }
     return batch;
   }
 }
