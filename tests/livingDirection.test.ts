@@ -169,5 +169,7 @@ describe('deterministische Navigations-Langzeitmatrix', () => {
         }
       }
     }
-  }, 30_000);
+  // Neun Läufe über je 30 simulierte Minuten; allein etwa 20 s, parallel zu den anderen Tests und
+  // bei ausgelastetem Rechner deutlich länger.
+  }, 120_000);
 });
